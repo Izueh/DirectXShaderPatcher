@@ -1,0 +1,23 @@
+version: 1
+
+options:
+  restore_reflection: true
+  refresh_resources: true
+  verify_module: true
+
+resources:
+  textures:
+    - id: added_texture
+      name: MyTex
+      kind: Texture2D
+      element: F32
+      width: 4
+      binding:
+        bind: auto
+        space: 0
+
+steps:
+  - kind: add_texture
+    id: added_texture
+  - kind: expect_texture
+    id: added_texture

@@ -1,0 +1,25 @@
+version: 1
+
+rewrite_rules:
+  - id: strip_outer_frc
+    match:
+      opcode: Frc
+      capture: outer_frc
+      replace: outer_frc
+      mode: Replace
+      prune_dead: true
+      operands:
+        - index: 1
+          kind: instruction
+          opcode: fmul
+          capture: mul_input
+    replace_with_capture: mul_input
+
+steps:
+  - kind: apply_rule
+    rule: strip_outer_frc
+    name: strip_outer_frc
+    mode: UntilNoMatch
+    required: true
+  - kind: prune_dead_code
+  - kind: verify_module

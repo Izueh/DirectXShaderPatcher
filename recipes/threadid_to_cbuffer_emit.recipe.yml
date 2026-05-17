@@ -1,0 +1,97 @@
+version: 1
+
+options:
+  refresh_resources: false
+
+resources:
+  cbuffers:
+    - id: frame_constants
+      name: RecipeFrameConstantsCB
+      type: RecipeFrameConstants
+      size: 16
+      binding:
+        bind: auto
+        space: 0
+      fields:
+        - name: FrameIndex
+          type: U32
+          width: 1
+          offset: 0
+        - name: Padding
+          type: U32
+          width: 3
+          offset: 4
+
+rewrite_rules:
+  - id: group_id_x_to_cbuffer
+    match:
+      opcode: GroupId
+      capture: group_id_x
+      replace: group_id_x
+      prune_dead: true
+      operands:
+        - index: 1
+          kind: constant_int
+          value: 0
+    emit:
+      - kind: create_handle
+        id: frame_raw_handle
+        resource: frame_constants
+      - kind: annotate_handle
+        id: frame_handle
+        handle: frame_raw_handle
+        resource: frame_constants
+      - kind: call
+        id: frame_load
+        opcode: CBufferLoadLegacy
+        type: I32
+        operands:
+          - index: 1
+            kind: temporary
+            id: frame_handle
+          - index: 2
+            kind: constant_int
+            value: 0
+      - kind: extract
+        id: frame_index
+        aggregate: frame_load
+        index: 0
+      - kind: cast
+        id: frame_index_f32
+        opcode: UIToFP
+        type: F32
+        operands:
+          - index: 0
+            kind: temporary
+            id: frame_index
+      - kind: cast
+        id: frame_index_u32
+        opcode: FPToUI
+        type: U32
+        operands:
+          - index: 0
+            kind: temporary
+            id: frame_index_f32
+      - kind: binop
+        id: wrapped_frame_index
+        opcode: URem
+        type: I32
+        operands:
+          - index: 0
+            kind: temporary
+            id: frame_index_u32
+          - index: 1
+            kind: constant_int
+            value: 32
+    replace_with: wrapped_frame_index
+
+steps:
+  - kind: add_cbuffer
+    id: frame_constants
+  - kind: apply_rule
+    rule: group_id_x_to_cbuffer
+    mode: UntilNoMatch
+    required: true
+  - kind: expect_cbuffer
+    id: frame_constants
+  - kind: verify_module

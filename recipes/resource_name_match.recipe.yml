@@ -1,0 +1,194 @@
+version: 1
+
+rewrite_rules:
+  - id: exact_blue_noise_textureload_identity
+    match:
+      opcode: TextureLoad
+      capture: texture_load
+      replace: texture_load
+      prune_dead: true
+      operands:
+        - index: 1
+          kind: resource_handle
+          capture: texture_handle
+          resource_class: SRV
+          resource_kind: Texture2D
+          resource_name: BlueNoise_ScalarTexture
+        - index: 2
+          kind: any
+          capture: mip_or_sample
+        - index: 3
+          kind: any
+          capture: coord_x
+        - index: 4
+          kind: any
+          capture: coord_y
+        - index: 5
+          kind: any
+          capture: coord_z
+        - index: 6
+          kind: any
+          capture: offset_x
+        - index: 7
+          kind: any
+          capture: offset_y
+        - index: 8
+          kind: any
+          capture: offset_z
+    emit:
+      - kind: call
+        id: replacement_load
+        opcode: TextureLoad
+        type: F32
+        operands:
+          - index: 1
+            kind: capture
+            capture: texture_handle
+          - index: 2
+            kind: capture
+            capture: mip_or_sample
+          - index: 3
+            kind: capture
+            capture: coord_x
+          - index: 4
+            kind: capture
+            capture: coord_y
+          - index: 5
+            kind: capture
+            capture: coord_z
+          - index: 6
+            kind: capture
+            capture: offset_x
+          - index: 7
+            kind: capture
+            capture: offset_y
+          - index: 8
+            kind: capture
+            capture: offset_z
+    replace_with: replacement_load
+  - id: like_scene_samplelevel_identity
+    match:
+      opcode: SampleLevel
+      capture: sample_level
+      replace: sample_level
+      prune_dead: true
+      operands:
+        - index: 1
+          kind: resource_handle
+          capture: sampled_texture
+          resource_class: SRV
+          resource_kind: Texture2D
+          resource_name_like: SceneTexturesStruct_.*Texture
+        - index: 2
+          kind: resource_handle
+          capture: sampled_sampler
+          resource_class: Sampler
+          resource_name_like: SceneTexturesStruct_.*Sampler
+        - index: 3
+          kind: any
+          capture: coord0
+        - index: 4
+          kind: any
+          capture: coord1
+        - index: 5
+          kind: any
+          capture: coord2
+        - index: 6
+          kind: any
+          capture: coord3
+        - index: 7
+          kind: any
+          capture: offset0
+        - index: 8
+          kind: any
+          capture: offset1
+        - index: 9
+          kind: any
+          capture: offset2
+        - index: 10
+          kind: any
+          capture: lod
+    emit:
+      - kind: call
+        id: replacement_sample_level
+        opcode: SampleLevel
+        type: F32
+        operands:
+          - index: 1
+            kind: capture
+            capture: sampled_texture
+          - index: 2
+            kind: capture
+            capture: sampled_sampler
+          - index: 3
+            kind: capture
+            capture: coord0
+          - index: 4
+            kind: capture
+            capture: coord1
+          - index: 5
+            kind: capture
+            capture: coord2
+          - index: 6
+            kind: capture
+            capture: coord3
+          - index: 7
+            kind: capture
+            capture: offset0
+          - index: 8
+            kind: capture
+            capture: offset1
+          - index: 9
+            kind: capture
+            capture: offset2
+          - index: 10
+            kind: capture
+            capture: lod
+    replace_with: replacement_sample_level
+  - id: exact_typed_buffer_load_identity
+    match:
+      opcode: BufferLoad
+      capture: buffer_load
+      replace: buffer_load
+      prune_dead: true
+      operands:
+        - index: 1
+          kind: resource_handle
+          capture: buffer_handle
+          resource_class: SRV
+          resource_kind: TypedBuffer
+          resource_name: VirtualVoxel_PageIndexBuffer
+        - index: 2
+          kind: any
+          capture: index
+        - index: 3
+          kind: any
+          capture: wot
+    emit:
+      - kind: call
+        id: replacement_buffer_load
+        opcode: BufferLoad
+        type: I32
+        operands:
+          - index: 1
+            kind: capture
+            capture: buffer_handle
+          - index: 2
+            kind: capture
+            capture: index
+          - index: 3
+            kind: capture
+            capture: wot
+    replace_with: replacement_buffer_load
+
+steps:
+  - kind: apply_rule
+    rule: exact_blue_noise_textureload_identity
+    mode: Once
+  - kind: apply_rule
+    rule: like_scene_samplelevel_identity
+    mode: Once
+  - kind: apply_rule
+    rule: exact_typed_buffer_load_identity
+    mode: Once
+  - kind: verify_module

@@ -1,0 +1,325 @@
+version: 1
+
+options:
+  refresh_resources: false
+
+resources:
+  textures:
+    - id: fast_noise
+      name: FASTNoiseTexture
+      kind: Texture2DArray
+      element: F32
+      width: 2
+      binding:
+        bind: auto
+        space: 50
+  cbuffers:
+    - id: frame_constants
+      name: ISFastFrameConstantsCB
+      type: ISFastFrameConstants
+      size: 16
+      binding:
+        bind: auto
+        space: 0
+      fields:
+        - name: FrameIndex
+          type: U32
+          width: 1
+          offset: 0
+        - name: Padding
+          type: U32
+          width: 3
+          offset: 4
+
+rewrite_rules:
+  - id: ign_noise_rhs_inner
+    match:
+      opcode: Frc
+      capture: ign_root
+      replace: ign_root
+      prune_dead: true
+      operands:
+        - index: 1
+          kind: instruction
+          opcode: fmul
+          capture: outer_mul
+          operands:
+            - index: 0
+              kind: any
+              capture: scale
+            - index: 1
+              kind: dxop
+              opcode: Frc
+              capture: inner_frc
+              operands:
+                - index: 1
+                  kind: dxop
+                  opcode: Dot2
+                  capture: dot_call
+                  operands:
+                    - index: 1
+                      kind: any
+                    - index: 2
+                      kind: any
+    bindings:
+      - kind: dxop
+        capture: group_id_x
+        opcode: GroupId
+        operands:
+          - index: 1
+            kind: constant_int
+            value: 0
+      - kind: dxop
+        capture: group_id_y
+        opcode: GroupId
+        operands:
+          - index: 1
+            kind: constant_int
+            value: 1
+    emit:
+      - kind: create_handle
+        id: fast_noise_raw_handle
+        resource: fast_noise
+      - kind: annotate_handle
+        id: fast_noise_handle
+        handle: fast_noise_raw_handle
+        resource: fast_noise
+      - kind: create_handle
+        id: frame_raw_handle
+        resource: frame_constants
+      - kind: annotate_handle
+        id: frame_handle
+        handle: frame_raw_handle
+        resource: frame_constants
+      - kind: call
+        id: frame_load
+        opcode: CBufferLoadLegacy
+        type: I32
+        operands:
+          - index: 1
+            kind: temporary
+            id: frame_handle
+          - index: 2
+            kind: constant_int
+            value: 0
+      - kind: extract
+        id: frame_index
+        aggregate: frame_load
+        index: 0
+      - kind: binop
+        id: coord_x
+        opcode: URem
+        type: I32
+        operands:
+          - index: 0
+            kind: capture
+            capture: group_id_x
+          - index: 1
+            kind: constant_int
+            value: 128
+      - kind: binop
+        id: coord_y
+        opcode: URem
+        type: I32
+        operands:
+          - index: 0
+            kind: capture
+            capture: group_id_y
+          - index: 1
+            kind: constant_int
+            value: 128
+      - kind: binop
+        id: slice_index
+        opcode: URem
+        type: I32
+        operands:
+          - index: 0
+            kind: temporary
+            id: frame_index
+          - index: 1
+            kind: constant_int
+            value: 32
+      - kind: call
+        id: noise_load
+        opcode: TextureLoad
+        type: F32
+        operands:
+          - index: 1
+            kind: temporary
+            id: fast_noise_handle
+          - index: 2
+            kind: constant_int
+            value: 0
+          - index: 3
+            kind: temporary
+            id: coord_x
+          - index: 4
+            kind: temporary
+            id: coord_y
+          - index: 5
+            kind: temporary
+            id: slice_index
+          - index: 6
+            kind: undef
+          - index: 7
+            kind: undef
+          - index: 8
+            kind: undef
+      - kind: extract
+        id: noise_value
+        aggregate: noise_load
+        index: 0
+    replace_with: noise_value
+  - id: ign_noise_lhs_inner
+    match:
+      opcode: Frc
+      capture: ign_root
+      replace: ign_root
+      prune_dead: true
+      operands:
+        - index: 1
+          kind: instruction
+          opcode: fmul
+          capture: outer_mul
+          operands:
+            - index: 0
+              kind: dxop
+              opcode: Frc
+              capture: inner_frc
+              operands:
+                - index: 1
+                  kind: dxop
+                  opcode: Dot2
+                  capture: dot_call
+                  operands:
+                    - index: 1
+                      kind: any
+                    - index: 2
+                      kind: any
+            - index: 1
+              kind: any
+              capture: scale
+    bindings:
+      - kind: dxop
+        capture: group_id_x
+        opcode: GroupId
+        operands:
+          - index: 1
+            kind: constant_int
+            value: 0
+      - kind: dxop
+        capture: group_id_y
+        opcode: GroupId
+        operands:
+          - index: 1
+            kind: constant_int
+            value: 1
+    emit:
+      - kind: create_handle
+        id: fast_noise_raw_handle
+        resource: fast_noise
+      - kind: annotate_handle
+        id: fast_noise_handle
+        handle: fast_noise_raw_handle
+        resource: fast_noise
+      - kind: create_handle
+        id: frame_raw_handle
+        resource: frame_constants
+      - kind: annotate_handle
+        id: frame_handle
+        handle: frame_raw_handle
+        resource: frame_constants
+      - kind: call
+        id: frame_load
+        opcode: CBufferLoadLegacy
+        type: I32
+        operands:
+          - index: 1
+            kind: temporary
+            id: frame_handle
+          - index: 2
+            kind: constant_int
+            value: 0
+      - kind: extract
+        id: frame_index
+        aggregate: frame_load
+        index: 0
+      - kind: binop
+        id: coord_x
+        opcode: URem
+        type: I32
+        operands:
+          - index: 0
+            kind: capture
+            capture: group_id_x
+          - index: 1
+            kind: constant_int
+            value: 128
+      - kind: binop
+        id: coord_y
+        opcode: URem
+        type: I32
+        operands:
+          - index: 0
+            kind: capture
+            capture: group_id_y
+          - index: 1
+            kind: constant_int
+            value: 128
+      - kind: binop
+        id: slice_index
+        opcode: URem
+        type: I32
+        operands:
+          - index: 0
+            kind: temporary
+            id: frame_index
+          - index: 1
+            kind: constant_int
+            value: 32
+      - kind: call
+        id: noise_load
+        opcode: TextureLoad
+        type: F32
+        operands:
+          - index: 1
+            kind: temporary
+            id: fast_noise_handle
+          - index: 2
+            kind: constant_int
+            value: 0
+          - index: 3
+            kind: temporary
+            id: coord_x
+          - index: 4
+            kind: temporary
+            id: coord_y
+          - index: 5
+            kind: temporary
+            id: slice_index
+          - index: 6
+            kind: undef
+          - index: 7
+            kind: undef
+          - index: 8
+            kind: undef
+      - kind: extract
+        id: noise_value
+        aggregate: noise_load
+        index: 0
+    replace_with: noise_value
+
+steps:
+  - kind: add_texture
+    id: fast_noise
+  - kind: add_cbuffer
+    id: frame_constants
+  - kind: apply_rule
+    rule: ign_noise_rhs_inner
+    mode: UntilNoMatch
+    required: false
+  - kind: apply_rule
+    rule: ign_noise_lhs_inner
+    mode: UntilNoMatch
+    required: false
+  - kind: verify_module

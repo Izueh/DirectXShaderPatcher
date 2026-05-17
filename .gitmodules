@@ -1,0 +1,3 @@
+[submodule "external/DirectXShaderCompiler"]
+	path = external/DirectXShaderCompiler
+	url = https://github.com/microsoft/DirectXShaderCompiler.git

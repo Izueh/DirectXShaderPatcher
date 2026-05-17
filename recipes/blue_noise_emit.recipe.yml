@@ -1,0 +1,463 @@
+version: 1
+
+options:
+  refresh_resources: false
+
+resources:
+  textures:
+    - id: fast_noise
+      name: FASTNoiseTexture
+      kind: Texture2DArray
+      element: F32
+      width: 2
+      binding:
+        bind: auto
+        space: 50
+  cbuffers:
+    - id: frame_constants
+      name: ISFastFrameConstantsCB
+      type: ISFastFrameConstants
+      size: 16
+      binding:
+        bind: auto
+        space: 0
+      fields:
+        - name: FrameIndex
+          type: U32
+          width: 1
+          offset: 0
+        - name: Padding
+          type: U32
+          width: 3
+          offset: 4
+
+rewrite_rules:
+  - id: blue_noise_scalar_slice_lhs
+    match:
+      opcode: TextureLoad
+      capture: texture_load
+      replace: texture_load
+      prune_dead: true
+      operands:
+        - index: 1
+          kind: resource_handle
+          capture: handle
+          resource_class: SRV
+          resource_kind: Texture2D
+          bind: 7
+          space: 0
+        - index: 3
+          kind: any
+          capture: coord_x
+        - index: 4
+          kind: instruction
+          opcode: add
+          operands:
+            - index: 0
+              kind: instruction
+              opcode: mul
+              operands:
+                - index: 0
+                  kind: instruction
+                  opcode: and
+                - index: 1
+                  kind: any
+            - index: 1
+              kind: any
+              capture: coord_y
+    emit:
+      - kind: create_handle
+        id: fast_noise_raw_handle
+        resource: fast_noise
+      - kind: annotate_handle
+        id: fast_noise_handle
+        handle: fast_noise_raw_handle
+        resource: fast_noise
+      - kind: create_handle
+        id: frame_raw_handle
+        resource: frame_constants
+      - kind: annotate_handle
+        id: frame_handle
+        handle: frame_raw_handle
+        resource: frame_constants
+      - kind: call
+        id: frame_load
+        opcode: CBufferLoadLegacy
+        type: I32
+        operands:
+          - index: 1
+            kind: temporary
+            id: frame_handle
+          - index: 2
+            kind: constant_int
+            value: 0
+      - kind: extract
+        id: frame_index
+        aggregate: frame_load
+        index: 0
+      - kind: binop
+        id: slice_index
+        opcode: URem
+        type: I32
+        operands:
+          - index: 0
+            kind: temporary
+            id: frame_index
+          - index: 1
+            kind: constant_int
+            value: 32
+      - kind: call
+        id: noise_load
+        opcode: TextureLoad
+        type: F32
+        operands:
+          - index: 1
+            kind: temporary
+            id: fast_noise_handle
+          - index: 2
+            kind: constant_int
+            value: 0
+          - index: 3
+            kind: capture
+            capture: coord_x
+          - index: 4
+            kind: capture
+            capture: coord_y
+          - index: 5
+            kind: temporary
+            id: slice_index
+          - index: 6
+            kind: undef
+          - index: 7
+            kind: undef
+          - index: 8
+            kind: undef
+    replace_with: noise_load
+  - id: blue_noise_scalar_slice_rhs
+    match:
+      opcode: TextureLoad
+      capture: texture_load
+      replace: texture_load
+      prune_dead: true
+      operands:
+        - index: 1
+          kind: resource_handle
+          capture: handle
+          resource_class: SRV
+          resource_kind: Texture2D
+          bind: 7
+          space: 0
+        - index: 3
+          kind: any
+          capture: coord_x
+        - index: 4
+          kind: instruction
+          opcode: add
+          operands:
+            - index: 0
+              kind: any
+              capture: coord_y
+            - index: 1
+              kind: instruction
+              opcode: mul
+              operands:
+                - index: 0
+                  kind: instruction
+                  opcode: and
+                - index: 1
+                  kind: any
+    emit:
+      - kind: create_handle
+        id: fast_noise_raw_handle
+        resource: fast_noise
+      - kind: annotate_handle
+        id: fast_noise_handle
+        handle: fast_noise_raw_handle
+        resource: fast_noise
+      - kind: create_handle
+        id: frame_raw_handle
+        resource: frame_constants
+      - kind: annotate_handle
+        id: frame_handle
+        handle: frame_raw_handle
+        resource: frame_constants
+      - kind: call
+        id: frame_load
+        opcode: CBufferLoadLegacy
+        type: I32
+        operands:
+          - index: 1
+            kind: temporary
+            id: frame_handle
+          - index: 2
+            kind: constant_int
+            value: 0
+      - kind: extract
+        id: frame_index
+        aggregate: frame_load
+        index: 0
+      - kind: binop
+        id: slice_index
+        opcode: URem
+        type: I32
+        operands:
+          - index: 0
+            kind: temporary
+            id: frame_index
+          - index: 1
+            kind: constant_int
+            value: 32
+      - kind: call
+        id: noise_load
+        opcode: TextureLoad
+        type: F32
+        operands:
+          - index: 1
+            kind: temporary
+            id: fast_noise_handle
+          - index: 2
+            kind: constant_int
+            value: 0
+          - index: 3
+            kind: capture
+            capture: coord_x
+          - index: 4
+            kind: capture
+            capture: coord_y
+          - index: 5
+            kind: temporary
+            id: slice_index
+          - index: 6
+            kind: undef
+          - index: 7
+            kind: undef
+          - index: 8
+            kind: undef
+    replace_with: noise_load
+  - id: blue_noise_vec2_slice_lhs
+    match:
+      opcode: TextureLoad
+      capture: texture_load
+      replace: texture_load
+      prune_dead: true
+      operands:
+        - index: 1
+          kind: resource_handle
+          capture: handle
+          resource_class: SRV
+          resource_kind: Texture2D
+          bind: 8
+          space: 0
+        - index: 3
+          kind: any
+          capture: coord_x
+        - index: 4
+          kind: instruction
+          opcode: add
+          operands:
+            - index: 0
+              kind: instruction
+              opcode: mul
+              operands:
+                - index: 0
+                  kind: instruction
+                  opcode: and
+                - index: 1
+                  kind: any
+            - index: 1
+              kind: any
+              capture: coord_y
+    emit:
+      - kind: create_handle
+        id: fast_noise_raw_handle
+        resource: fast_noise
+      - kind: annotate_handle
+        id: fast_noise_handle
+        handle: fast_noise_raw_handle
+        resource: fast_noise
+      - kind: create_handle
+        id: frame_raw_handle
+        resource: frame_constants
+      - kind: annotate_handle
+        id: frame_handle
+        handle: frame_raw_handle
+        resource: frame_constants
+      - kind: call
+        id: frame_load
+        opcode: CBufferLoadLegacy
+        type: I32
+        operands:
+          - index: 1
+            kind: temporary
+            id: frame_handle
+          - index: 2
+            kind: constant_int
+            value: 0
+      - kind: extract
+        id: frame_index
+        aggregate: frame_load
+        index: 0
+      - kind: binop
+        id: slice_index
+        opcode: URem
+        type: I32
+        operands:
+          - index: 0
+            kind: temporary
+            id: frame_index
+          - index: 1
+            kind: constant_int
+            value: 32
+      - kind: call
+        id: noise_load
+        opcode: TextureLoad
+        type: F32
+        operands:
+          - index: 1
+            kind: temporary
+            id: fast_noise_handle
+          - index: 2
+            kind: constant_int
+            value: 0
+          - index: 3
+            kind: capture
+            capture: coord_x
+          - index: 4
+            kind: capture
+            capture: coord_y
+          - index: 5
+            kind: temporary
+            id: slice_index
+          - index: 6
+            kind: undef
+          - index: 7
+            kind: undef
+          - index: 8
+            kind: undef
+    replace_with: noise_load
+  - id: blue_noise_vec2_slice_rhs
+    match:
+      opcode: TextureLoad
+      capture: texture_load
+      replace: texture_load
+      prune_dead: true
+      operands:
+        - index: 1
+          kind: resource_handle
+          capture: handle
+          resource_class: SRV
+          resource_kind: Texture2D
+          bind: 8
+          space: 0
+        - index: 3
+          kind: any
+          capture: coord_x
+        - index: 4
+          kind: instruction
+          opcode: add
+          operands:
+            - index: 0
+              kind: any
+              capture: coord_y
+            - index: 1
+              kind: instruction
+              opcode: mul
+              operands:
+                - index: 0
+                  kind: instruction
+                  opcode: and
+                - index: 1
+                  kind: any
+    emit:
+      - kind: create_handle
+        id: fast_noise_raw_handle
+        resource: fast_noise
+      - kind: annotate_handle
+        id: fast_noise_handle
+        handle: fast_noise_raw_handle
+        resource: fast_noise
+      - kind: create_handle
+        id: frame_raw_handle
+        resource: frame_constants
+      - kind: annotate_handle
+        id: frame_handle
+        handle: frame_raw_handle
+        resource: frame_constants
+      - kind: call
+        id: frame_load
+        opcode: CBufferLoadLegacy
+        type: I32
+        operands:
+          - index: 1
+            kind: temporary
+            id: frame_handle
+          - index: 2
+            kind: constant_int
+            value: 0
+      - kind: extract
+        id: frame_index
+        aggregate: frame_load
+        index: 0
+      - kind: binop
+        id: slice_index
+        opcode: URem
+        type: I32
+        operands:
+          - index: 0
+            kind: temporary
+            id: frame_index
+          - index: 1
+            kind: constant_int
+            value: 32
+      - kind: call
+        id: noise_load
+        opcode: TextureLoad
+        type: F32
+        operands:
+          - index: 1
+            kind: temporary
+            id: fast_noise_handle
+          - index: 2
+            kind: constant_int
+            value: 0
+          - index: 3
+            kind: capture
+            capture: coord_x
+          - index: 4
+            kind: capture
+            capture: coord_y
+          - index: 5
+            kind: temporary
+            id: slice_index
+          - index: 6
+            kind: undef
+          - index: 7
+            kind: undef
+          - index: 8
+            kind: undef
+    replace_with: noise_load
+
+steps:
+  - kind: add_texture
+    id: fast_noise
+  - kind: add_cbuffer
+    id: frame_constants
+  - kind: apply_rule
+    rule: blue_noise_scalar_slice_lhs
+    mode: UntilNoMatch
+    required: false
+  - kind: apply_rule
+    rule: blue_noise_scalar_slice_rhs
+    mode: UntilNoMatch
+    required: false
+  - kind: apply_rule
+    rule: blue_noise_vec2_slice_lhs
+    mode: UntilNoMatch
+    required: false
+  - kind: apply_rule
+    rule: blue_noise_vec2_slice_rhs
+    mode: UntilNoMatch
+    required: false
+  - kind: prune_dead_code
+  - kind: refresh_resources
+  - kind: verify_module
