@@ -6,7 +6,7 @@
 
 #include <atlbase.h>
 
-#include "../DXIL Assembler/DxilAssemblerLib.h"
+#include "../include/DirectXShaderPatcher.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/raw_ostream.h"
 

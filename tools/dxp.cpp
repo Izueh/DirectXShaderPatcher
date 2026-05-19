@@ -1,4 +1,4 @@
-#include "../DXIL Assembler/DxilAssemblerLib.h"
+#include "../include/DirectXShaderPatcher.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -42,20 +42,11 @@ static bool WriteBinaryFile(const std::string &path,
   return !!file;
 }
 
-static std::string Trim(std::string value) {
-  const size_t first = value.find_first_not_of(" \t\r\n");
-  if (first == std::string::npos)
-    return std::string();
-
-  const size_t last = value.find_last_not_of(" \t\r\n");
-  return value.substr(first, last - first + 1);
-}
-
 } // namespace
 
 int main(int argc, char **argv) {
   if (argc != 4 && argc != 5) {
-    std::cerr << "Usage: dxil_patch_tool <input.cso> <recipe.recipe.yml> <output.cso> [--trace]\n"
+    std::cerr << "Usage: dxp <input.cso> <recipe.recipe.yml> <output.cso> [--trace]\n"
               << "Recipe files are YAML documents.\n";
     return 1;
   }

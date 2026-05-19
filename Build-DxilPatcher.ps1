@@ -25,7 +25,7 @@ try {
     )
 
     & cmake @cmakeArgs
-    & cmake --build $buildRoot --config $Configuration --target dxil_patch_tool
+    & cmake --build $buildRoot --config $Configuration --target dxp
 }
 finally {
     Pop-Location

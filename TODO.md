@@ -10,3 +10,4 @@
     - Example of using the various helpers without the Recipe API.
 7. Add README.md describing capabilities and other important information. A separate readme describing the API and recipe file format in detail.
 8. Figure out licensing (Do we have to use same license as DirectXShaderCompiler library?)
+9. Investigate the reproducible Debug test crash in `declarative_blue_noise_emit_recipe_0x56C468C3`. As of 2026-05-18, `ctest -C Debug --output-on-failure` in `build/msvc-debug` passes 20/21 tests, but this case segfaults consistently when run as `ctest -C Debug -R declarative_blue_noise_emit_recipe_0x56C468C3 --output-on-failure`.

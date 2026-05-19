@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(DxilAssemblerSuperbuild LANGUAGES C CXX)
+project(DirectXShaderPatcher LANGUAGES C CXX)
 
 enable_testing()
 
@@ -33,10 +33,33 @@ set(HLSL_INCLUDE_TESTS OFF CACHE BOOL "" FORCE)
 set(HLSL_BUILD_DXILCONV OFF CACHE BOOL "" FORCE)
 set(SPIRV_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 
+if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC")
+  set(ENABLE_SPIRV_CODEGEN OFF CACHE BOOL "" FORCE)
+  set(LLVM_ENABLE_WERROR OFF CACHE BOOL "" FORCE)
+  set(SPIRV_WERROR OFF CACHE BOOL "" FORCE)
+
+  set(_dxp_clang_warning_suppressions
+      " -Wno-c++98-compat -Wno-c++98-compat-pedantic -Wno-shadow-field -Wno-unsafe-buffer-usage -Wno-unsafe-buffer-usage-in-container -Wno-unsafe-buffer-usage-in-libc-call")
+
+  foreach(_dxp_flag_var CMAKE_C_FLAGS CMAKE_CXX_FLAGS)
+    string(FIND "${${_dxp_flag_var}}" "-Wno-c++98-compat" _dxp_has_clang_suppressions)
+    if(_dxp_has_clang_suppressions EQUAL -1)
+      set(${_dxp_flag_var} "${${_dxp_flag_var}}${_dxp_clang_warning_suppressions}" CACHE STRING "" FORCE)
+    endif()
+  endforeach()
+
+  message(STATUS "Configuring DXC compatibility mode for clang-cl.")
+endif()
+
 add_subdirectory("${DXC_SOURCE_DIR}" "${DXC_BINARY_DIR}")
 
-add_library(dxil_assembler_lib STATIC
-  "DXIL Assembler/DXIL Assembler.cpp"
+add_library(dxp_lib STATIC
+  "src/dxp/sm6/Container.cpp"
+  "src/dxp/sm6/Parse.cpp"
+  "src/dxp/sm6/Patch.cpp"
+  "src/dxp/sm6/Recipe.cpp"
+  "src/dxp/sm6/Resources.cpp"
+  "src/dxp/sm6/Transforms.cpp"
 )
 
 add_library(dxil_patch_test_support STATIC
@@ -44,8 +67,8 @@ add_library(dxil_patch_test_support STATIC
   "test/ComputeNoiseSupport.cpp"
 )
 
-add_executable(dxil_patch_tool
-  "tools/dxil_patch_tool.cpp"
+add_executable(dxp
+  "tools/dxp.cpp"
 )
 
 add_executable(dxil_patch_texture_add_test
@@ -108,7 +131,7 @@ add_executable(dxil_patch_declarative_resource_name_match_recipe_test
   "test/declarative_resource_name_match_recipe_0x56C468C3.cpp"
 )
 
-target_compile_definitions(dxil_assembler_lib PRIVATE
+target_compile_definitions(dxp_lib PRIVATE
   NOMINMAX
   $<$<CONFIG:Debug>:_HAS_ITERATOR_DEBUGGING=0>
   $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
@@ -120,7 +143,7 @@ target_compile_definitions(dxil_patch_test_support PRIVATE
   $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
 )
 
-target_compile_definitions(dxil_patch_tool PRIVATE
+target_compile_definitions(dxp PRIVATE
   NOMINMAX
   $<$<CONFIG:Debug>:_HAS_ITERATOR_DEBUGGING=0>
   $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
@@ -216,7 +239,8 @@ target_compile_definitions(dxil_patch_declarative_resource_name_match_recipe_tes
   $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
 )
 
-target_include_directories(dxil_assembler_lib PUBLIC
+target_include_directories(dxp_lib PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}/include"
   "${DXC_SOURCE_DIR}/include"
   "${DXC_BINARY_DIR}/include"
   "${DXC_BINARY_DIR}/tools/clang/include"
@@ -230,7 +254,7 @@ target_include_directories(dxil_patch_test_support PUBLIC
   "${DXC_SOURCE_DIR}/tools/clang/include"
 )
 
-target_include_directories(dxil_patch_tool PRIVATE
+target_include_directories(dxp PRIVATE
   "${DXC_SOURCE_DIR}/include"
   "${DXC_BINARY_DIR}/include"
   "${DXC_BINARY_DIR}/tools/clang/include"
@@ -342,7 +366,7 @@ target_include_directories(dxil_patch_declarative_resource_name_match_recipe_tes
   "${DXC_SOURCE_DIR}/tools/clang/include"
 )
 
-target_link_libraries(dxil_assembler_lib PUBLIC
+target_link_libraries(dxp_lib PUBLIC
   LLVMBitReader
   LLVMBitWriter
   LLVMCore
@@ -357,14 +381,14 @@ target_link_libraries(dxil_assembler_lib PUBLIC
 )
 
 target_link_libraries(dxil_patch_test_support PUBLIC
-  dxil_assembler_lib
+  dxp_lib
 )
 
-target_link_libraries(dxil_patch_tool PRIVATE
-  dxil_assembler_lib
+target_link_libraries(dxp PRIVATE
+  dxp_lib
 )
 
-set_target_properties(dxil_patch_tool PROPERTIES
+set_target_properties(dxp PROPERTIES
   VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
