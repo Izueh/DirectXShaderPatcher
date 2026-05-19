@@ -21,17 +21,6 @@
       "buildCommandArgs": "-v",
       "ctestCommandArgs": "",
       "inheritEnvironments": [ "msvc_x64_x64" ]
-    },
-    {
-      "name": "x64-clang-cl-Release",
-      "generator": "Ninja",
-      "configurationType": "RelWithDebInfo",
-      "buildRoot": "${projectDir}\\out\\build\\${name}",
-      "installRoot": "${projectDir}\\out\\install\\${name}",
-      "cmakeCommandArgs": "-C ${projectDir}\\external\\DirectXShaderCompiler\\cmake\\caches\\PredefinedParams.cmake -DDXP_ENABLE_COMPILER_CACHE=On -DENABLE_SPIRV_CODEGEN=Off -DLLVM_ENABLE_ASSERTIONS=On -DLLVM_ENABLE_WERROR=Off -DSPIRV_WERROR=Off",
-      "buildCommandArgs": "-v",
-      "ctestCommandArgs": "",
-      "inheritEnvironments": [ "clang_cl_x64_x64" ]
     }
   ]
 }

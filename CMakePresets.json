@@ -26,18 +26,6 @@
       }
     },
     {
-      "name": "ninja-clang-base",
-      "hidden": true,
-      "inherits": "ninja-base",
-      "cacheVariables": {
-        "CMAKE_C_COMPILER": "clang-cl",
-        "CMAKE_CXX_COMPILER": "clang-cl",
-        "ENABLE_SPIRV_CODEGEN": "OFF",
-        "LLVM_ENABLE_WERROR": "OFF",
-        "SPIRV_WERROR": "OFF"
-      }
-    },
-    {
       "name": "x64-debug",
       "inherits": "ninja-base",
       "displayName": "x64 Debug (Ninja)",
@@ -54,15 +42,6 @@
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "CMAKE_POLICY_DEFAULT_CMP0091": "NEW"
       }
-    },
-    {
-      "name": "x64-clang-release",
-      "inherits": "ninja-clang-base",
-      "displayName": "x64 Release (clang-cl, Ninja)",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "CMAKE_POLICY_DEFAULT_CMP0091": "NEW"
-      }
     }
   ],
   "buildPresets": [
@@ -75,19 +54,8 @@
       "configurePreset": "x64-release"
     },
     {
-      "name": "x64-clang-release",
-      "configurePreset": "x64-clang-release"
-    },
-    {
       "name": "tool-debug",
       "configurePreset": "x64-debug",
-      "targets": [
-        "dxp"
-      ]
-    },
-    {
-      "name": "tool-clang-release",
-      "configurePreset": "x64-clang-release",
       "targets": [
         "dxp"
       ]

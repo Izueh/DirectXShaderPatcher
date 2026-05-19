@@ -33,24 +33,6 @@ set(HLSL_INCLUDE_TESTS OFF CACHE BOOL "" FORCE)
 set(HLSL_BUILD_DXILCONV OFF CACHE BOOL "" FORCE)
 set(SPIRV_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 
-if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC")
-  set(ENABLE_SPIRV_CODEGEN OFF CACHE BOOL "" FORCE)
-  set(LLVM_ENABLE_WERROR OFF CACHE BOOL "" FORCE)
-  set(SPIRV_WERROR OFF CACHE BOOL "" FORCE)
-
-  set(_dxp_clang_warning_suppressions
-      " -Wno-c++98-compat -Wno-c++98-compat-pedantic -Wno-shadow-field -Wno-unsafe-buffer-usage -Wno-unsafe-buffer-usage-in-container -Wno-unsafe-buffer-usage-in-libc-call")
-
-  foreach(_dxp_flag_var CMAKE_C_FLAGS CMAKE_CXX_FLAGS)
-    string(FIND "${${_dxp_flag_var}}" "-Wno-c++98-compat" _dxp_has_clang_suppressions)
-    if(_dxp_has_clang_suppressions EQUAL -1)
-      set(${_dxp_flag_var} "${${_dxp_flag_var}}${_dxp_clang_warning_suppressions}" CACHE STRING "" FORCE)
-    endif()
-  endforeach()
-
-  message(STATUS "Configuring DXC compatibility mode for clang-cl.")
-endif()
-
 add_subdirectory("${DXC_SOURCE_DIR}" "${DXC_BINARY_DIR}")
 
 add_library(dxp_lib STATIC
