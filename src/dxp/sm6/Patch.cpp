@@ -12,6 +12,7 @@
 // NOLINTBEGIN(misc-include-cleaner)
 #include <ObjIdl.h>
 #include <atlbase.h>
+#include "dxc/dxcapi.h"
 // NOLINTEND(misc-include-cleaner)
 
 #include "Container.h"
@@ -101,6 +102,74 @@ CreateMemoryStreamFromBytes(IMalloc *mallocInterface,
     return false;
   }
 
+  return true;
+}
+
+static bool ValidatePatchedContainerOrReport(std::vector<uint8_t> &container) {
+  CComPtr<IDxcUtils> dxcUtils;
+  if (DXC_FAILED(DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&dxcUtils))) ||
+      !dxcUtils) {
+    std::cerr << "Failed to create IDxcUtils for DXIL validation.\n";
+    return false;
+  }
+
+  CComPtr<IDxcValidator> validator;
+  if (DXC_FAILED(
+          DxcCreateInstance(CLSID_DxcValidator, IID_PPV_ARGS(&validator))) ||
+      !validator) {
+    std::cerr << "Failed to create IDxcValidator for DXIL validation.\n";
+    return false;
+  }
+
+  CComPtr<IDxcBlobEncoding> containerBlob;
+  if (DXC_FAILED(dxcUtils->CreateBlob(container.data(),
+                                      static_cast<UINT32>(container.size()), 0,
+                                      &containerBlob)) ||
+      !containerBlob) {
+    std::cerr << "Failed to create DXIL blob for validation.\n";
+    return false;
+  }
+
+  CComPtr<IDxcOperationResult> validationResult;
+  if (DXC_FAILED(validator->Validate(containerBlob,
+                                     DxcValidatorFlags_InPlaceEdit,
+                                     &validationResult)) ||
+      !validationResult) {
+    std::cerr << "DXIL validator invocation failed.\n";
+    return false;
+  }
+
+  HRESULT validationStatus = E_FAIL;
+  if (DXC_FAILED(validationResult->GetStatus(&validationStatus))) {
+    std::cerr << "Failed to query DXIL validator status.\n";
+    return false;
+  }
+
+  if (DXC_FAILED(validationStatus)) {
+    std::cerr << "Patched container failed DXIL validation.\n";
+
+    CComPtr<IDxcBlobEncoding> errorBlob;
+    if (SUCCEEDED(validationResult->GetErrorBuffer(&errorBlob)) && errorBlob) {
+      CComPtr<IDxcBlobUtf8> errorText;
+      if (SUCCEEDED(dxcUtils->GetBlobAsUtf8(errorBlob, &errorText)) &&
+          errorText && errorText->GetStringLength() != 0) {
+        std::cerr.write(errorText->GetStringPointer(),
+                        static_cast<std::streamsize>(
+                            errorText->GetStringLength()));
+        if (errorText->GetStringPointer()[errorText->GetStringLength() - 1] !=
+            '\n') {
+          std::cerr << '\n';
+        }
+      }
+    }
+
+    return false;
+  }
+
+  const uint8_t *validatedBytes =
+      reinterpret_cast<const uint8_t *>(containerBlob->GetBufferPointer());
+  const size_t validatedSize = static_cast<size_t>(containerBlob->GetBufferSize());
+  container.assign(validatedBytes, validatedBytes + validatedSize);
   return true;
 }
 
@@ -210,15 +279,20 @@ bool PatchDxilContainerInMemory(const DxilRecipe &recipe, const void *inputData,
   }
 
   TracePatchMessage(traceEnabled, "patch: execute recipe");
+  DxilRecipeContext localContext;
+  DxilRecipeContext *recipeContext = outContext != nullptr ? outContext : &localContext;
   if (!ExecuteDxilRecipe(recipe, *shader->module, *shader->dxilModule,
-                         options.recipeExecutionOptions, outContext)) {
+                         options.recipeExecutionOptions, recipeContext)) {
     return false;
   }
 
-  if (options.refreshResources) {
+  const bool shouldRefreshResources = recipeContext->resourceBindingsChanged &&
+                                      !recipeContext->resourcesRefreshed;
+  if (shouldRefreshResources) {
     TracePatchMessage(traceEnabled, "patch: refresh resources");
     RefreshDxilAfterResourceMutation(
         *shader->dxilModule, options.recipeExecutionOptions.traceEnabled);
+    recipeContext->resourcesRefreshed = true;
   }
 
   // Always refresh the OP cache before serialization — pruning may have
@@ -229,12 +303,19 @@ bool PatchDxilContainerInMemory(const DxilRecipe &recipe, const void *inputData,
       op->RefreshCache();
   }
 
-  if (options.verifyModule && !dxp::sm6::VerifyModuleOrReport(*shader->module))
-    return false;
+  const bool shouldVerifyModule = recipeContext->moduleModified &&
+                                  !recipeContext->moduleVerified;
+  if (shouldVerifyModule) {
+    if (!dxp::sm6::VerifyModuleOrReport(*shader->module))
+      return false;
+    recipeContext->moduleVerified = true;
+  }
 
   bool ok = SerializePatchedContainer(*shader->dxilModule,
                                       SerializeModuleToBitcode(*shader->module),
                                       outputContainer);
+  if (ok && recipeContext->moduleModified)
+    ok = ValidatePatchedContainerOrReport(outputContainer);
   if (ok)
     shader.release();
   return ok;

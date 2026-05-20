@@ -2,8 +2,6 @@ version: 1
 
 options:
   restore_reflection: true
-  refresh_resources: true
-  verify_module: true
 
 resources:
   textures:

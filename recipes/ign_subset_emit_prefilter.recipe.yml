@@ -28,6 +28,38 @@ resources:
           width: 3
           offset: 4
 
+prefilters:
+  - id: ign_noise_rhs_probe
+    opcode: Frc
+    capture: ign_probe_root
+    operands:
+      - index: 1
+        kind: instruction
+        opcode: fmul
+        operands:
+          - index: 1
+            kind: dxop
+            opcode: Frc
+            operands:
+              - index: 1
+                kind: dxop
+                opcode: Dot2
+  - id: ign_noise_lhs_probe
+    opcode: Frc
+    capture: ign_probe_root
+    operands:
+      - index: 1
+        kind: instruction
+        opcode: fmul
+        operands:
+          - index: 0
+            kind: dxop
+            opcode: Frc
+            operands:
+              - index: 1
+                kind: dxop
+                opcode: Dot2
+
 rewrite_rules:
   - id: ign_noise_rhs_inner
     match:
@@ -307,6 +339,10 @@ rewrite_rules:
     replace_with: noise_value
 
 steps:
+  - kind: prefilter
+    patterns:
+      - ign_noise_rhs_probe
+      - ign_noise_lhs_probe
   - kind: add_texture
     id: fast_noise
   - kind: add_cbuffer

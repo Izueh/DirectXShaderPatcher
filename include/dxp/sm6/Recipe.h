@@ -25,6 +25,10 @@ struct DxilRecipeStepResult {
   bool changed = false;
   unsigned matchCount = 0;
   bool invalidatedAnalyses = false;
+  bool stopRecipe = false;
+  bool resourceBindingsChanged = false;
+  bool resourcesRefreshed = false;
+  bool moduleVerified = false;
 };
 
 struct DxilRecipeContext {
@@ -33,6 +37,10 @@ struct DxilRecipeContext {
   llvm::Function *entryFunction = nullptr;
   bool traceEnabled = false;
   unsigned totalRuleMatches = 0;
+  bool moduleModified = false;
+  bool resourceBindingsChanged = false;
+  bool resourcesRefreshed = false;
+  bool moduleVerified = false;
   std::string lastError;
   std::vector<std::string> diagnostics;
   std::unordered_map<std::string, TextureResourceDesc> textures;
@@ -88,7 +96,8 @@ using DxilRecipeStepExecutor =
 
 DxilRecipeStepResult MakeRecipeStepSuccess(bool changed = false,
                                            unsigned matchCount = 0,
-                                           bool invalidatedAnalyses = false);
+                                           bool invalidatedAnalyses = false,
+                                           bool stopRecipe = false);
 DxilRecipeStepResult MakeRecipeStepFailure(DxilRecipeContext &context,
                                            std::string message);
 
@@ -118,8 +127,10 @@ DxilRecipeStep MakeAddCBufferStep(std::string id, CBufferDesc desc);
 DxilRecipeStep MakeAddSamplerStep(std::string id, SamplerDesc desc);
 DxilRecipeStep MakeApplyRewriteRulesStep(
     std::string name, std::vector<DxilRewriteRule> rules,
-  DxilRecipeRuleApplicationMode mode = DxilRecipeRuleApplicationMode::First,
+    DxilRecipeRuleApplicationMode mode = DxilRecipeRuleApplicationMode::First,
     bool required = true);
+DxilRecipeStep MakePrefilterStep(std::string name,
+                 std::vector<DxilCallPattern> patterns);
 DxilRecipeStep MakeRefreshResourcesStep(std::string name = "refresh_resources");
 DxilRecipeStep MakePruneDeadCodeStep(std::string name = "prune_dead_code");
 DxilRecipeStep MakeVerifyModuleStep(std::string name = "verify_module");

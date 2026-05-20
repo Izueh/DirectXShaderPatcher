@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 
 project(DirectXShaderPatcher LANGUAGES C CXX)
 
-enable_testing()
+include(CTest)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -113,6 +113,10 @@ add_executable(dxil_patch_declarative_resource_name_match_recipe_test
   "test/declarative_resource_name_match_recipe_0x56C468C3.cpp"
 )
 
+add_executable(dxil_patch_declarative_prefilter_recipe_test
+  "test/declarative_prefilter_recipe_0x56C468C3.cpp"
+)
+
 target_compile_definitions(dxp_lib PRIVATE
   NOMINMAX
   $<$<CONFIG:Debug>:_HAS_ITERATOR_DEBUGGING=0>
@@ -216,6 +220,12 @@ target_compile_definitions(dxil_patch_declarative_blue_noise_emit_recipe_test PR
 )
 
 target_compile_definitions(dxil_patch_declarative_resource_name_match_recipe_test PRIVATE
+  NOMINMAX
+  $<$<CONFIG:Debug>:_HAS_ITERATOR_DEBUGGING=0>
+  $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+)
+
+target_compile_definitions(dxil_patch_declarative_prefilter_recipe_test PRIVATE
   NOMINMAX
   $<$<CONFIG:Debug>:_HAS_ITERATOR_DEBUGGING=0>
   $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
@@ -348,6 +358,13 @@ target_include_directories(dxil_patch_declarative_resource_name_match_recipe_tes
   "${DXC_SOURCE_DIR}/tools/clang/include"
 )
 
+target_include_directories(dxil_patch_declarative_prefilter_recipe_test PRIVATE
+  "${DXC_SOURCE_DIR}/include"
+  "${DXC_BINARY_DIR}/include"
+  "${DXC_BINARY_DIR}/tools/clang/include"
+  "${DXC_SOURCE_DIR}/tools/clang/include"
+)
+
 target_link_libraries(dxp_lib PUBLIC
   LLVMBitReader
   LLVMBitWriter
@@ -359,6 +376,7 @@ target_link_libraries(dxp_lib PUBLIC
   LLVMHLSL
   LLVMPasses
   LLVMSupport
+  dxcompiler
   Ole32
 )
 
@@ -435,6 +453,10 @@ target_link_libraries(dxil_patch_declarative_resource_name_match_recipe_test PRI
   dxil_patch_test_support
 )
 
+target_link_libraries(dxil_patch_declarative_prefilter_recipe_test PRIVATE
+  dxil_patch_test_support
+)
+
 set_target_properties(dxil_patch_texture_add_test PROPERTIES
   VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
@@ -506,6 +528,11 @@ set_target_properties(dxil_patch_declarative_blue_noise_emit_recipe_test PROPERT
 )
 
 set_target_properties(dxil_patch_declarative_resource_name_match_recipe_test PROPERTIES
+  VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+set_target_properties(dxil_patch_declarative_prefilter_recipe_test PROPERTIES
   VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
@@ -623,6 +650,13 @@ add_test(
 )
 
 add_test(
+  NAME declarative_ign_emit_prefilter_recipe_0x56C468C3
+  COMMAND dxil_patch_declarative_ign_emit_recipe_test
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/0x56C468C3.cs_6_6.cso"
+          "${CMAKE_CURRENT_SOURCE_DIR}/recipes/ign_subset_emit_prefilter.recipe.yml"
+)
+
+add_test(
   NAME declarative_ign_emit_inmemory_recipe_0x56C468C3
   COMMAND dxil_patch_declarative_ign_emit_inmemory_recipe_test
           "${CMAKE_CURRENT_SOURCE_DIR}/test/0x56C468C3.cs_6_6.cso"
@@ -648,4 +682,10 @@ add_test(
   COMMAND dxil_patch_declarative_resource_name_match_recipe_test
           "${CMAKE_CURRENT_SOURCE_DIR}/test/0x56C468C3.cs_6_6.cso"
           "${CMAKE_CURRENT_SOURCE_DIR}/recipes/resource_name_match.recipe.yml"
+)
+
+add_test(
+  NAME declarative_prefilter_recipe_0x56C468C3
+  COMMAND dxil_patch_declarative_prefilter_recipe_test
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/0x56C468C3.cs_6_6.cso"
 )

@@ -8,16 +8,23 @@ Top-level shape:
 version: 1
 options:
   restore_reflection: true
-  refresh_resources: false
-  verify_module: true
 resources:
   textures: []
   texture_uavs: []
   cbuffers: []
   samplers: []
+prefilters: []
 rewrite_rules: []
 steps: []
 ```
+
+Top-level `prefilters` are optional lean probe patterns used only for fast shader triage.
+
+Top-level `options` currently support only `restore_reflection`.
+
+- Final resource refresh runs automatically after resource-binding mutations if the recipe has not already executed an explicit `refresh_resources` step.
+- Final LLVM verification and DXC container validation run automatically after module mutations if the recipe has not already executed an explicit `verify_module` step.
+- Use `refresh_resources` and `verify_module` as step kinds only when you need those operations to happen at a specific point inside the recipe.
 
 ## Resources
 
@@ -151,6 +158,23 @@ Emit operand kinds:
 - `resource`
 - `undef`
 
+## Prefilters
+
+Prefilters are intentionally lighter than rewrite rules. They only describe a call pattern to probe for; they do not carry replacement state, bindings, or emit sequences.
+
+```yaml
+prefilters:
+  - id: ign_signature_probe
+    opcode: Frc
+    capture: probe_root
+    operands:
+      - index: 1
+        kind: dxop
+        opcode: Dot2
+```
+
+Operand matching inside `prefilters` uses the same operand schema as rewrite-rule `match.operands`.
+
 ## Steps
 
 Execution order is defined only by `steps`.
@@ -161,6 +185,7 @@ Supported step kinds:
 - `add_texture_uav`
 - `add_cbuffer`
 - `add_sampler`
+- `prefilter`
 - `apply_rule`
 - `apply_rules`
 - `expect_texture`
@@ -176,6 +201,13 @@ Supported step kinds:
 - `mode`: optional, defaults to `First`; accepted values are `First`, `Last`, and `MatchAll`
 - `required`: optional, defaults to `true`; when `false`, zero matches do not fail the step
 
+`prefilter` step fields:
+
+- `pattern`: exactly one of `pattern` or `patterns` is required
+- `patterns`: exactly one of `pattern` or `patterns` is required
+
+`prefilter` probes the referenced prefilter pattern or patterns without mutating the module. If any probe matches, execution continues with the next step. If no probe matches, the recipe stops successfully and skips all remaining steps. For multiple probes, `patterns` uses OR semantics: the recipe continues when any referenced prefilter matches.
+
 `apply_rules` step fields:
 
 - `rules`: required list of rewrite rule ids
@@ -186,6 +218,10 @@ Examples:
 
 ```yaml
 steps:
+  - kind: prefilter
+    patterns:
+      - ign_signature_probe
+      - blue_noise_signature_probe
   - kind: add_texture
     id: fast_noise
   - kind: apply_rule

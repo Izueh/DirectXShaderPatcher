@@ -23,8 +23,6 @@ struct DxilLoadedShaderState {
 
 struct DxilContainerPatchOptions {
   bool restoreReflection = true;
-  bool refreshResources = true;
-  bool verifyModule = true;
   DxilRecipeExecutionOptions recipeExecutionOptions;
 };
 

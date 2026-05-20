@@ -424,6 +424,14 @@ struct YamlRecipeMatchModel {
   std::vector<YamlRecipeOperandModel> operands;
 };
 
+struct YamlRecipePrefilterModel {
+  std::string id;
+  std::string name;
+  std::string opcode;
+  std::string capture;
+  std::vector<YamlRecipeOperandModel> operands;
+};
+
 struct YamlRecipeRuleModel {
   std::string id;
   std::string name;
@@ -437,6 +445,8 @@ struct YamlRecipeRuleModel {
 struct YamlRecipeStepModel {
   std::string kind;
   std::string id;
+  std::string pattern;
+  std::vector<std::string> patterns;
   std::string rule;
   std::vector<std::string> rules;
   std::string name;
@@ -446,14 +456,13 @@ struct YamlRecipeStepModel {
 
 struct YamlRecipeOptionsModel {
   bool restore_reflection = true;
-  bool refresh_resources = false;
-  bool verify_module = true;
 };
 
 struct YamlRecipeDocumentModel {
   unsigned version = 1;
   YamlRecipeOptionsModel options;
   YamlRecipeResourcesModel resources;
+  std::vector<YamlRecipePrefilterModel> prefilters;
   std::vector<YamlRecipeRuleModel> rewrite_rules;
   std::vector<YamlRecipeStepModel> steps;
 };
@@ -469,6 +478,7 @@ LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeOperandModel)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeBindingPatternModel)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeEmitOperandModel)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeEmitModel)
+LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipePrefilterModel)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeRuleModel)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeStepModel)
 LLVM_YAML_IS_SEQUENCE_VECTOR(std::string)
@@ -593,6 +603,16 @@ template <> struct MappingTraits<YamlRecipeMatchModel> {
   }
 };
 
+template <> struct MappingTraits<YamlRecipePrefilterModel> {
+  static void mapping(IO &io, YamlRecipePrefilterModel &prefilter) {
+    io.mapRequired("id", prefilter.id);
+    io.mapOptional("name", prefilter.name);
+    io.mapRequired("opcode", prefilter.opcode);
+    io.mapOptional("capture", prefilter.capture);
+    io.mapOptional("operands", prefilter.operands);
+  }
+};
+
 template <> struct MappingTraits<YamlRecipeRuleModel> {
   static void mapping(IO &io, YamlRecipeRuleModel &rule) {
     io.mapRequired("id", rule.id);
@@ -609,6 +629,8 @@ template <> struct MappingTraits<YamlRecipeStepModel> {
   static void mapping(IO &io, YamlRecipeStepModel &step) {
     io.mapRequired("kind", step.kind);
     io.mapOptional("id", step.id);
+    io.mapOptional("pattern", step.pattern);
+    io.mapOptional("patterns", step.patterns);
     io.mapOptional("rule", step.rule);
     io.mapOptional("rules", step.rules);
     io.mapOptional("name", step.name);
@@ -620,8 +642,6 @@ template <> struct MappingTraits<YamlRecipeStepModel> {
 template <> struct MappingTraits<YamlRecipeOptionsModel> {
   static void mapping(IO &io, YamlRecipeOptionsModel &options) {
     io.mapOptional("restore_reflection", options.restore_reflection, true);
-    io.mapOptional("refresh_resources", options.refresh_resources, false);
-    io.mapOptional("verify_module", options.verify_module, true);
   }
 };
 
@@ -630,6 +650,7 @@ template <> struct MappingTraits<YamlRecipeDocumentModel> {
     io.mapOptional("version", document.version, 1u);
     io.mapOptional("options", document.options);
     io.mapOptional("resources", document.resources);
+    io.mapOptional("prefilters", document.prefilters);
     io.mapOptional("rewrite_rules", document.rewrite_rules);
     io.mapOptional("steps", document.steps);
   }
@@ -810,17 +831,49 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
   }
 
   result.patchOptions.restoreReflection = document.options.restore_reflection;
-  result.patchOptions.refreshResources = document.options.refresh_resources;
-  result.patchOptions.verifyModule = document.options.verify_module;
-  const bool hasExplicitRefreshOption = true;
-  bool requiresResourceRefresh = false;
 
+  std::unordered_map<std::string, DxilCallPattern> parsedPrefilters;
   std::unordered_map<std::string, DxilRewriteRule> parsedRewriteRules;
   std::unordered_map<std::string, TextureResourceDesc> parsedTextures;
   std::unordered_map<std::string, TextureResourceDesc> parsedUavs;
   std::unordered_map<std::string, CBufferDesc> parsedCBuffers;
   std::unordered_map<std::string, SamplerDesc> parsedSamplers;
   std::string parseError;
+
+  auto buildRecipeCallPattern =
+      [&](llvm::StringRef owningKind, llvm::StringRef owningId,
+          const std::string &opcodeText, const std::string &captureName,
+          const std::vector<YamlRecipeOperandModel> &operandModels,
+          DxilCallPattern &pattern) -> bool {
+    hlsl::OP::OpCode rootOpcode = static_cast<hlsl::OP::OpCode>(0);
+    if (!ParseRecipeOpCode(opcodeText, rootOpcode, parseError)) {
+      result.error = sourceName.str() + ": invalid " + owningKind.str() +
+                     " opcode for '" + owningId.str() + "': " + parseError;
+      return false;
+    }
+
+    std::vector<DxilOperandPattern> rootOperands;
+    rootOperands.push_back(
+        ConstantIntOperand(0, static_cast<uint64_t>(rootOpcode)).Build());
+    for (const YamlRecipeOperandModel &operandModel : operandModels) {
+      DxilOperandPattern operandPattern;
+      if (!ParseYamlRecipeOperandModel(operandModel, operandPattern,
+                                       parseError)) {
+        result.error = sourceName.str() + ": invalid operand in " +
+                       owningKind.str() + " '" + owningId.str() +
+                       "': " + parseError;
+        return false;
+      }
+      rootOperands.push_back(std::move(operandPattern));
+    }
+
+    SortOperandPatternTree(rootOperands);
+    pattern = DxOpCall(rootOpcode)
+                  .Capture(captureName)
+                  .Args(std::move(rootOperands))
+                  .Build();
+    return true;
+  };
 
   auto parseTextureModel =
       [&](const YamlRecipeTextureModel &textureModel, bool isUav,
@@ -920,6 +973,24 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
     }
   }
 
+  for (const YamlRecipePrefilterModel &prefilterModel : document.prefilters) {
+    DxilCallPattern pattern;
+    const std::string captureName = prefilterModel.capture.empty()
+                                        ? prefilterModel.id
+                                        : prefilterModel.capture;
+    if (!buildRecipeCallPattern("prefilter", prefilterModel.id,
+                                prefilterModel.opcode, captureName,
+                                prefilterModel.operands, pattern)) {
+      return false;
+    }
+
+    if (!parsedPrefilters.emplace(prefilterModel.id, std::move(pattern)).second) {
+      result.error = sourceName.str() + ": duplicate prefilter id '" +
+                     prefilterModel.id + "'";
+      return false;
+    }
+  }
+
   for (const YamlRecipeRuleModel &ruleModel : document.rewrite_rules) {
     DxilRewriteRule rule;
     rule.name = ruleModel.name.empty() ? ruleModel.id : ruleModel.name;
@@ -933,36 +1004,16 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
       return false;
     }
 
-    hlsl::OP::OpCode rootOpcode = static_cast<hlsl::OP::OpCode>(0);
-    if (!ParseRecipeOpCode(ruleModel.match.opcode, rootOpcode, parseError)) {
-      result.error = sourceName.str() + ": invalid rewrite rule opcode for '" +
-                     ruleModel.id + "': " + parseError;
-      return false;
-    }
-
-    std::vector<DxilOperandPattern> rootOperands;
-    rootOperands.push_back(
-        ConstantIntOperand(0, static_cast<uint64_t>(rootOpcode)).Build());
-    for (const YamlRecipeOperandModel &operandModel :
-         ruleModel.match.operands) {
-      DxilOperandPattern operandPattern;
-      if (!ParseYamlRecipeOperandModel(operandModel, operandPattern,
-                                       parseError)) {
-        result.error = sourceName.str() +
-                       ": invalid operand in rewrite rule '" + ruleModel.id +
-                       "': " + parseError;
-        return false;
-      }
-      rootOperands.push_back(std::move(operandPattern));
-    }
-    SortOperandPatternTree(rootOperands);
     const std::string rootCaptureName = ruleModel.match.capture.empty()
                                             ? rule.replaceCaptureName
                                             : ruleModel.match.capture;
-    rule.pattern = DxOpCall(rootOpcode)
-                       .Capture(rootCaptureName)
-                       .Args(std::move(rootOperands))
-                       .Build();
+    if (!buildRecipeCallPattern("rewrite rule", ruleModel.id,
+                                ruleModel.match.opcode, rootCaptureName,
+                                ruleModel.match.operands, rule.pattern)) {
+      return false;
+    }
+
+    const hlsl::OP::OpCode rootOpcode = rule.pattern.dxilOpCode;
 
     for (const YamlRecipeBindingPatternModel &bindingModel :
          ruleModel.bindings) {
@@ -1154,7 +1205,6 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
         return false;
       }
       result.recipe.AddStep(MakeAddTextureStep(stepModel.id, it->second));
-      requiresResourceRefresh = true;
     } else if (loweredKind == "add_texture_uav") {
       auto it = parsedUavs.find(stepModel.id);
       if (it == parsedUavs.end()) {
@@ -1163,7 +1213,6 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
         return false;
       }
       result.recipe.AddStep(MakeAddTextureUAVStep(stepModel.id, it->second));
-      requiresResourceRefresh = true;
     } else if (loweredKind == "add_cbuffer") {
       auto it = parsedCBuffers.find(stepModel.id);
       if (it == parsedCBuffers.end()) {
@@ -1172,7 +1221,6 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
         return false;
       }
       result.recipe.AddStep(MakeAddCBufferStep(stepModel.id, it->second));
-      requiresResourceRefresh = true;
     } else if (loweredKind == "add_sampler") {
       auto it = parsedSamplers.find(stepModel.id);
       if (it == parsedSamplers.end()) {
@@ -1181,7 +1229,6 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
         return false;
       }
       result.recipe.AddStep(MakeAddSamplerStep(stepModel.id, it->second));
-      requiresResourceRefresh = true;
     } else if (loweredKind == "apply_rule") {
       auto it = parsedRewriteRules.find(stepModel.rule);
       if (it == parsedRewriteRules.end()) {
@@ -1246,6 +1293,43 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
           stepModel.name.empty() ? "apply_rules" : stepModel.name;
       result.recipe.AddStep(MakeApplyRewriteRulesStep(
           stepName, std::move(rules), applicationMode, stepModel.required));
+    } else if (loweredKind == "prefilter") {
+      const bool hasPattern = !stepModel.pattern.empty();
+      const bool hasPatterns = !stepModel.patterns.empty();
+      if (hasPattern == hasPatterns) {
+        result.error = sourceName.str() +
+                       ": prefilter requires exactly one of pattern or patterns";
+        return false;
+      }
+
+      std::vector<DxilCallPattern> patterns;
+      if (hasPattern) {
+        auto it = parsedPrefilters.find(stepModel.pattern);
+        if (it == parsedPrefilters.end()) {
+          result.error = sourceName.str() + ": unknown prefilter pattern '" +
+                         stepModel.pattern + "'";
+          return false;
+        }
+        patterns.push_back(it->second);
+      } else {
+        patterns.reserve(stepModel.patterns.size());
+        for (const std::string &patternId : stepModel.patterns) {
+          auto it = parsedPrefilters.find(patternId);
+          if (it == parsedPrefilters.end()) {
+            result.error = sourceName.str() + ": unknown prefilter pattern '" +
+                           patternId + "'";
+            return false;
+          }
+          patterns.push_back(it->second);
+        }
+      }
+
+      const std::string stepName =
+          stepModel.name.empty()
+              ? (hasPattern ? ("prefilter:" + stepModel.pattern)
+                            : "prefilter")
+              : stepModel.name;
+      result.recipe.AddStep(MakePrefilterStep(stepName, std::move(patterns)));
     } else if (loweredKind == "expect_texture") {
       result.recipe.AddStep(MakeExpectTextureStep(stepModel.id));
     } else if (loweredKind == "expect_texture_uav") {
@@ -1264,9 +1348,6 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
       return false;
     }
   }
-
-  if (!hasExplicitRefreshOption)
-    result.patchOptions.refreshResources = requiresResourceRefresh;
 
   return true;
 }

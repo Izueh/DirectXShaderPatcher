@@ -125,16 +125,52 @@ ApplyRecipeRewriteRules(DxilRecipeContext &context,
   return result;
 }
 
+static unsigned CountPrefilterMatches(llvm::Function &entryFunction,
+                                      hlsl::DxilModule &dxilModule,
+                                      const DxilCallPattern &pattern) {
+  std::vector<DxilMatchResult> matches;
+  return CollectDxilCallMatches(entryFunction, pattern, matches, &dxilModule);
+}
+
+static DxilRecipeStepResult
+EvaluateRecipePrefilter(DxilRecipeContext &context,
+                        const std::vector<DxilCallPattern> &patterns,
+                        const std::string &stepName) {
+  if (context.dxilModule == nullptr) {
+    return FailRecipeStep(context,
+                          stepName + ": recipe context is missing DXIL module");
+  }
+
+  context.entryFunction = context.dxilModule->GetEntryFunction();
+  if (context.entryFunction == nullptr) {
+    return FailRecipeStep(context,
+                          stepName + ": failed to locate DXIL entry function");
+  }
+
+  for (const DxilCallPattern &pattern : patterns) {
+    if (CountPrefilterMatches(*context.entryFunction, *context.dxilModule,
+                              pattern) != 0) {
+      return MakeRecipeStepSuccess();
+    }
+  }
+
+  AppendRecipeDiagnostic(context, stepName +
+                                      ": prefilter did not match; skipping remaining recipe steps");
+  return MakeRecipeStepSuccess(false, 0, false, true);
+}
+
 } // namespace
 // NOLINTEND(llvm-prefer-static-over-anonymous-namespace)
 
 DxilRecipeStepResult MakeRecipeStepSuccess(bool changed, unsigned matchCount,
-                                           bool invalidatedAnalyses) {
+                                           bool invalidatedAnalyses,
+                                           bool stopRecipe) {
   DxilRecipeStepResult result;
   result.success = true;
   result.changed = changed;
   result.matchCount = matchCount;
   result.invalidatedAnalyses = invalidatedAnalyses;
+  result.stopRecipe = stopRecipe;
   return result;
 }
 
@@ -175,6 +211,7 @@ DxilRecipeStep MakeAddTextureStep(std::string id, TextureResourceDesc desc) {
         DxilRecipeStepResult result;
         result.changed = true;
         result.invalidatedAnalyses = true;
+        result.resourceBindingsChanged = true;
         return result;
       }};
 }
@@ -207,6 +244,7 @@ DxilRecipeStep MakeAddTextureUAVStep(std::string id, TextureResourceDesc desc) {
         DxilRecipeStepResult result;
         result.changed = true;
         result.invalidatedAnalyses = true;
+        result.resourceBindingsChanged = true;
         return result;
       }};
 }
@@ -242,6 +280,7 @@ DxilRecipeStep MakeAddCBufferStep(std::string id, CBufferDesc desc) {
         DxilRecipeStepResult result;
         result.changed = true;
         result.invalidatedAnalyses = true;
+        result.resourceBindingsChanged = true;
         return result;
       }};
 }
@@ -271,6 +310,7 @@ DxilRecipeStep MakeAddSamplerStep(std::string id, SamplerDesc desc) {
         DxilRecipeStepResult result;
         result.changed = true;
         result.invalidatedAnalyses = true;
+        result.resourceBindingsChanged = true;
         return result;
       }};
 }
@@ -286,6 +326,15 @@ DxilRecipeStep MakeApplyRewriteRulesStep(std::string name,
                         }};
 }
 
+DxilRecipeStep MakePrefilterStep(std::string name,
+                                 std::vector<DxilCallPattern> patterns) {
+  return DxilRecipeStep{name, [patterns = std::move(patterns),
+                               name](DxilRecipeContext &context) {
+                          return EvaluateRecipePrefilter(context, patterns,
+                                                         name);
+                        }};
+}
+
 DxilRecipeStep MakeRefreshResourcesStep(std::string name) {
   return DxilRecipeStep{
       name, [name](DxilRecipeContext &context) {
@@ -298,6 +347,7 @@ DxilRecipeStep MakeRefreshResourcesStep(std::string name) {
                                          context.traceEnabled);
         DxilRecipeStepResult result;
         result.changed = true;
+        result.resourcesRefreshed = true;
         return result;
       }};
 }
@@ -347,7 +397,9 @@ DxilRecipeStep MakeVerifyModuleStep(std::string name) {
               context, name + ": module verification failed: " + verifyErrors);
         }
 
-        return DxilRecipeStepResult{};
+        DxilRecipeStepResult result;
+        result.moduleVerified = true;
+        return result;
       }};
 }
 
@@ -463,12 +515,20 @@ bool ExecuteDxilRecipe(const DxilRecipe &recipe, Module &module,
 
     const DxilRecipeStepResult result = step.execute(context);
     context.totalRuleMatches += result.matchCount;
+    context.moduleModified = context.moduleModified || result.changed;
+    context.resourceBindingsChanged =
+      context.resourceBindingsChanged || result.resourceBindingsChanged;
+    context.resourcesRefreshed =
+      context.resourcesRefreshed || result.resourcesRefreshed;
+    context.moduleVerified = context.moduleVerified || result.moduleVerified;
     context.entryFunction = dxilModule.GetEntryFunction();
     if (!result.success) {
       if (outContext != nullptr)
         *outContext = context;
       return false;
     }
+    if (result.stopRecipe)
+      break;
   }
 
   if (outContext != nullptr)
