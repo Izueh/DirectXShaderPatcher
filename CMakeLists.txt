@@ -637,6 +637,13 @@ add_test(
 )
 
 add_test(
+  NAME declarative_blue_noise_emit_snapshot_recipe_0x56C468C3
+  COMMAND dxil_patch_declarative_blue_noise_emit_recipe_test
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/0x56C468C3.cs_6_6.cso"
+          "${CMAKE_CURRENT_SOURCE_DIR}/recipes/blue_noise_emit_snapshot.recipe.yml"
+)
+
+add_test(
   NAME declarative_resource_name_match_recipe_0x56C468C3
   COMMAND dxil_patch_declarative_resource_name_match_recipe_test
           "${CMAKE_CURRENT_SOURCE_DIR}/test/0x56C468C3.cs_6_6.cso"

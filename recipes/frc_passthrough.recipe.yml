@@ -19,7 +19,7 @@ steps:
   - kind: apply_rule
     rule: strip_outer_frc
     name: strip_outer_frc
-    mode: UntilNoMatch
+    mode: MatchAll
     required: true
   - kind: prune_dead_code
   - kind: verify_module

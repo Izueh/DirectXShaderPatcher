@@ -91,6 +91,11 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  if (HasTypedHandleDxilOpOverloads(*patchedModule)) {
+    std::cerr << "Patched module introduced typed DXIL handle op overloads instead of reusing the shader's existing prototypes.\n";
+    return 1;
+  }
+
   const unsigned finalGroupIdXCount = CountGroupIdXCalls(*patchedEntryFunction);
   const unsigned finalCBufferLoadCount =
       CountDxOpCalls(*patchedEntryFunction, "dx.op.cbufferLoadLegacy.i32");

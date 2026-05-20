@@ -28,6 +28,23 @@ bool ReplaceIgnNoiseInComputeShaderWithTextureLoadUsingRules(
 
 namespace {
 
+static void ReleaseDxilStateForModule(std::unique_ptr<llvm::Module> &module,
+                                      hlsl::DxilModule *&dxilModule) {
+  if (!module) {
+    dxilModule = nullptr;
+    return;
+  }
+
+  if (module->HasDxilModule()) {
+    module->pfnRemoveGlobal = nullptr;
+    module->pfnResetDxilModule = nullptr;
+    module->SetDxilModule(nullptr);
+  }
+
+  dxilModule = nullptr;
+  module.reset();
+}
+
 static bool ExtractProgramBitcodeFromContainerPart(
     const std::vector<uint8_t> &container,
     hlsl::DxilFourCC partKind,
@@ -66,6 +83,10 @@ static bool ExtractProgramBitcodeFromContainerPart(
 }
 
 } // namespace
+
+LoadedDxilShader::~LoadedDxilShader() {
+  ReleaseDxilStateForModule(module, dxilModule);
+}
 
 ScopedCoInitialize::ScopedCoInitialize() {
   HRESULT result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
@@ -255,6 +276,18 @@ bool FindCBufferByName(const hlsl::DxilModule &dxilModule,
 
   if (cbufferOut != nullptr)
     *cbufferOut = nullptr;
+  return false;
+}
+
+bool HasTypedHandleDxilOpOverloads(const llvm::Module &module) {
+  for (const llvm::Function &function : module) {
+    const llvm::StringRef name = function.getName();
+    if (name == "dx.op.createHandleFromBinding.dx.types.Handle" ||
+        name == "dx.op.annotateHandle.dx.types.Handle") {
+      return true;
+    }
+  }
+
   return false;
 }
 

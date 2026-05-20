@@ -4,8 +4,8 @@
 #include <iostream>
 
 int main(int argc, char **argv) {
-  if (argc != 3) {
-    std::cerr << "Usage: declarative_blue_noise_emit_recipe_0x56C468C3 <input.cso> <recipe.yml>\n";
+  if (argc != 3 && argc != 4) {
+    std::cerr << "Usage: declarative_blue_noise_emit_recipe_0x56C468C3 <input.cso> <recipe.yml> [output.cso]\n";
     return 1;
   }
 
@@ -63,6 +63,12 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  if (argc == 4 &&
+      !WriteFile(argv[3], outputContainer.data(), outputContainer.size())) {
+    std::cerr << "Failed to write patched container: " << argv[3] << "\n";
+    return 1;
+  }
+
   llvm::LLVMContext patchedContext;
   std::unique_ptr<llvm::Module> patchedModule;
   hlsl::DxilModule *patchedDxilModule = nullptr;
@@ -76,6 +82,11 @@ int main(int argc, char **argv) {
   llvm::Function *patchedEntryFunction = patchedDxilModule->GetEntryFunction();
   if (patchedEntryFunction == nullptr) {
     std::cerr << "Failed to locate patched DXIL entry function.\n";
+    return 1;
+  }
+
+  if (HasTypedHandleDxilOpOverloads(*patchedModule)) {
+    std::cerr << "Patched module introduced typed DXIL handle op overloads instead of reusing the shader's existing prototypes.\n";
     return 1;
   }
 

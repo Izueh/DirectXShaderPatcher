@@ -191,8 +191,9 @@ static bool ParseRecipeRuleApplicationMode(const std::string &text,
                                            std::string &error) {
   static const RecipeParseEntry<DxilRecipeRuleApplicationMode>
       kRuleApplicationModeEntries[] = {
-          {"Once", DxilRecipeRuleApplicationMode::Once},
-          {"UntilNoMatch", DxilRecipeRuleApplicationMode::UntilNoMatch},
+      {"First", DxilRecipeRuleApplicationMode::First},
+      {"Last", DxilRecipeRuleApplicationMode::Last},
+      {"MatchAll", DxilRecipeRuleApplicationMode::MatchAll},
       };
   if (ParseRecipeValueByTable(text, mode, kRuleApplicationModeEntries))
     return true;
@@ -437,8 +438,9 @@ struct YamlRecipeStepModel {
   std::string kind;
   std::string id;
   std::string rule;
+  std::vector<std::string> rules;
   std::string name;
-  std::string mode = "Once";
+  std::string mode;
   bool required = true;
 };
 
@@ -608,8 +610,9 @@ template <> struct MappingTraits<YamlRecipeStepModel> {
     io.mapRequired("kind", step.kind);
     io.mapOptional("id", step.id);
     io.mapOptional("rule", step.rule);
+    io.mapOptional("rules", step.rules);
     io.mapOptional("name", step.name);
-    io.mapOptional("mode", step.mode, std::string("Once"));
+    io.mapOptional("mode", step.mode, std::string());
     io.mapOptional("required", step.required, true);
   }
 };
@@ -1187,9 +1190,11 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
         return false;
       }
 
-      DxilRecipeRuleApplicationMode applicationMode =
-          DxilRecipeRuleApplicationMode::Once;
-      if (!ParseRecipeRuleApplicationMode(stepModel.mode, applicationMode,
+        DxilRecipeRuleApplicationMode applicationMode =
+          DxilRecipeRuleApplicationMode::First;
+    const std::string modeText =
+          stepModel.mode.empty() ? "First" : stepModel.mode;
+    if (!ParseRecipeRuleApplicationMode(modeText, applicationMode,
                                           parseError)) {
         result.error = sourceName.str() + ": invalid apply_rule mode for '" +
                        stepModel.rule + "': " + parseError;
@@ -1201,6 +1206,46 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
                                        : stepModel.name;
       result.recipe.AddStep(MakeApplyRewriteRulesStep(
           stepName, {it->second}, applicationMode, stepModel.required));
+    } else if (loweredKind == "apply_rules") {
+      if (stepModel.rules.empty()) {
+        result.error = sourceName.str() +
+                       ": apply_rules requires a non-empty rules list";
+        return false;
+      }
+
+      std::vector<DxilRewriteRule> rules;
+      rules.reserve(stepModel.rules.size());
+      for (const std::string &ruleId : stepModel.rules) {
+        auto it = parsedRewriteRules.find(ruleId);
+        if (it == parsedRewriteRules.end()) {
+          result.error = sourceName.str() + ": unknown rewrite rule '" +
+                         ruleId + "'";
+          return false;
+        }
+        rules.push_back(it->second);
+      }
+
+        DxilRecipeRuleApplicationMode applicationMode =
+          DxilRecipeRuleApplicationMode::MatchAll;
+      const std::string modeText =
+          stepModel.mode.empty() ? "MatchAll" : stepModel.mode;
+      if (!ParseRecipeRuleApplicationMode(modeText, applicationMode,
+                                          parseError)) {
+        result.error = sourceName.str() + ": invalid apply_rules mode: " +
+                       parseError;
+        return false;
+      }
+
+      if (applicationMode != DxilRecipeRuleApplicationMode::MatchAll) {
+        result.error = sourceName.str() +
+                       ": apply_rules only supports MatchAll mode";
+        return false;
+      }
+
+      const std::string stepName =
+          stepModel.name.empty() ? "apply_rules" : stepModel.name;
+      result.recipe.AddStep(MakeApplyRewriteRulesStep(
+          stepName, std::move(rules), applicationMode, stepModel.required));
     } else if (loweredKind == "expect_texture") {
       result.recipe.AddStep(MakeExpectTextureStep(stepModel.id));
     } else if (loweredKind == "expect_texture_uav") {

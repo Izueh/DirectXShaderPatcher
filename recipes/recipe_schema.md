@@ -162,6 +162,7 @@ Supported step kinds:
 - `add_cbuffer`
 - `add_sampler`
 - `apply_rule`
+- `apply_rules`
 - `expect_texture`
 - `expect_texture_uav`
 - `expect_cbuffer`
@@ -172,7 +173,13 @@ Supported step kinds:
 `apply_rule` step fields:
 
 - `rule`: required rewrite rule id
-- `mode`: optional, defaults to `Once`; accepted values are `Once` and `UntilNoMatch`
+- `mode`: optional, defaults to `First`; accepted values are `First`, `Last`, and `MatchAll`
+- `required`: optional, defaults to `true`; when `false`, zero matches do not fail the step
+
+`apply_rules` step fields:
+
+- `rules`: required list of rewrite rule ids
+- `mode`: optional, defaults to `MatchAll`; `apply_rules` only supports `MatchAll`
 - `required`: optional, defaults to `true`; when `false`, zero matches do not fail the step
 
 Examples:
@@ -183,9 +190,15 @@ steps:
     id: fast_noise
   - kind: apply_rule
     rule: ign_noise_rhs_inner
-    mode: UntilNoMatch
+    mode: MatchAll
+    required: false
+  - kind: apply_rules
+    rules:
+      - ign_noise_rhs_inner
+      - ign_noise_lhs_inner
+    mode: MatchAll
     required: false
   - kind: verify_module
 ```
 
-For simple identity-style matcher probes, prefer `mode: Once` so the same rewrite does not keep re-matching its own output.
+For simple identity-style matcher probes, prefer `mode: First` or `mode: Last` so the step selects one stable match instead of relying on a whole-pass side effect.

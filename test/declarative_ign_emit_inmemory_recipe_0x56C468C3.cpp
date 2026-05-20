@@ -53,6 +53,11 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  if (HasTypedHandleDxilOpOverloads(*shader.module)) {
+    std::cerr << "Patched module introduced typed DXIL handle op overloads instead of reusing the shader's existing prototypes.\n";
+    return 1;
+  }
+
   const unsigned finalIgnCount = CountIgnNoiseChains(*entryFunction);
   const unsigned finalTextureLoadCount =
       CountDxOpCalls(*entryFunction, "dx.op.textureLoad.f32");

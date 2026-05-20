@@ -184,11 +184,11 @@ rewrite_rules:
 steps:
   - kind: apply_rule
     rule: exact_blue_noise_textureload_identity
-    mode: Once
+    mode: First
   - kind: apply_rule
     rule: like_scene_samplelevel_identity
-    mode: Once
+    mode: First
   - kind: apply_rule
     rule: exact_typed_buffer_load_identity
-    mode: Once
+    mode: First
   - kind: verify_module

@@ -136,6 +136,11 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  if (HasTypedHandleDxilOpOverloads(*shader.module)) {
+    std::cerr << "Patched module introduced typed DXIL handle op overloads instead of reusing the shader's existing prototypes.\n";
+    return 1;
+  }
+
   const hlsl::DxilResource *addedSrv = nullptr;
   if (!FindSrvByName(*shader.dxilModule, noiseTextureDesc.name, &addedSrv) ||
       addedSrv == nullptr) {
@@ -179,6 +184,11 @@ int main(int argc, char **argv) {
   if (patchedDxilModule->GetSRVs().size() != initialSrvCount + 1 ||
       patchedDxilModule->GetCBuffers().size() != initialCBufferCount + 1) {
     std::cerr << "Reloaded container did not preserve the injected SRV/cbuffer counts.\n";
+    return 1;
+  }
+
+  if (HasTypedHandleDxilOpOverloads(*patchedModule)) {
+    std::cerr << "Patched module introduced typed DXIL handle op overloads instead of reusing the shader's existing prototypes.\n";
     return 1;
   }
 

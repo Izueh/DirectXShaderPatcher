@@ -34,6 +34,26 @@ using llvm::Module;
 // NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace)
 namespace {
 
+static void ReleaseDxilStateForModule(std::unique_ptr<llvm::Module> &module,
+                                      hlsl::DxilModule *&dxilModule) {
+  if (!module) {
+    dxilModule = nullptr;
+    return;
+  }
+
+  if (module->HasDxilModule()) {
+    // DXC teardown is unstable for mutated modules in this workflow. Detach the
+    // embedded DxilModule so llvm::Module can be destroyed without invoking the
+    // vendored reset hook.
+    module->pfnRemoveGlobal = nullptr;
+    module->pfnResetDxilModule = nullptr;
+    module->SetDxilModule(nullptr);
+  }
+
+  dxilModule = nullptr;
+  module.reset();
+}
+
 class ScopedPatchCoInitialize {
 public:
   ScopedPatchCoInitialize() {
@@ -87,6 +107,11 @@ CreateMemoryStreamFromBytes(IMalloc *mallocInterface,
 } // namespace
 // NOLINTEND(llvm-prefer-static-over-anonymous-namespace)
 // NOLINTEND(misc-include-cleaner)
+
+DxilLoadedShaderState::~DxilLoadedShaderState() {
+  ReleaseDxilStateForModule(module, dxilModule);
+  reflectionContext.reset();
+}
 
 bool LoadDxilContainerForMutation(const void *containerData,
                                   size_t containerSize,
@@ -177,14 +202,15 @@ bool PatchDxilContainerInMemory(const DxilRecipe &recipe, const void *inputData,
 
   TracePatchMessage(traceEnabled, "patch: load container");
 
-  DxilLoadedShaderState shader;
-  if (!LoadDxilContainerForMutation(inputData, inputSize, shader,
+  std::unique_ptr<DxilLoadedShaderState> shader =
+      std::make_unique<DxilLoadedShaderState>();
+  if (!LoadDxilContainerForMutation(inputData, inputSize, *shader,
                                     options.restoreReflection)) {
     return false;
   }
 
   TracePatchMessage(traceEnabled, "patch: execute recipe");
-  if (!ExecuteDxilRecipe(recipe, *shader.module, *shader.dxilModule,
+  if (!ExecuteDxilRecipe(recipe, *shader->module, *shader->dxilModule,
                          options.recipeExecutionOptions, outContext)) {
     return false;
   }
@@ -192,17 +218,26 @@ bool PatchDxilContainerInMemory(const DxilRecipe &recipe, const void *inputData,
   if (options.refreshResources) {
     TracePatchMessage(traceEnabled, "patch: refresh resources");
     RefreshDxilAfterResourceMutation(
-        *shader.dxilModule, options.recipeExecutionOptions.traceEnabled);
+        *shader->dxilModule, options.recipeExecutionOptions.traceEnabled);
   }
 
-  TracePatchMessage(traceEnabled, "patch: verify module");
-  if (options.verifyModule && !dxp::sm6::VerifyModuleOrReport(*shader.module))
+  // Always refresh the OP cache before serialization — pruning may have
+  // left stale function pointers in the cache.
+  {
+    hlsl::OP *op = shader->dxilModule->GetOP();
+    if (op)
+      op->RefreshCache();
+  }
+
+  if (options.verifyModule && !dxp::sm6::VerifyModuleOrReport(*shader->module))
     return false;
 
-  TracePatchMessage(traceEnabled, "patch: serialize container");
-  return SerializePatchedContainer(*shader.dxilModule,
-                                   SerializeModuleToBitcode(*shader.module),
-                                   outputContainer);
+  bool ok = SerializePatchedContainer(*shader->dxilModule,
+                                      SerializeModuleToBitcode(*shader->module),
+                                      outputContainer);
+  if (ok)
+    shader.release();
+  return ok;
 }
 
 bool PatchDxilContainerInMemory(const DxilRecipe &recipe,
@@ -236,6 +271,7 @@ bool SerializePatchedContainer(hlsl::DxilModule &dxilModule,
   CComPtr<hlsl::AbstractMemoryStream> moduleBitcodeStream;
   if (!CreateMemoryStreamFromBytes(mallocInterface, moduleBitcode,
                                    moduleBitcodeStream)) {
+    std::cerr << "CreateMemoryStreamFromBytes failed\n";
     return false;
   }
 

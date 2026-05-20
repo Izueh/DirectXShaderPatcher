@@ -17,6 +17,8 @@ struct DxilLoadedShaderState {
   std::unique_ptr<llvm::LLVMContext> reflectionContext;
   std::unique_ptr<llvm::Module> module;
   hlsl::DxilModule *dxilModule = nullptr;
+
+  ~DxilLoadedShaderState();
 };
 
 struct DxilContainerPatchOptions {

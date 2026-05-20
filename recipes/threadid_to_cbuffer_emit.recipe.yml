@@ -90,7 +90,7 @@ steps:
     id: frame_constants
   - kind: apply_rule
     rule: group_id_x_to_cbuffer
-    mode: UntilNoMatch
+    mode: MatchAll
     required: true
   - kind: expect_cbuffer
     id: frame_constants

@@ -9,8 +9,9 @@
 #include "Transforms.h"
 
 enum class DxilRecipeRuleApplicationMode {
-  Once,
-  UntilNoMatch,
+  First,
+  Last,
+  MatchAll,
 };
 
 struct DxilRecipeExecutionOptions {
@@ -117,7 +118,7 @@ DxilRecipeStep MakeAddCBufferStep(std::string id, CBufferDesc desc);
 DxilRecipeStep MakeAddSamplerStep(std::string id, SamplerDesc desc);
 DxilRecipeStep MakeApplyRewriteRulesStep(
     std::string name, std::vector<DxilRewriteRule> rules,
-    DxilRecipeRuleApplicationMode mode = DxilRecipeRuleApplicationMode::Once,
+  DxilRecipeRuleApplicationMode mode = DxilRecipeRuleApplicationMode::First,
     bool required = true);
 DxilRecipeStep MakeRefreshResourcesStep(std::string name = "refresh_resources");
 DxilRecipeStep MakePruneDeadCodeStep(std::string name = "prune_dead_code");

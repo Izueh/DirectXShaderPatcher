@@ -32,6 +32,8 @@ struct LoadedDxilShader {
   std::unique_ptr<llvm::LLVMContext> reflectionContext;
   std::unique_ptr<llvm::Module> module;
   hlsl::DxilModule *dxilModule = nullptr;
+
+  ~LoadedDxilShader();
 };
 
 bool ReadFile(const std::string &path, std::vector<uint8_t> &data);
@@ -57,6 +59,7 @@ bool FindSrvByName(const hlsl::DxilModule &dxilModule,
 bool FindCBufferByName(const hlsl::DxilModule &dxilModule,
                        const std::string &name,
                        const hlsl::DxilCBuffer **cbufferOut);
+bool HasTypedHandleDxilOpOverloads(const llvm::Module &module);
 unsigned CountDxOpCalls(const llvm::Function &function,
                         llvm::StringRef functionName);
 unsigned CountIgnNoiseChains(llvm::Function &function);

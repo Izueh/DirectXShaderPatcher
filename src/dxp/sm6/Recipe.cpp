@@ -96,18 +96,22 @@ ApplyRecipeRewriteRules(DxilRecipeContext &context,
   }
 
   unsigned totalMatches = 0;
-  do {
-    unsigned appliedRuleCount = 0;
-    if (!ApplyDxilRewriteRules(*context.entryFunction, *context.module,
-                               *context.dxilModule, rules, &appliedRuleCount)) {
-      return FailRecipeStep(context,
-                            stepName + ": rewrite rule application failed");
+  if (mode == DxilRecipeRuleApplicationMode::MatchAll) {
+    if (!ApplyDxilRewriteRulesMatchAll(*context.entryFunction, *context.module,
+                                       *context.dxilModule, rules,
+                                       &totalMatches)) {
+      return FailRecipeStep(
+          context, stepName + ": rewrite rule application failed");
     }
-
-    totalMatches += appliedRuleCount;
-    if (mode == DxilRecipeRuleApplicationMode::Once || appliedRuleCount == 0)
-      break;
-  } while (true);
+  } else {
+    if (!ApplyDxilRewriteRulesOnce(*context.entryFunction, *context.module,
+                                   *context.dxilModule, rules,
+                                   mode == DxilRecipeRuleApplicationMode::Last,
+                                   &totalMatches)) {
+      return FailRecipeStep(
+          context, stepName + ": rewrite rule application failed");
+    }
+  }
 
   if (required && totalMatches == 0) {
     return FailRecipeStep(context,
@@ -313,6 +317,16 @@ DxilRecipeStep MakePruneDeadCodeStep(std::string name) {
         }
 
         PruneFunctionDeadCode(*context.entryFunction);
+
+        // Refresh OP cache after pruning — pruning may have deleted
+        // DXIL op function call instructions, leaving stale pointers
+        // in the cache that cause crashes during module destruction.
+        {
+          hlsl::OP *op = context.dxilModule->GetOP();
+          if (op)
+            op->RefreshCache();
+        }
+
         return MakeRecipeStepSuccess(true, 0, true);
       }};
 }

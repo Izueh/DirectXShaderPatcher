@@ -20,6 +20,7 @@
 #include "dxc/DXIL/DxilCompType.h"
 #include "dxc/DXIL/DxilConstants.h"
 #include "dxc/DXIL/DxilModule.h"
+#include "dxc/DXIL/DxilOperations.h"
 #include "dxc/DXIL/DxilResource.h"
 #include "dxc/DXIL/DxilSampler.h"
 #include "dxc/DXIL/DxilTypeSystem.h"
@@ -764,6 +765,11 @@ bool AddSampler(Module &module, hlsl::DxilModule &dxilModule,
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void RefreshDxilAfterResourceMutation(hlsl::DxilModule &dxilModule,
                                       bool traceEnabled) {
+  TraceResourceMessage(traceEnabled, "refresh: refresh op cache");
+  hlsl::OP *op = dxilModule.GetOP();
+  if (op)
+    op->RefreshCache();
+
   TraceResourceMessage(traceEnabled, "refresh: emit llvm.used");
   dxilModule.EmitLLVMUsed();
 

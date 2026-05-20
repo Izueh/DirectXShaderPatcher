@@ -316,10 +316,10 @@ steps:
     id: frame_constants
   - kind: apply_rule
     rule: ign_noise_rhs_inner
-    mode: UntilNoMatch
+    mode: MatchAll
     required: false
   - kind: apply_rule
     rule: ign_noise_lhs_inner
-    mode: UntilNoMatch
+    mode: MatchAll
     required: false
   - kind: verify_module

@@ -21,3 +21,8 @@ test/*.dump.txt
 test/*.i
 test/*.orig.ll
 test/*.dis
+
+retools/
+.claude/
+livetools/
+tools/radare2-6.1.0-w64

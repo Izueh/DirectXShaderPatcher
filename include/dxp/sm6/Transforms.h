@@ -662,6 +662,18 @@ unsigned CollectDxilCallMatches(llvm::Function &function,
                                 const DxilCallPattern &pattern,
                                 std::vector<DxilMatchResult> &results,
                                 hlsl::DxilModule *dxilModule = nullptr);
+bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
+                                   llvm::Module &module,
+                                   hlsl::DxilModule &dxilModule,
+                                   const std::vector<DxilRewriteRule> &rules,
+                                   unsigned *appliedRuleCount = nullptr);
+
+bool ApplyDxilRewriteRulesOnce(llvm::Function &function, llvm::Module &module,
+                               hlsl::DxilModule &dxilModule,
+                               const std::vector<DxilRewriteRule> &rules,
+                               bool useLastMatch = false,
+                               unsigned *appliedRuleCount = nullptr);
+
 bool ApplyDxilRewriteRules(llvm::Function &function, llvm::Module &module,
                            hlsl::DxilModule &dxilModule,
                            const std::vector<DxilRewriteRule> &rules,

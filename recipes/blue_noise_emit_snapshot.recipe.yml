@@ -442,20 +442,13 @@ steps:
     id: fast_noise
   - kind: add_cbuffer
     id: frame_constants
-  - kind: apply_rule
-    rule: blue_noise_scalar_slice_lhs
-    mode: MatchAll
-    required: false
-  - kind: apply_rule
-    rule: blue_noise_scalar_slice_rhs
-    mode: MatchAll
-    required: false
-  - kind: apply_rule
-    rule: blue_noise_vec2_slice_lhs
-    mode: MatchAll
-    required: false
-  - kind: apply_rule
-    rule: blue_noise_vec2_slice_rhs
+  - kind: apply_rules
+    name: apply_rules:blue_noise_snapshot
+    rules:
+      - blue_noise_scalar_slice_lhs
+      - blue_noise_scalar_slice_rhs
+      - blue_noise_vec2_slice_lhs
+      - blue_noise_vec2_slice_rhs
     mode: MatchAll
     required: false
   - kind: prune_dead_code

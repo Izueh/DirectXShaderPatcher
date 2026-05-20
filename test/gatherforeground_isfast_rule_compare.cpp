@@ -96,6 +96,11 @@ static bool VerifyRunState(const RewriteMetrics &initialMetrics,
                            RewriteRunResult &result) {
   result.metrics = CaptureMetrics(*shader.dxilModule);
 
+  if (HasTypedHandleDxilOpOverloads(*shader.module)) {
+    std::cerr << "Patched module introduced typed DXIL handle op overloads instead of reusing the shader's existing prototypes.\n";
+    return false;
+  }
+
   if (result.metrics.srvCount != initialMetrics.srvCount + 1) {
     std::cerr << "Expected SRV count to increase by one.\n";
     return false;

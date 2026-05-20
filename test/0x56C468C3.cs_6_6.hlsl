@@ -1,8 +1,3 @@
-#include "../shared.h"
-
-// IS-FAST noise texture for shadow ray dithering (injected via ViewBinding)
-Texture2DArray<float2> ISFASTNoise : register(t0, space50);
-
 struct FViewConstants {
   float4 TranslatedWorldToClip[4];
   float4 RelativeWorldToClip[4];
@@ -698,524 +693,537 @@ uint firstbithigh_msb(uint value) { return (value == 0) ? 0xFFFFFFFF : (31u - fi
 
 [numthreads(8, 8, 1)]
 void main(
-  uint3 SV_DispatchThreadID : SV_DispatchThreadID,
-  uint3 SV_GroupID : SV_GroupID,
-  uint3 SV_GroupThreadID : SV_GroupThreadID,
-  uint SV_GroupIndex : SV_GroupIndex
+  uint3 __SV_DispatchThreadID : SV_DispatchThreadID,
+  uint3 __SV_GroupID : SV_GroupID,
+  uint3 __SV_GroupThreadID : SV_GroupThreadID,
+  uint __SV_GroupIndex : SV_GroupIndex
 ) {
-  int _31;
-  int _34;
-  int _37;
-  int _39;
-  int _45;
-  int _48;
-  int _51;
-  int _53;
-  uint _62;
-  uint _64;
-  float _83;
-  float _210;
-  float _211;
-  float _228;
-  float _254;
-  float _414;
-  float _419;
-  int _623;
-  int _665;
-  int _672;
-  int _676;
-  int _677;
-  int _683;
-  float _784;
-  int _818;
-  int _819;
-  float _820;
-  float _986;
-  float _987;
-  float _988;
-  float _989;
-  int _990;
-  float _999;
-  int _1022;
-  int _1107;
-  int _1114;
-  int _1115;
-  float _1116;
-  float _1117;
-  int _1118;
-  int _1119;
-  bool _1137;
-  float _1138;
-  float _1163;
-  float _1164;
-  float _1165;
-  float _1166;
-  float _1173;
-  float _1174;
-  float _1175;
-  float _1176;
-  float _1180;
-  bool _1181;
-  float _1183;
-  bool _1184;
-  int _1197;
-  float _1198;
-  int _1214;
-  int _1216;
-  int _1217;
-  float _1218;
-  int _1397;
-  int _1481;
-  float _1488;
-  float _1489;
-  int _1490;
-  int _1491;
-  float _1492;
-  float _1493;
-  int _1494;
-  int _1495;
-  float _1513;
-  float _1514;
-  int _1515;
-  int _1516;
-  bool _1517;
-  int _1518;
-  float _1519;
-  float _1604;
-  float _1605;
-  float _1617;
-  float _1801;
-  float _1802;
-  float _1803;
-  float _1804;
-  float _1805;
-  float _1806;
-  bool _1807;
-  float _1808;
-  float _1809;
-  float _1810;
-  float _1834;
-  int _1835;
-  int _1933;
-  int _1934;
-  int _1935;
-  int _1936;
-  int _1937;
-  int _1938;
-  int _1939;
-  float _1940;
-  float _1941;
-  float _1942;
-  int _2019;
-  int _2020;
-  int _2021;
-  int _2022;
-  int _2023;
-  int _2024;
-  int _2025;
-  float _2058;
-  float _2062;
-  float _2069;
-  float _2071;
-  float _2079;
-  float _2105;
-  bool _76;
-  float _97;
-  float _98;
-  float _134;
-  float _135;
-  float _136;
-  float _137;
-  float _145;
-  float _148;
-  float _156;
-  float4 _158;
-  uint _167;
-  int _168;
-  float _172;
-  float _173;
-  float _174;
-  float _176;
-  int _182;
-  bool _183;
-  float _203;
-  bool _220;
-  float _233;
-  float _234;
-  float _235;
-  float _241;
-  float _261;
-  bool _268;
-  float _269;
-  float _270;
-  float _271;
-  float _275;
-  float _276;
-  float _277;
-  float _305;
-  float _309;
-  float _313;
-  float _317;
-  float _318;
-  float _319;
-  float _320;
-  float _336;
-  float _337;
-  float _338;
-  float _339;
-  float _345;
-  float _353;
-  float _354;
-  float _355;
-  float _356;
-  float _358;
-  float _359;
-  float _375;
-  float _388;
-  float _401;
-  float _450;
-  float _454;
-  float _458;
-  float _464;
-  uint _472;
-  int _476;
-  int _477;
-  int _478;
-  int _484;
-  int _485;
-  int _486;
-  int _492;
-  int _496;
-  int _497;
-  int _498;
-  int _504;
-  int _507;
-  float _528;
-  float _529;
-  float _530;
-  int _546;
-  uint _549;
-  uint _550;
-  int _553;
-  int _554;
-  int _559;
-  int _560;
-  int _565;
-  int _566;
-  int _571;
-  int _572;
-  int _577;
-  int _578;
-  int _579;
-  int _585;
-  int _586;
-  int _587;
-  float _600;
-  float _601;
-  float _602;
-  uint _613;
-  uint _614;
-  int _626;
-  int _627;
-  int _628;
-  bool _631;
-  uint _633;
-  int _642;
-  int _645;
-  int _647;
-  int _651;
-  int _654;
-  int _667;
-  uint _686;
-  uint _687;
-  int _689;
-  float _690;
-  int _693;
-  int _694;
-  int _695;
-  float _696;
-  float _697;
-  float _698;
-  int _701;
-  int _702;
-  int _703;
-  float _704;
-  float _705;
-  float _706;
-  int _709;
-  int _710;
-  int _711;
-  float _712;
-  float _713;
-  float _714;
-  int _717;
-  int _718;
-  int _719;
-  int _725;
-  int _726;
-  int _727;
-  int _733;
-  int _734;
-  int _735;
-  int _741;
-  int _742;
-  int _743;
-  int _749;
-  int _750;
-  int _751;
-  int _757;
-  int _758;
-  int _759;
-  int _765;
-  float _767;
-  int _772;
-  int _775;
-  float _793;
-  float _802;
-  float _823;
-  float _831;
-  float _832;
-  float _838;
-  uint _856;
-  float4 _859;
-  float4 _867;
-  float _872;
-  float _873;
-  float _874;
-  float _875;
-  float _877;
-  float _884;
-  float _899;
-  float _900;
-  float _901;
-  bool _903;
-  float _904;
-  float _905;
-  float _907;
-  float _908;
-  float _911;
-  float _928;
-  float _930;
-  float _932;
-  float _934;
-  float _935;
-  float _936;
-  float _937;
-  float _940;
-  float _941;
-  float _945;
-  float _946;
-  float _947;
-  float _948;
-  float _949;
-  float _950;
-  float _977;
-  float _979;
-  float _996;
-  float _1005;
-  float _1008;
-  float _1009;
-  uint _1012;
-  uint _1013;
-  int _1025;
-  int _1026;
-  int _1027;
-  bool _1030;
-  uint _1032;
-  int _1041;
-  int _1045;
-  int _1046;
-  uint _1047;
-  int _1050;
-  int _1054;
-  int _1055;
-  int _1062;
-  int _1067;
-  uint _1069;
-  uint _1070;
-  float _1079;
-  int _1109;
-  float _1139;
-  float _1146;
-  float _1150;
-  float _1167;
-  int _1188;
-  bool _1204;
-  uint _1211;
-  int _1220;
-  uint _1230;
-  int _1234;
-  int _1235;
-  int _1236;
-  int _1242;
-  int _1243;
-  int _1244;
-  int _1250;
-  int _1254;
-  int _1255;
-  int _1256;
-  int _1262;
-  int _1265;
-  float _1286;
-  float _1287;
-  float _1288;
-  int _1304;
-  int _1307;
-  uint _1308;
-  int _1311;
-  float _1312;
-  int _1315;
-  int _1316;
-  int _1317;
-  int _1323;
-  int _1324;
-  int _1325;
-  int _1331;
-  int _1332;
-  int _1333;
-  int _1339;
-  int _1340;
-  int _1341;
-  int _1347;
-  int _1348;
-  int _1349;
-  int _1355;
-  int _1356;
-  int _1357;
-  float _1370;
-  float _1371;
-  float _1372;
-  float _1376;
-  float _1380;
-  float _1384;
-  uint _1387;
-  uint _1388;
-  int _1400;
-  int _1401;
-  int _1402;
-  bool _1405;
-  uint _1407;
-  float _1408;
-  float _1409;
-  int _1415;
-  int _1416;
-  uint _1417;
-  int _1420;
-  int _1421;
-  int _1428;
-  int _1433;
-  uint _1435;
-  uint _1436;
-  int _1441;
-  int _1445;
-  float _1453;
-  float _1466;
-  float _1467;
-  int _1483;
-  uint _1521;
-  int _1524;
-  int _1528;
-  int _1529;
-  int _1530;
-  int _1536;
-  int _1537;
-  int _1538;
-  int _1544;
-  int _1545;
-  int _1546;
-  int _1552;
-  int _1553;
-  int _1554;
-  float _1559;
-  float _1571;
-  float _1611;
-  float _1614;
-  float _1626;
-  float _1627;
-  uint _1639;
-  float4 _1642;
-  float4 _1650;
-  float _1683;
-  float _1687;
-  float _1691;
-  float _1700;
-  float4 _1716;
-  float _1721;
-  float _1722;
-  float _1723;
-  float _1724;
-  float _1726;
-  float _1733;
-  float _1748;
-  float _1749;
-  float _1750;
-  bool _1752;
-  float _1753;
-  float _1754;
-  float _1756;
-  float _1757;
-  float _1760;
-  float _1777;
-  float _1779;
-  float _1781;
-  float _1784;
-  float _1838;
-  float _1839;
-  float _1840;
-  int _1842;
-  float _1844;
-  float _1845;
-  float _1846;
-  int _1848;
-  int _1851;
-  int _1853;
-  int _1855;
-  uint _1856;
-  uint _1857;
-  uint _1858;
-  float _1861;
-  float _1862;
-  float _1871;
-  float _1872;
-  float _1873;
-  float _1876;
-  float _1877;
-  float _1878;
-  float _1879;
-  float _1880;
-  float _1881;
-  float _1885;
-  float _1886;
-  float _1887;
-  float _1891;
-  float _1892;
-  float _1893;
-  float _1904;
-  float _1905;
-  float _1912;
-  float _1914;
-  float _1916;
-  float _1923;
-  float _1925;
-  float _1928;
-  float _1944;
-  int _1990;
-  int _1991;
-  int _1992;
-  int _1993;
-  int _1994;
-  int _1995;
-  int _1996;
-  uint _2013;
-  uint _2014;
-  float _2040;
-  uint _2042;
-  int _2043;
-  float _2059;
-  float _2065;
-  float _2066;
-  float _2074;
-  uint _2075;
+  uint3 SV_DispatchThreadID = __SV_DispatchThreadID;
+  uint3 SV_GroupID = __SV_GroupID;
+  uint3 SV_GroupThreadID = __SV_GroupThreadID;
+  uint SV_GroupIndex = __SV_GroupIndex;
+  int _31 = 0;
+  int _34 = 0;
+  int _37 = 0;
+  int _39 = 0;
+  int _45 = 0;
+  int _48 = 0;
+  int _51 = 0;
+  int _53 = 0;
+  uint _62 = 0u;
+  uint _64 = 0u;
+  float _83 = 0.0f;
+  float _210 = 0.0f;
+  float _211 = 0.0f;
+  float _228 = 0.0f;
+  float _254 = 0.0f;
+  float _414 = 0.0f;
+  float _419 = 0.0f;
+  int _623 = 0;
+  int _665 = 0;
+  int _672 = 0;
+  int _676 = 0;
+  int _677 = 0;
+  int _683 = 0;
+  float _784 = 0.0f;
+  int _818 = 0;
+  int _819 = 0;
+  float _820 = 0.0f;
+  float _986 = 0.0f;
+  float _987 = 0.0f;
+  float _988 = 0.0f;
+  float _989 = 0.0f;
+  int _990 = 0;
+  float _999 = 0.0f;
+  int _1022 = 0;
+  int _1107 = 0;
+  int _1114 = 0;
+  int _1115 = 0;
+  float _1116 = 0.0f;
+  float _1117 = 0.0f;
+  int _1118 = 0;
+  int _1119 = 0;
+  bool _1137 = false;
+  float _1138 = 0.0f;
+  float _1163 = 0.0f;
+  float _1164 = 0.0f;
+  float _1165 = 0.0f;
+  float _1166 = 0.0f;
+  float _1173 = 0.0f;
+  float _1174 = 0.0f;
+  float _1175 = 0.0f;
+  float _1176 = 0.0f;
+  float _1180 = 0.0f;
+  bool _1181 = false;
+  float _1183 = 0.0f;
+  bool _1184 = false;
+  int _1197 = 0;
+  float _1198 = 0.0f;
+  int _1214 = 0;
+  int _1216 = 0;
+  int _1217 = 0;
+  float _1218 = 0.0f;
+  int _1397 = 0;
+  int _1481 = 0;
+  float _1488 = 0.0f;
+  float _1489 = 0.0f;
+  int _1490 = 0;
+  int _1491 = 0;
+  float _1492 = 0.0f;
+  float _1493 = 0.0f;
+  int _1494 = 0;
+  int _1495 = 0;
+  float _1513 = 0.0f;
+  float _1514 = 0.0f;
+  int _1515 = 0;
+  int _1516 = 0;
+  bool _1517 = false;
+  int _1518 = 0;
+  float _1519 = 0.0f;
+  float _1604 = 0.0f;
+  float _1605 = 0.0f;
+  float _1617 = 0.0f;
+  float _1801 = 0.0f;
+  float _1802 = 0.0f;
+  float _1803 = 0.0f;
+  float _1804 = 0.0f;
+  float _1805 = 0.0f;
+  float _1806 = 0.0f;
+  bool _1807 = false;
+  float _1808 = 0.0f;
+  float _1809 = 0.0f;
+  float _1810 = 0.0f;
+  float _1834 = 0.0f;
+  int _1835 = 0;
+  int _1933 = 0;
+  int _1934 = 0;
+  int _1935 = 0;
+  int _1936 = 0;
+  int _1937 = 0;
+  int _1938 = 0;
+  int _1939 = 0;
+  float _1940 = 0.0f;
+  float _1941 = 0.0f;
+  float _1942 = 0.0f;
+  int _2019 = 0;
+  int _2020 = 0;
+  int _2021 = 0;
+  int _2022 = 0;
+  int _2023 = 0;
+  int _2024 = 0;
+  int _2025 = 0;
+  float _2058 = 0.0f;
+  float _2062 = 0.0f;
+  float _2069 = 0.0f;
+  float _2071 = 0.0f;
+  float _2079 = 0.0f;
+  float _2105 = 0.0f;
+  bool _76 = false;
+  float4 _79 = float4(0.0f, 0.0f, 0.0f, 0.0f);
+  float _97 = 0.0f;
+  float _98 = 0.0f;
+  float _134 = 0.0f;
+  float _135 = 0.0f;
+  float _136 = 0.0f;
+  float _137 = 0.0f;
+  float _145 = 0.0f;
+  float _148 = 0.0f;
+  float _156 = 0.0f;
+  float4 _158 = float4(0.0f, 0.0f, 0.0f, 0.0f);
+  uint _167 = 0u;
+  int _168 = 0;
+  float _172 = 0.0f;
+  float _173 = 0.0f;
+  float _174 = 0.0f;
+  float _176 = 0.0f;
+  int _182 = 0;
+  bool _183 = false;
+  float _203 = 0.0f;
+  bool _220 = false;
+  float _233 = 0.0f;
+  float _234 = 0.0f;
+  float _235 = 0.0f;
+  float _241 = 0.0f;
+  float _261 = 0.0f;
+  bool _268 = false;
+  float _269 = 0.0f;
+  float _270 = 0.0f;
+  float _271 = 0.0f;
+  float _275 = 0.0f;
+  float _276 = 0.0f;
+  float _277 = 0.0f;
+  float _305 = 0.0f;
+  float _309 = 0.0f;
+  float _313 = 0.0f;
+  float _317 = 0.0f;
+  float _318 = 0.0f;
+  float _319 = 0.0f;
+  float _320 = 0.0f;
+  float _336 = 0.0f;
+  float _337 = 0.0f;
+  float _338 = 0.0f;
+  float _339 = 0.0f;
+  float _345 = 0.0f;
+  float _353 = 0.0f;
+  float _354 = 0.0f;
+  float _355 = 0.0f;
+  float _356 = 0.0f;
+  float _358 = 0.0f;
+  float _359 = 0.0f;
+  float4 _361 = float4(0.0f, 0.0f, 0.0f, 0.0f);
+  float4 _369 = float4(0.0f, 0.0f, 0.0f, 0.0f);
+  float _375 = 0.0f;
+  float4 _382 = float4(0.0f, 0.0f, 0.0f, 0.0f);
+  float _388 = 0.0f;
+  float4 _395 = float4(0.0f, 0.0f, 0.0f, 0.0f);
+  float _401 = 0.0f;
+  float4 _408 = float4(0.0f, 0.0f, 0.0f, 0.0f);
+  float _450 = 0.0f;
+  float _454 = 0.0f;
+  float _458 = 0.0f;
+  float _464 = 0.0f;
+  uint _472 = 0u;
+  int _476 = 0;
+  int _477 = 0;
+  int _478 = 0;
+  int _484 = 0;
+  int _485 = 0;
+  int _486 = 0;
+  int _492 = 0;
+  int _496 = 0;
+  int _497 = 0;
+  int _498 = 0;
+  int _504 = 0;
+  int _507 = 0;
+  float _528 = 0.0f;
+  float _529 = 0.0f;
+  float _530 = 0.0f;
+  int _546 = 0;
+  uint _549 = 0u;
+  uint _550 = 0u;
+  int _553 = 0;
+  int _554 = 0;
+  int _559 = 0;
+  int _560 = 0;
+  int _565 = 0;
+  int _566 = 0;
+  int _571 = 0;
+  int _572 = 0;
+  int _577 = 0;
+  int _578 = 0;
+  int _579 = 0;
+  int _585 = 0;
+  int _586 = 0;
+  int _587 = 0;
+  float _600 = 0.0f;
+  float _601 = 0.0f;
+  float _602 = 0.0f;
+  uint _613 = 0u;
+  uint _614 = 0u;
+  int _626 = 0;
+  int _627 = 0;
+  int _628 = 0;
+  bool _631 = false;
+  uint _633 = 0u;
+  int _642 = 0;
+  int _645 = 0;
+  int _647 = 0;
+  int _651 = 0;
+  int _654 = 0;
+  int _667 = 0;
+  uint _686 = 0u;
+  uint _687 = 0u;
+  int _689 = 0;
+  float _690 = 0.0f;
+  int _693 = 0;
+  int _694 = 0;
+  int _695 = 0;
+  float _696 = 0.0f;
+  float _697 = 0.0f;
+  float _698 = 0.0f;
+  int _701 = 0;
+  int _702 = 0;
+  int _703 = 0;
+  float _704 = 0.0f;
+  float _705 = 0.0f;
+  float _706 = 0.0f;
+  int _709 = 0;
+  int _710 = 0;
+  int _711 = 0;
+  float _712 = 0.0f;
+  float _713 = 0.0f;
+  float _714 = 0.0f;
+  int _717 = 0;
+  int _718 = 0;
+  int _719 = 0;
+  int _725 = 0;
+  int _726 = 0;
+  int _727 = 0;
+  int _733 = 0;
+  int _734 = 0;
+  int _735 = 0;
+  int _741 = 0;
+  int _742 = 0;
+  int _743 = 0;
+  int _749 = 0;
+  int _750 = 0;
+  int _751 = 0;
+  int _757 = 0;
+  int _758 = 0;
+  int _759 = 0;
+  int _765 = 0;
+  float _767 = 0.0f;
+  int _772 = 0;
+  int _775 = 0;
+  float _793 = 0.0f;
+  float _802 = 0.0f;
+  float _823 = 0.0f;
+  float _831 = 0.0f;
+  float _832 = 0.0f;
+  float _838 = 0.0f;
+  uint _856 = 0u;
+  float4 _859 = float4(0.0f, 0.0f, 0.0f, 0.0f);
+  float4 _867 = float4(0.0f, 0.0f, 0.0f, 0.0f);
+  float _872 = 0.0f;
+  float _873 = 0.0f;
+  float _874 = 0.0f;
+  float _875 = 0.0f;
+  float _877 = 0.0f;
+  float _884 = 0.0f;
+  float _899 = 0.0f;
+  float _900 = 0.0f;
+  float _901 = 0.0f;
+  bool _903 = false;
+  float _904 = 0.0f;
+  float _905 = 0.0f;
+  float _907 = 0.0f;
+  float _908 = 0.0f;
+  float _911 = 0.0f;
+  float _928 = 0.0f;
+  float _930 = 0.0f;
+  float _932 = 0.0f;
+  float _934 = 0.0f;
+  float _935 = 0.0f;
+  float _936 = 0.0f;
+  float _937 = 0.0f;
+  float _940 = 0.0f;
+  float _941 = 0.0f;
+  float _945 = 0.0f;
+  float _946 = 0.0f;
+  float _947 = 0.0f;
+  float _948 = 0.0f;
+  float _949 = 0.0f;
+  float _950 = 0.0f;
+  float _977 = 0.0f;
+  float _979 = 0.0f;
+  float _996 = 0.0f;
+  float _1005 = 0.0f;
+  float _1008 = 0.0f;
+  float _1009 = 0.0f;
+  uint _1012 = 0u;
+  uint _1013 = 0u;
+  int _1025 = 0;
+  int _1026 = 0;
+  int _1027 = 0;
+  bool _1030 = false;
+  uint _1032 = 0u;
+  int _1041 = 0;
+  int _1045 = 0;
+  int _1046 = 0;
+  uint _1047 = 0u;
+  int _1050 = 0;
+  int _1054 = 0;
+  int _1055 = 0;
+  int _1062 = 0;
+  int _1067 = 0;
+  uint _1069 = 0u;
+  uint _1070 = 0u;
+  float _1079 = 0.0f;
+  int _1109 = 0;
+  float _1139 = 0.0f;
+  float _1146 = 0.0f;
+  float _1150 = 0.0f;
+  float _1167 = 0.0f;
+  int _1188 = 0;
+  bool _1204 = false;
+  bool _1209 = false;
+  uint _1211 = 0u;
+  int _1220 = 0;
+  uint _1230 = 0u;
+  int _1234 = 0;
+  int _1235 = 0;
+  int _1236 = 0;
+  int _1242 = 0;
+  int _1243 = 0;
+  int _1244 = 0;
+  int _1250 = 0;
+  int _1254 = 0;
+  int _1255 = 0;
+  int _1256 = 0;
+  int _1262 = 0;
+  int _1265 = 0;
+  float _1286 = 0.0f;
+  float _1287 = 0.0f;
+  float _1288 = 0.0f;
+  int _1304 = 0;
+  int _1307 = 0;
+  uint _1308 = 0u;
+  int _1311 = 0;
+  float _1312 = 0.0f;
+  int _1315 = 0;
+  int _1316 = 0;
+  int _1317 = 0;
+  int _1323 = 0;
+  int _1324 = 0;
+  int _1325 = 0;
+  int _1331 = 0;
+  int _1332 = 0;
+  int _1333 = 0;
+  int _1339 = 0;
+  int _1340 = 0;
+  int _1341 = 0;
+  int _1347 = 0;
+  int _1348 = 0;
+  int _1349 = 0;
+  int _1355 = 0;
+  int _1356 = 0;
+  int _1357 = 0;
+  float _1370 = 0.0f;
+  float _1371 = 0.0f;
+  float _1372 = 0.0f;
+  float _1376 = 0.0f;
+  float _1380 = 0.0f;
+  float _1384 = 0.0f;
+  uint _1387 = 0u;
+  uint _1388 = 0u;
+  int _1400 = 0;
+  int _1401 = 0;
+  int _1402 = 0;
+  bool _1405 = false;
+  uint _1407 = 0u;
+  float _1408 = 0.0f;
+  float _1409 = 0.0f;
+  int _1415 = 0;
+  int _1416 = 0;
+  uint _1417 = 0u;
+  int _1420 = 0;
+  int _1421 = 0;
+  int _1428 = 0;
+  int _1433 = 0;
+  uint _1435 = 0u;
+  uint _1436 = 0u;
+  int _1441 = 0;
+  int _1445 = 0;
+  float _1453 = 0.0f;
+  float _1466 = 0.0f;
+  float _1467 = 0.0f;
+  int _1483 = 0;
+  uint _1521 = 0u;
+  int _1524 = 0;
+  int _1528 = 0;
+  int _1529 = 0;
+  int _1530 = 0;
+  int _1536 = 0;
+  int _1537 = 0;
+  int _1538 = 0;
+  int _1544 = 0;
+  int _1545 = 0;
+  int _1546 = 0;
+  int _1552 = 0;
+  int _1553 = 0;
+  int _1554 = 0;
+  float _1559 = 0.0f;
+  float _1571 = 0.0f;
+  float _1611 = 0.0f;
+  float _1614 = 0.0f;
+  float _1626 = 0.0f;
+  float _1627 = 0.0f;
+  uint _1639 = 0u;
+  float4 _1642 = float4(0.0f, 0.0f, 0.0f, 0.0f);
+  float4 _1650 = float4(0.0f, 0.0f, 0.0f, 0.0f);
+  float _1683 = 0.0f;
+  float _1687 = 0.0f;
+  float _1691 = 0.0f;
+  float _1700 = 0.0f;
+  float4 _1716 = float4(0.0f, 0.0f, 0.0f, 0.0f);
+  float _1721 = 0.0f;
+  float _1722 = 0.0f;
+  float _1723 = 0.0f;
+  float _1724 = 0.0f;
+  float _1726 = 0.0f;
+  float _1733 = 0.0f;
+  float _1748 = 0.0f;
+  float _1749 = 0.0f;
+  float _1750 = 0.0f;
+  bool _1752 = false;
+  float _1753 = 0.0f;
+  float _1754 = 0.0f;
+  float _1756 = 0.0f;
+  float _1757 = 0.0f;
+  float _1760 = 0.0f;
+  float _1777 = 0.0f;
+  float _1779 = 0.0f;
+  float _1781 = 0.0f;
+  float _1784 = 0.0f;
+  float _1838 = 0.0f;
+  float _1839 = 0.0f;
+  float _1840 = 0.0f;
+  int _1842 = 0;
+  float _1844 = 0.0f;
+  float _1845 = 0.0f;
+  float _1846 = 0.0f;
+  int _1848 = 0;
+  int _1851 = 0;
+  int _1853 = 0;
+  int _1855 = 0;
+  uint _1856 = 0u;
+  uint _1857 = 0u;
+  uint _1858 = 0u;
+  float _1861 = 0.0f;
+  float _1862 = 0.0f;
+  float _1871 = 0.0f;
+  float _1872 = 0.0f;
+  float _1873 = 0.0f;
+  float _1876 = 0.0f;
+  float _1877 = 0.0f;
+  float _1878 = 0.0f;
+  float _1879 = 0.0f;
+  float _1880 = 0.0f;
+  float _1881 = 0.0f;
+  float _1885 = 0.0f;
+  float _1886 = 0.0f;
+  float _1887 = 0.0f;
+  float _1891 = 0.0f;
+  float _1892 = 0.0f;
+  float _1893 = 0.0f;
+  float _1904 = 0.0f;
+  float _1905 = 0.0f;
+  float _1912 = 0.0f;
+  float _1914 = 0.0f;
+  float _1916 = 0.0f;
+  float _1923 = 0.0f;
+  float _1925 = 0.0f;
+  float _1928 = 0.0f;
+  float _1944 = 0.0f;
+  int _1990 = 0;
+  int _1991 = 0;
+  int _1992 = 0;
+  int _1993 = 0;
+  int _1994 = 0;
+  int _1995 = 0;
+  int _1996 = 0;
+  uint _2009 = 0u;
+  uint _2013 = 0u;
+  uint _2014 = 0u;
+  float _2040 = 0.0f;
+  uint _2042 = 0u;
+  int _2043 = 0;
+  uint _2048 = 0u;
+  float _2059 = 0.0f;
+  float _2065 = 0.0f;
+  float _2066 = 0.0f;
+  float _2074 = 0.0f;
+  uint _2075 = 0u;
   _31 = (int)(SV_GroupIndex) & 1431655765;
   _34 = (((uint)(_31) >> 1) | _31) & 858993459;
   _37 = (((uint)(_34) >> 2) | _34) & 252645135;
@@ -1226,13 +1234,14 @@ void main(
   _53 = ((uint)(_51) >> 4) | _51;
   _62 = ((uint)(ProjectionRect.x) + ((int)(SV_GroupID.x) << 3)) + ((uint)((((uint)(_39) >> 8) & 65280) | (_39 & 255)));
   _64 = ((uint)(ProjectionRect.y) + ((int)(SV_GroupID.y) << 3)) + ((uint)((((uint)(_53) >> 8) & 65280) | (_53 & 255)));
-  if ((int)((uint)_62 >= (uint)ProjectionRect.z) || (int)((uint)_64 >= (uint)ProjectionRect.w)) {
+  if (((uint)_62 >= (uint)ProjectionRect.z) || ((uint)_64 >= (uint)ProjectionRect.w)) {
   } else {
     _76 = (InputType == 1);
     if (_76) {
-      if ((((float4)(HairStrands_HairOnlyDepthTexture.Load(int3(_62, _64, 0)))).x) == 0.0f) {
+      _79 = HairStrands_HairOnlyDepthTexture.Load(int3(_62, _64, 0));
+      if (_79.x == 0.0f) {
       } else {
-        _83 = (((float4)(HairStrands_HairOnlyDepthTexture.Load(int3(_62, _64, 0)))).x);
+        _83 = _79.x;
         _97 = float((uint)_62) + 0.5f;
         _98 = float((uint)_64) + 0.5f;
         _134 = mad(1.0f, (View.SVPositionToTranslatedWorld[3].w), mad(_83, (View.SVPositionToTranslatedWorld[2].w), mad(_98, (View.SVPositionToTranslatedWorld[1].w), (_97 * (View.SVPositionToTranslatedWorld[0].w)))));
@@ -1241,12 +1250,7 @@ void main(
         _137 = mad(1.0f, (View.SVPositionToTranslatedWorld[3].z), mad(_83, (View.SVPositionToTranslatedWorld[2].z), mad(_98, (View.SVPositionToTranslatedWorld[1].z), (_97 * (View.SVPositionToTranslatedWorld[0].z))))) / _134;
         _145 = ((ScreenRayLength * (((View.InvDeviceZToWorldZTransform.x * _83) + View.InvDeviceZToWorldZTransform.y) + (1.0f / ((View.InvDeviceZToWorldZTransform.z * _83) - View.InvDeviceZToWorldZTransform.w)))) * View.ScreenRayLengthMultiplier.y) + View.ScreenRayLengthMultiplier.w;
         _148 = float((uint)(uint)(View.StateFrameIndexMod8));
-        // IS-FAST replacement for IGN
-        if (InjectionToggle(TOGGLE_USE_ISFAST_SHADOWS)) {
-          _156 = ISFASTNoise.Load(int4(int2(uint(_62) % 128u, uint(_64) % 128u), uint(float(InjectionFrameIndex())) % 32u, 0)).x;
-        } else {
-          _156 = frac(frac(dot(float2(((_148 * 32.665000915527344f) + _97), ((_148 * 11.8149995803833f) + _98)), float2(0.0671105608344078f, 0.005837149918079376f))) * 52.98291778564453f);
-        }
+        _156 = frac(frac(dot(float2(((_148 * 32.665000915527344f) + _97), ((_148 * 11.8149995803833f) + _98)), float2(0.0671105608344078f, 0.005837149918079376f))) * 52.98291778564453f);
         _158 = SceneTexturesStruct_GBufferATexture.Load(int3(_62, _64, 0));
         _167 = uint(((((float4)(SceneTexturesStruct_GBufferBTexture.Load(int3(_62, _64, 0)))).w) * 255.0f) + 0.5f);
         _168 = _167 & 15;
@@ -1256,8 +1260,8 @@ void main(
         _176 = rsqrt(dot(float3(_172, _173, _174), float3(_172, _173, _174)));
         _182 = _167 & 14;
         _183 = (_182 == 2);
-        if (((int)(_183 || (int)(_168 == 6))) && ((int)(!_76))) {
-          _203 = min(select(((int)(_182 == 8) || ((int)((int)((_167 & 12) == 4) || _183))), (((float4)(SceneTexturesStruct_GBufferDTexture.Load(int3(_62, _64, 0)))).w), 0.0f), 0.9900000095367432f);
+        if ((_183 || (_168 == 6)) && (!_76)) {
+          _203 = min(select(((_182 == 8) || (((_167 & 12) == 4) || _183)), (((float4)(SceneTexturesStruct_GBufferDTexture.Load(int3(_62, _64, 0)))).w), 0.0f), 0.9900000095367432f);
           _210 = ((log2(1.0f - min(_203, 0.9900000095367432f)) * -0.03465735912322998f) * -1.4426950216293335f);
           _211 = _203;
         } else {
@@ -1280,15 +1284,15 @@ void main(
           _254 = _241;
         }
         _261 = max(0.019999999552965164f, ((_254 * NormalBias) / View.TanAndInvTanHalfFOV.z));
-        if ((int)(_168 != 0) || _76) {
-          _268 = (int)(_168 == 7) || _76;
+        if ((_168 != 0) || _76) {
+          _268 = (_168 == 7) || _76;
           _269 = select(_268, Light_Direction.x, (_172 * _176));
           _270 = select(_268, Light_Direction.y, (_173 * _176));
           _271 = select(_268, Light_Direction.z, (_174 * _176));
           _275 = _135 + (_269 * _261);
           _276 = _136 + (_270 * _261);
           _277 = _137 + (_271 * _261);
-          if ((int)(_145 > 0.0f) && ((int)(!_76))) {
+          if ((_145 > 0.0f) && (!_76)) {
             _305 = mad(_277, (View.TranslatedWorldToClip[2].x), mad(_276, (View.TranslatedWorldToClip[1].x), ((View.TranslatedWorldToClip[0].x) * _275))) + (View.TranslatedWorldToClip[3].x);
             _309 = mad(_277, (View.TranslatedWorldToClip[2].y), mad(_276, (View.TranslatedWorldToClip[1].y), ((View.TranslatedWorldToClip[0].y) * _275))) + (View.TranslatedWorldToClip[3].y);
             _313 = mad(_277, (View.TranslatedWorldToClip[2].z), mad(_276, (View.TranslatedWorldToClip[1].z), ((View.TranslatedWorldToClip[0].z) * _275))) + (View.TranslatedWorldToClip[3].z);
@@ -1307,22 +1311,27 @@ void main(
             _356 = View.ScreenPositionScaleBias.y * (((mad(_320, (View.TranslatedWorldToClip[2].y), mad(_319, (View.TranslatedWorldToClip[1].y), ((View.TranslatedWorldToClip[0].y) * _318))) + _309) / _336) - _338);
             _358 = (_156 + -0.5f) * 0.25f;
             _359 = _358 + 0.25f;
-            if ((int)((((float4)(SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(((_355 * _359) + _353), ((_356 * _359) + _354)), 0.0f))).x) != (((float4)(SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(_353, _354), 0.0f))).x)) && (int)(((_345 * _359) + _339) < (((float4)(SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(((_355 * _359) + _353), ((_356 * _359) + _354)), 0.0f))).x))) {
+            _361 = SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(_353, _354), 0.0f);
+            _369 = SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(((_355 * _359) + _353), ((_356 * _359) + _354)), 0.0f);
+            if ((_369.x != _361.x) && (((_345 * _359) + _339) < _369.x)) {
               _414 = _359;
               _419 = (max(0.0f, (_414 + -0.375f)) * _145);
             } else {
               _375 = _358 + 0.5f;
-              if ((int)((((float4)(SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(((_355 * _375) + _353), ((_356 * _375) + _354)), 0.0f))).x) != (((float4)(SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(_353, _354), 0.0f))).x)) && (int)(((_345 * _375) + _339) < (((float4)(SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(((_355 * _375) + _353), ((_356 * _375) + _354)), 0.0f))).x))) {
+              _382 = SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(((_355 * _375) + _353), ((_356 * _375) + _354)), 0.0f);
+              if ((_382.x != _361.x) && (((_345 * _375) + _339) < _382.x)) {
                 _414 = _375;
                 _419 = (max(0.0f, (_414 + -0.375f)) * _145);
               } else {
                 _388 = _358 + 0.75f;
-                if ((int)((((float4)(SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(((_355 * _388) + _353), ((_356 * _388) + _354)), 0.0f))).x) != (((float4)(SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(_353, _354), 0.0f))).x)) && (int)(((_345 * _388) + _339) < (((float4)(SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(((_355 * _388) + _353), ((_356 * _388) + _354)), 0.0f))).x))) {
+                _395 = SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(((_355 * _388) + _353), ((_356 * _388) + _354)), 0.0f);
+                if ((_395.x != _361.x) && (((_345 * _388) + _339) < _395.x)) {
                   _414 = _388;
                   _419 = (max(0.0f, (_414 + -0.375f)) * _145);
                 } else {
                   _401 = _358 + 1.0f;
-                  if ((int)((((float4)(SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(((_355 * _401) + _353), ((_356 * _401) + _354)), 0.0f))).x) != (((float4)(SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(_353, _354), 0.0f))).x)) && (int)(((_345 * _401) + _339) < (((float4)(SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(((_355 * _401) + _353), ((_356 * _401) + _354)), 0.0f))).x))) {
+                  _408 = SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(((_355 * _401) + _353), ((_356 * _401) + _354)), 0.0f);
+                  if ((_408.x != _361.x) && (((_345 * _401) + _339) < _408.x)) {
                     _414 = _401;
                     _419 = (max(0.0f, (_414 + -0.375f)) * _145);
                   } else {
@@ -1339,7 +1348,7 @@ void main(
             _454 = mad(_277, (View.TranslatedWorldToView[2].y), mad(_276, (View.TranslatedWorldToView[1].y), ((View.TranslatedWorldToView[0].y) * _275))) + (View.TranslatedWorldToView[3].y);
             _458 = mad(_277, (View.TranslatedWorldToView[2].z), mad(_276, (View.TranslatedWorldToView[1].z), ((View.TranslatedWorldToView[0].z) * _275))) + (View.TranslatedWorldToView[3].z);
             _464 = sqrt(((_454 * _454) + (_450 * _450)) + (_458 * _458));
-            if ((((int)((int)(_168 == 9) || ((int)(_183 || (int)((uint)(_168 + -5) < (uint)3))))) || ((int)(_76 || (int)(bCullBackfacingPixels == 0)))) | !(dot(float3(_269, _270, _271), float3(Light_Direction.x, Light_Direction.y, Light_Direction.z)) < (-0.0f - max(abs(_228), 0.10000000149011612f)))) {
+            if ((((_168 == 9) || (_183 || ((uint)(_168 + -5) < (uint)3))) || (_76 || (bCullBackfacingPixels == 0))) | !(dot(float3(_269, _270, _271), float3(Light_Direction.x, Light_Direction.y, Light_Direction.z)) < (-0.0f - max(abs(_228), 0.10000000149011612f)))) {
               _472 = LightUniformVirtualShadowMapId * 288;
               _476 = asint(VirtualShadowMap_ProjectionData.Load3(((int)(_472 + 208u)))).x;
               _477 = asint(VirtualShadowMap_ProjectionData.Load3(((int)(_472 + 208u)))).y;
@@ -1412,7 +1421,7 @@ void main(
                   _676 = 0;
                   _677 = -1;
                 }
-                _683 = select(((int)(_676 != 0) && (int)((int)_677 > (int)_549)), _677, _549);
+                _683 = select(((_676 != 0) && ((int)_677 > (int)_549)), _677, _549);
               } else {
                 _683 = -1;
               }
@@ -1478,16 +1487,8 @@ void main(
                     _832 = float((int)(BlueNoise.Dimensions.y));
                     _838 = float((uint)(_819 + (uint)(SMRTRayCount)));
                     _856 = (BlueNoise.ModuloMasks.z & View.StateFrameIndex) * BlueNoise.Dimensions.y;
-                    // IS-FAST replacement for Blue Noise Vec2 (SMRT ray dithering)
-                    if (InjectionToggle(TOGGLE_USE_ISFAST_SHADOWS)) {
-                      float2 _isfast_ray0 = ISFASTNoise.Load(int4(int2((uint(_62) + uint(_823)) % 128u, (uint(_64) + uint(_823) * 7u) % 128u), (uint(float(InjectionFrameIndex())) + uint(_823)) % 32u, 0));
-                      float2 _isfast_ray1 = ISFASTNoise.Load(int4(int2((uint(_62) + uint(_838)) % 128u, (uint(_64) + uint(_838) * 7u) % 128u), (uint(float(InjectionFrameIndex())) + uint(_838)) % 32u, 0));
-                      _859 = float4(_isfast_ray0.x, _isfast_ray0.y, 0, 0);
-                      _867 = float4(_isfast_ray1.x, _isfast_ray1.y, 0, 0);
-                    } else {
-                      _859 = BlueNoise_Vec2Texture.Load(int3((((int)((uint)(int(_831 * frac(_823 * 0.7548776268959045f))) + _62)) & BlueNoise.ModuloMasks.x), ((int)(_856 + ((uint)(((int)((uint)(int(_832 * frac(_823 * 0.5698402523994446f))) + _64)) & BlueNoise.ModuloMasks.y)))), 0));
-                      _867 = BlueNoise_Vec2Texture.Load(int3((BlueNoise.ModuloMasks.x & ((int)((uint)(int(_831 * frac(_838 * 0.7548776268959045f))) + _62))), ((int)(_856 + ((uint)(BlueNoise.ModuloMasks.y & ((int)((uint)(int(_832 * frac(_838 * 0.5698402523994446f))) + _64)))))), 0));
-                    }
+                    _859 = BlueNoise_Vec2Texture.Load(int3((((int)((uint)(int(_831 * frac(_823 * 0.7548776268959045f))) + _62)) & BlueNoise.ModuloMasks.x), ((int)(_856 + ((uint)(((int)((uint)(int(_832 * frac(_823 * 0.5698402523994446f))) + _64)) & BlueNoise.ModuloMasks.y)))), 0));
+                    _867 = BlueNoise_Vec2Texture.Load(int3((BlueNoise.ModuloMasks.x & ((int)((uint)(int(_831 * frac(_838 * 0.7548776268959045f))) + _62))), ((int)(_856 + ((uint)(BlueNoise.ModuloMasks.y & ((int)((uint)(int(_832 * frac(_838 * 0.5698402523994446f))) + _64)))))), 0));
                     _872 = (_859.x * 2.0f) + -0.9999999403953552f;
                     _873 = (_859.y * 2.0f) + -0.9999999403953552f;
                     _874 = abs(_872);
@@ -1915,7 +1916,7 @@ void main(
               _1605 = -1.0f;
             }
           }
-          if (_220 && (int)(_1604 < 1.0f)) {
+          if (_220 && (_1604 < 1.0f)) {
             _1611 = saturate(exp2(_210 * _1605));
             _1614 = ((1.0f - _1611) * _1604) + _1611;
             _1617 = (_1614 * _1614);
@@ -1926,29 +1927,12 @@ void main(
         } else {
           _2079 = 1.0f;
         }
-        if ((int)(_2079 > 0.01666666753590107f) && (int)(_2079 < 1.0f)) {
-          if (InjectionToggle(TOGGLE_USE_ISFAST_SHADOWS)) {
-            float _isfast_scalar = ISFASTNoise.Load(int4(int2(uint(_62) % 128u, uint(_64) % 128u), uint(float(InjectionFrameIndex())) % 32u, 0)).x;
-            _2105 = saturate(((_isfast_scalar + -0.5f) * 0.06666667014360428f) + _2079);
-          } else {
-            _2105 = saturate((((((float4)(BlueNoise_ScalarTexture.Load(int3((BlueNoise.ModuloMasks.x & _62), ((int)(((BlueNoise.ModuloMasks.z & View.StateFrameIndex) * BlueNoise.Dimensions.y) + ((uint)(BlueNoise.ModuloMasks.y & _64)))), 0)))).x) + -0.5f) * 0.06666667014360428f) + _2079);
-          }
+        if ((_2079 > 0.01666666753590107f) && (_2079 < 1.0f)) {
+          _2105 = saturate((((((float4)(BlueNoise_ScalarTexture.Load(int3((BlueNoise.ModuloMasks.x & _62), ((int)(((BlueNoise.ModuloMasks.z & View.StateFrameIndex) * BlueNoise.Dimensions.y) + ((uint)(BlueNoise.ModuloMasks.y & _64)))), 0)))).x) + -0.5f) * 0.06666667014360428f) + _2079);
         } else {
           _2105 = _2079;
         }
-        // Debug: amplified difference between IS-FAST and Blue Noise
-        // Output = abs(difference) * 50 — any difference shows as bright white shadow removal
-        if ((InjectionEnum(ENUM_DEBUG_SHADOWS_SHIFT) > 0u)) {
-          float _dbg_isfast_scalar = ISFASTNoise.Load(int4(int2(uint(_62) % 128u, uint(_64) % 128u), uint(float(InjectionFrameIndex())) % 32u, 0)).x;
-          float _dbg_isfast_result = saturate(((_dbg_isfast_scalar + -0.5f) * 0.06666667014360428f) + _2079);
-          float _dbg_bn_result = saturate((((((float4)(BlueNoise_ScalarTexture.Load(int3((BlueNoise.ModuloMasks.x & _62), ((int)(((BlueNoise.ModuloMasks.z & View.StateFrameIndex) * BlueNoise.Dimensions.y) + ((uint)(BlueNoise.ModuloMasks.y & _64)))), 0)))).x) + -0.5f) * 0.06666667014360428f) + _2079);
-          float _dbg_diff = saturate(abs(_dbg_isfast_result - _dbg_bn_result) * 50.0f);
-          // Bright = large difference, dark = no difference
-          // Invert so difference shows as shadow (more visible on lit surfaces)
-          OutShadowFactor[int2(_62, _64)] = float2(1.0f - _dbg_diff, 1.0f - _dbg_diff);
-        } else {
-          OutShadowFactor[int2(_62, _64)] = float2(_2105, _2105);
-        }
+        OutShadowFactor[int2(_62, _64)] = float2(_2105, _2105);
       }
     } else {
       _83 = (((float4)(SceneTexturesStruct_SceneDepthTexture.Load(int3(_62, _64, 0)))).x);
@@ -1960,12 +1944,7 @@ void main(
       _137 = mad(1.0f, (View.SVPositionToTranslatedWorld[3].z), mad(_83, (View.SVPositionToTranslatedWorld[2].z), mad(_98, (View.SVPositionToTranslatedWorld[1].z), (_97 * (View.SVPositionToTranslatedWorld[0].z))))) / _134;
       _145 = ((ScreenRayLength * (((View.InvDeviceZToWorldZTransform.x * _83) + View.InvDeviceZToWorldZTransform.y) + (1.0f / ((View.InvDeviceZToWorldZTransform.z * _83) - View.InvDeviceZToWorldZTransform.w)))) * View.ScreenRayLengthMultiplier.y) + View.ScreenRayLengthMultiplier.w;
       _148 = float((uint)(uint)(View.StateFrameIndexMod8));
-      // IS-FAST replacement for IGN (second path)
-      if (InjectionToggle(TOGGLE_USE_ISFAST_SHADOWS)) {
-        _156 = ISFASTNoise.Load(int4(int2(uint(_62) % 128u, uint(_64) % 128u), uint(float(InjectionFrameIndex())) % 32u, 0)).x;
-      } else {
-        _156 = frac(frac(dot(float2(((_148 * 32.665000915527344f) + _97), ((_148 * 11.8149995803833f) + _98)), float2(0.0671105608344078f, 0.005837149918079376f))) * 52.98291778564453f);
-      }
+      _156 = frac(frac(dot(float2(((_148 * 32.665000915527344f) + _97), ((_148 * 11.8149995803833f) + _98)), float2(0.0671105608344078f, 0.005837149918079376f))) * 52.98291778564453f);
       _158 = SceneTexturesStruct_GBufferATexture.Load(int3(_62, _64, 0));
       _167 = uint(((((float4)(SceneTexturesStruct_GBufferBTexture.Load(int3(_62, _64, 0)))).w) * 255.0f) + 0.5f);
       _168 = _167 & 15;
@@ -1975,8 +1954,8 @@ void main(
       _176 = rsqrt(dot(float3(_172, _173, _174), float3(_172, _173, _174)));
       _182 = _167 & 14;
       _183 = (_182 == 2);
-      if (((int)(_183 || (int)(_168 == 6))) && ((int)(!_76))) {
-        _203 = min(select(((int)(_182 == 8) || ((int)((int)((_167 & 12) == 4) || _183))), (((float4)(SceneTexturesStruct_GBufferDTexture.Load(int3(_62, _64, 0)))).w), 0.0f), 0.9900000095367432f);
+      if ((_183 || (_168 == 6)) && (!_76)) {
+        _203 = min(select(((_182 == 8) || (((_167 & 12) == 4) || _183)), (((float4)(SceneTexturesStruct_GBufferDTexture.Load(int3(_62, _64, 0)))).w), 0.0f), 0.9900000095367432f);
         _210 = ((log2(1.0f - min(_203, 0.9900000095367432f)) * -0.03465735912322998f) * -1.4426950216293335f);
         _211 = _203;
       } else {
@@ -1999,15 +1978,15 @@ void main(
         _254 = _241;
       }
       _261 = max(0.019999999552965164f, ((_254 * NormalBias) / View.TanAndInvTanHalfFOV.z));
-      if ((int)(_168 != 0) || _76) {
-        _268 = (int)(_168 == 7) || _76;
+      if ((_168 != 0) || _76) {
+        _268 = (_168 == 7) || _76;
         _269 = select(_268, Light_Direction.x, (_172 * _176));
         _270 = select(_268, Light_Direction.y, (_173 * _176));
         _271 = select(_268, Light_Direction.z, (_174 * _176));
         _275 = _135 + (_269 * _261);
         _276 = _136 + (_270 * _261);
         _277 = _137 + (_271 * _261);
-        if ((int)(_145 > 0.0f) && ((int)(!_76))) {
+        if ((_145 > 0.0f) && (!_76)) {
           _305 = mad(_277, (View.TranslatedWorldToClip[2].x), mad(_276, (View.TranslatedWorldToClip[1].x), ((View.TranslatedWorldToClip[0].x) * _275))) + (View.TranslatedWorldToClip[3].x);
           _309 = mad(_277, (View.TranslatedWorldToClip[2].y), mad(_276, (View.TranslatedWorldToClip[1].y), ((View.TranslatedWorldToClip[0].y) * _275))) + (View.TranslatedWorldToClip[3].y);
           _313 = mad(_277, (View.TranslatedWorldToClip[2].z), mad(_276, (View.TranslatedWorldToClip[1].z), ((View.TranslatedWorldToClip[0].z) * _275))) + (View.TranslatedWorldToClip[3].z);
@@ -2026,22 +2005,27 @@ void main(
           _356 = View.ScreenPositionScaleBias.y * (((mad(_320, (View.TranslatedWorldToClip[2].y), mad(_319, (View.TranslatedWorldToClip[1].y), ((View.TranslatedWorldToClip[0].y) * _318))) + _309) / _336) - _338);
           _358 = (_156 + -0.5f) * 0.25f;
           _359 = _358 + 0.25f;
-          if ((int)((((float4)(SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(((_355 * _359) + _353), ((_356 * _359) + _354)), 0.0f))).x) != (((float4)(SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(_353, _354), 0.0f))).x)) && (int)(((_345 * _359) + _339) < (((float4)(SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(((_355 * _359) + _353), ((_356 * _359) + _354)), 0.0f))).x))) {
+          _361 = SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(_353, _354), 0.0f);
+          _369 = SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(((_355 * _359) + _353), ((_356 * _359) + _354)), 0.0f);
+          if ((_369.x != _361.x) && (((_345 * _359) + _339) < _369.x)) {
             _414 = _359;
             _419 = (max(0.0f, (_414 + -0.375f)) * _145);
           } else {
             _375 = _358 + 0.5f;
-            if ((int)((((float4)(SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(((_355 * _375) + _353), ((_356 * _375) + _354)), 0.0f))).x) != (((float4)(SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(_353, _354), 0.0f))).x)) && (int)(((_345 * _375) + _339) < (((float4)(SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(((_355 * _375) + _353), ((_356 * _375) + _354)), 0.0f))).x))) {
+            _382 = SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(((_355 * _375) + _353), ((_356 * _375) + _354)), 0.0f);
+            if ((_382.x != _361.x) && (((_345 * _375) + _339) < _382.x)) {
               _414 = _375;
               _419 = (max(0.0f, (_414 + -0.375f)) * _145);
             } else {
               _388 = _358 + 0.75f;
-              if ((int)((((float4)(SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(((_355 * _388) + _353), ((_356 * _388) + _354)), 0.0f))).x) != (((float4)(SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(_353, _354), 0.0f))).x)) && (int)(((_345 * _388) + _339) < (((float4)(SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(((_355 * _388) + _353), ((_356 * _388) + _354)), 0.0f))).x))) {
+              _395 = SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(((_355 * _388) + _353), ((_356 * _388) + _354)), 0.0f);
+              if ((_395.x != _361.x) && (((_345 * _388) + _339) < _395.x)) {
                 _414 = _388;
                 _419 = (max(0.0f, (_414 + -0.375f)) * _145);
               } else {
                 _401 = _358 + 1.0f;
-                if ((int)((((float4)(SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(((_355 * _401) + _353), ((_356 * _401) + _354)), 0.0f))).x) != (((float4)(SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(_353, _354), 0.0f))).x)) && (int)(((_345 * _401) + _339) < (((float4)(SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(((_355 * _401) + _353), ((_356 * _401) + _354)), 0.0f))).x))) {
+                _408 = SceneTexturesStruct_SceneDepthTexture.SampleLevel(SceneTexturesStruct_PointClampSampler, float2(((_355 * _401) + _353), ((_356 * _401) + _354)), 0.0f);
+                if ((_408.x != _361.x) && (((_345 * _401) + _339) < _408.x)) {
                   _414 = _401;
                   _419 = (max(0.0f, (_414 + -0.375f)) * _145);
                 } else {
@@ -2058,7 +2042,7 @@ void main(
           _454 = mad(_277, (View.TranslatedWorldToView[2].y), mad(_276, (View.TranslatedWorldToView[1].y), ((View.TranslatedWorldToView[0].y) * _275))) + (View.TranslatedWorldToView[3].y);
           _458 = mad(_277, (View.TranslatedWorldToView[2].z), mad(_276, (View.TranslatedWorldToView[1].z), ((View.TranslatedWorldToView[0].z) * _275))) + (View.TranslatedWorldToView[3].z);
           _464 = sqrt(((_454 * _454) + (_450 * _450)) + (_458 * _458));
-          if ((((int)((int)(_168 == 9) || ((int)(_183 || (int)((uint)(_168 + -5) < (uint)3))))) || ((int)(_76 || (int)(bCullBackfacingPixels == 0)))) | !(dot(float3(_269, _270, _271), float3(Light_Direction.x, Light_Direction.y, Light_Direction.z)) < (-0.0f - max(abs(_228), 0.10000000149011612f)))) {
+          if ((((_168 == 9) || (_183 || ((uint)(_168 + -5) < (uint)3))) || (_76 || (bCullBackfacingPixels == 0))) | !(dot(float3(_269, _270, _271), float3(Light_Direction.x, Light_Direction.y, Light_Direction.z)) < (-0.0f - max(abs(_228), 0.10000000149011612f)))) {
             _472 = LightUniformVirtualShadowMapId * 288;
             _476 = asint(VirtualShadowMap_ProjectionData.Load3(((int)(_472 + 208u)))).x;
             _477 = asint(VirtualShadowMap_ProjectionData.Load3(((int)(_472 + 208u)))).y;
@@ -2131,7 +2115,7 @@ void main(
                 _676 = 0;
                 _677 = -1;
               }
-              _683 = select(((int)(_676 != 0) && (int)((int)_677 > (int)_549)), _677, _549);
+              _683 = select(((_676 != 0) && ((int)_677 > (int)_549)), _677, _549);
             } else {
               _683 = -1;
             }
@@ -2197,16 +2181,8 @@ void main(
                   _832 = float((int)(BlueNoise.Dimensions.y));
                   _838 = float((uint)(_819 + (uint)(SMRTRayCount)));
                   _856 = (BlueNoise.ModuloMasks.z & View.StateFrameIndex) * BlueNoise.Dimensions.y;
-                  // IS-FAST replacement for Blue Noise Vec2 (SMRT ray dithering, second path)
-                  if (InjectionToggle(TOGGLE_USE_ISFAST_SHADOWS)) {
-                    float2 _isfast_ray0 = ISFASTNoise.Load(int4(int2((uint(_62) + uint(_823)) % 128u, (uint(_64) + uint(_823) * 7u) % 128u), (uint(float(InjectionFrameIndex())) + uint(_823)) % 32u, 0));
-                    float2 _isfast_ray1 = ISFASTNoise.Load(int4(int2((uint(_62) + uint(_838)) % 128u, (uint(_64) + uint(_838) * 7u) % 128u), (uint(float(InjectionFrameIndex())) + uint(_838)) % 32u, 0));
-                    _859 = float4(_isfast_ray0.x, _isfast_ray0.y, 0, 0);
-                    _867 = float4(_isfast_ray1.x, _isfast_ray1.y, 0, 0);
-                  } else {
-                    _859 = BlueNoise_Vec2Texture.Load(int3((((int)((uint)(int(_831 * frac(_823 * 0.7548776268959045f))) + _62)) & BlueNoise.ModuloMasks.x), ((int)(_856 + ((uint)(((int)((uint)(int(_832 * frac(_823 * 0.5698402523994446f))) + _64)) & BlueNoise.ModuloMasks.y)))), 0));
-                    _867 = BlueNoise_Vec2Texture.Load(int3((BlueNoise.ModuloMasks.x & ((int)((uint)(int(_831 * frac(_838 * 0.7548776268959045f))) + _62))), ((int)(_856 + ((uint)(BlueNoise.ModuloMasks.y & ((int)((uint)(int(_832 * frac(_838 * 0.5698402523994446f))) + _64)))))), 0));
-                  }
+                  _859 = BlueNoise_Vec2Texture.Load(int3((((int)((uint)(int(_831 * frac(_823 * 0.7548776268959045f))) + _62)) & BlueNoise.ModuloMasks.x), ((int)(_856 + ((uint)(((int)((uint)(int(_832 * frac(_823 * 0.5698402523994446f))) + _64)) & BlueNoise.ModuloMasks.y)))), 0));
+                  _867 = BlueNoise_Vec2Texture.Load(int3((BlueNoise.ModuloMasks.x & ((int)((uint)(int(_831 * frac(_838 * 0.7548776268959045f))) + _62))), ((int)(_856 + ((uint)(BlueNoise.ModuloMasks.y & ((int)((uint)(int(_832 * frac(_838 * 0.5698402523994446f))) + _64)))))), 0));
                   _872 = (_859.x * 2.0f) + -0.9999999403953552f;
                   _873 = (_859.y * 2.0f) + -0.9999999403953552f;
                   _874 = abs(_872);
@@ -2634,7 +2610,7 @@ void main(
             _1605 = -1.0f;
           }
         }
-        if (_220 && (int)(_1604 < 1.0f)) {
+        if (_220 && (_1604 < 1.0f)) {
           _1611 = saturate(exp2(_210 * _1605));
           _1614 = ((1.0f - _1611) * _1604) + _1611;
           _1617 = (_1614 * _1614);
@@ -2717,7 +2693,7 @@ void main(
               _1871 = (_1862 * ((VirtualVoxel.DepthBiasScale_Shadow * Light_Direction.x) + _1808)) + _1801;
               _1872 = (_1862 * ((VirtualVoxel.DepthBiasScale_Shadow * Light_Direction.y) + _1809)) + _1802;
               _1873 = (_1862 * ((VirtualVoxel.DepthBiasScale_Shadow * Light_Direction.z) + _1810)) + _1803;
-              if ((int)(_1855 != 0) && ((int)((int)(_1851 != 0) && (int)(_1853 != 0)))) {
+              if ((_1855 != 0) && ((_1851 != 0) && (_1853 != 0))) {
                 _1876 = _1804 - _1871;
                 _1877 = _1805 - _1872;
                 _1878 = _1806 - _1873;
@@ -2751,6 +2727,10 @@ void main(
                     _1941 = 0.0f;
                     _1942 = 0.0f;
                     while(true) {
+                      _2019 = _1933;
+                      _2020 = _1934;
+                      _2021 = _1935;
+                      _2022 = _1936;
                       _1944 = max((_1940 * (_1923 / _1928)), 0.0f);
                       _1990 = (int)min((uint)((int)(uint(saturate(((((_1871 - _1838) + (_1904 * _1876)) + (((_1912 * _1862) * _1925) * _1941)) + (_1808 * _1944)) / (_1844 - _1838)) * float((uint)_1856)))), (uint)(((int)(_1856 + (uint)(-1)))));
                       _1991 = (int)min((uint)((int)(uint(saturate(((((_1872 - _1839) + (_1904 * _1877)) + (((_1914 * _1862) * _1925) * _1941)) + (_1809 * _1944)) / (_1845 - _1839)) * float((uint)_1857)))), (uint)(((int)(_1857 + (uint)(-1)))));
@@ -2759,16 +2739,17 @@ void main(
                       _1994 = (uint)(_1990) >> _1993;
                       _1995 = (uint)(_1991) >> _1993;
                       _1996 = (uint)(_1992) >> _1993;
-                      if (((int)((int)(_1994 != _1933) || (int)(_1995 != _1934))) || (int)(_1996 != _1935)) {
+                      if (((_1994 != _1933) || (_1995 != _1934)) || (_1996 != _1935)) {
+                        _2009 = VirtualVoxel_PageIndexBuffer.Load((int)((_1994 + ((uint)(_1848 & 4194303))) + (((int)((_1996 * _1853) + _1995)) * _1851)));
                         _2013 = VirtualVoxel.PageCountResolution.x * VirtualVoxel.PageCountResolution.y;
-                        _2014 = (((uint)(VirtualVoxel_PageIndexBuffer.Load((int)((_1994 + ((uint)(_1848 & 4194303))) + (((int)((_1996 * _1853) + _1995)) * _1851))))).x) % _2013;
+                        _2014 = _2009.x % _2013;
                         _2019 = _1994;
                         _2020 = _1995;
                         _2021 = _1996;
-                        _2022 = ((int)(uint)((int)((((uint)(VirtualVoxel_PageIndexBuffer.Load((int)((_1994 + ((uint)(_1848 & 4194303))) + (((int)((_1996 * _1853) + _1995)) * _1851))))).x) != -1)));
+                        _2022 = ((int)(uint)((int)(_2009.x != -1)));
                         _2023 = ((int)(_2014 % VirtualVoxel.PageCountResolution.x));
                         _2024 = ((int)(_2014 / (uint)(VirtualVoxel.PageCountResolution.x)));
-                        _2025 = ((int)(((uint)(((uint)(VirtualVoxel_PageIndexBuffer.Load((int)((_1994 + ((uint)(_1848 & 4194303))) + (((int)((_1996 * _1853) + _1995)) * _1851))))).x)) / _2013));
+                        _2025 = ((int)((uint)(_2009.x) / _2013));
                       } else {
                         _2019 = _1933;
                         _2020 = _1934;
@@ -2780,38 +2761,56 @@ void main(
                       }
                       if (_2022 == 0) {
                         _2062 = _1942;
+                        _2065 = min(float((uint)(uint)(VirtualVoxel.PageResolution)), (_1940 * VirtualVoxel.SteppingScale_Shadow));
+                        _2066 = _2065 + _1941;
+                        if (_2066 < _1928) {
+                          _1933 = _2019;
+                          _1934 = _2020;
+                          _1935 = _2021;
+                          _1936 = _2022;
+                          _1937 = _2023;
+                          _1938 = _2024;
+                          _1939 = _2025;
+                          _1940 = _2065;
+                          _1941 = _2066;
+                          _1942 = _2062;
+                          continue;
+                        } else {
+                          _2069 = _2062;
+                        }
                       } else {
                         _2040 = _1944 * (102.30000305175781f / _1861);
                         _2042 = uint(log2(_2040));
                         _2043 = _2042 & 31;
-                        if ((int)(((uint)(VirtualVoxel_PageTexture.Load(int4(((uint)((_1990 - (_1994 << _1993)) + (_2023 << _1993)) >> _2043), ((uint)((_1991 - (_1995 << _1993)) + (_2024 << _1993)) >> _2043), ((uint)((_1992 - (_1996 << _1993)) + (_2025 << _1993)) >> _2043), _2042)))).x) > (int)-1) {
-                          _2058 = (((VirtualVoxel.DensityScale_Shadow * 0.0010000000474974513f) * _2040) * float((uint)((uint)((((uint)(VirtualVoxel_PageTexture.Load(int4(((uint)((_1990 - (_1994 << _1993)) + (_2023 << _1993)) >> _2043), ((uint)((_1991 - (_1995 << _1993)) + (_2024 << _1993)) >> _2043), ((uint)((_1992 - (_1996 << _1993)) + (_2025 << _1993)) >> _2043), _2042)))).x) & 16777215))));
+                        _2048 = VirtualVoxel_PageTexture.Load(int4(((uint)((_1990 - (_1994 << _1993)) + (_2023 << _1993)) >> _2043), ((uint)((_1991 - (_1995 << _1993)) + (_2024 << _1993)) >> _2043), ((uint)((_1992 - (_1996 << _1993)) + (_2025 << _1993)) >> _2043), _2042));
+                        if ((int)_2048.x > (int)-1) {
+                          _2058 = (((VirtualVoxel.DensityScale_Shadow * 0.0010000000474974513f) * _2040) * float((uint)((uint)(_2048.x & 16777215))));
                         } else {
                           _2058 = 0.0f;
                         }
                         _2059 = _2058 + _1942;
                         if (!(_2059 > 1.0f)) {
                           _2062 = _2059;
+                          _2065 = min(float((uint)(uint)(VirtualVoxel.PageResolution)), (_1940 * VirtualVoxel.SteppingScale_Shadow));
+                          _2066 = _2065 + _1941;
+                          if (_2066 < _1928) {
+                            _1933 = _2019;
+                            _1934 = _2020;
+                            _1935 = _2021;
+                            _1936 = _2022;
+                            _1937 = _2023;
+                            _1938 = _2024;
+                            _1939 = _2025;
+                            _1940 = _2065;
+                            _1941 = _2066;
+                            _1942 = _2062;
+                            continue;
+                          } else {
+                            _2069 = _2062;
+                          }
                         } else {
                           _2069 = _2059;
                         }
-                      }
-                      _2065 = min(float((uint)(uint)(VirtualVoxel.PageResolution)), (_1940 * VirtualVoxel.SteppingScale_Shadow));
-                      _2066 = _2065 + _1941;
-                      if (_2066 < _1928) {
-                        _1933 = _2019;
-                        _1934 = _2020;
-                        _1935 = _2021;
-                        _1936 = _2022;
-                        _1937 = _2023;
-                        _1938 = _2024;
-                        _1939 = _2025;
-                        _1940 = _2065;
-                        _1941 = _2066;
-                        _1942 = _2062;
-                        continue;
-                      } else {
-                        _2069 = _2062;
                       }
                       _2071 = _2069;
                       break;
@@ -2844,26 +2843,12 @@ void main(
       } else {
         _2079 = 1.0f;
       }
-      if ((int)(_2079 > 0.01666666753590107f) && (int)(_2079 < 1.0f)) {
-        if (InjectionToggle(TOGGLE_USE_ISFAST_SHADOWS)) {
-          float _isfast_scalar = ISFASTNoise.Load(int4(int2(uint(_62) % 128u, uint(_64) % 128u), uint(float(InjectionFrameIndex())) % 32u, 0)).x;
-          _2105 = saturate(((_isfast_scalar + -0.5f) * 0.06666667014360428f) + _2079);
-        } else {
-          _2105 = saturate((((((float4)(BlueNoise_ScalarTexture.Load(int3((BlueNoise.ModuloMasks.x & _62), ((int)(((BlueNoise.ModuloMasks.z & View.StateFrameIndex) * BlueNoise.Dimensions.y) + ((uint)(BlueNoise.ModuloMasks.y & _64)))), 0)))).x) + -0.5f) * 0.06666667014360428f) + _2079);
-        }
+      if ((_2079 > 0.01666666753590107f) && (_2079 < 1.0f)) {
+        _2105 = saturate((((((float4)(BlueNoise_ScalarTexture.Load(int3((BlueNoise.ModuloMasks.x & _62), ((int)(((BlueNoise.ModuloMasks.z & View.StateFrameIndex) * BlueNoise.Dimensions.y) + ((uint)(BlueNoise.ModuloMasks.y & _64)))), 0)))).x) + -0.5f) * 0.06666667014360428f) + _2079);
       } else {
         _2105 = _2079;
       }
-      // Debug: amplified difference (second path)
-      if ((InjectionEnum(ENUM_DEBUG_SHADOWS_SHIFT) > 0u)) {
-        float _dbg_isfast_scalar = ISFASTNoise.Load(int4(int2(uint(_62) % 128u, uint(_64) % 128u), uint(float(InjectionFrameIndex())) % 32u, 0)).x;
-        float _dbg_isfast_result = saturate(((_dbg_isfast_scalar + -0.5f) * 0.06666667014360428f) + _2079);
-        float _dbg_bn_result = saturate((((((float4)(BlueNoise_ScalarTexture.Load(int3((BlueNoise.ModuloMasks.x & _62), ((int)(((BlueNoise.ModuloMasks.z & View.StateFrameIndex) * BlueNoise.Dimensions.y) + ((uint)(BlueNoise.ModuloMasks.y & _64)))), 0)))).x) + -0.5f) * 0.06666667014360428f) + _2079);
-        float _dbg_diff = saturate(abs(_dbg_isfast_result - _dbg_bn_result) * 50.0f);
-        OutShadowFactor[int2(_62, _64)] = float2(1.0f - _dbg_diff, 1.0f - _dbg_diff);
-      } else {
-        OutShadowFactor[int2(_62, _64)] = float2(_2105, _2105);
-      }
+      OutShadowFactor[int2(_62, _64)] = float2(_2105, _2105);
     }
   }
 }
