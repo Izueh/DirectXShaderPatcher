@@ -1,0 +1,15 @@
+version: 1
+prefilters:
+  - kind: check_shader_version
+    major: 5
+    minor: 0
+rewrite_rules:
+  - match:
+      opcode: frc
+    emit:
+      - opcode: mov
+        operands:
+          - capture: ign_frc
+steps:
+  - name: bad
+    rules: []

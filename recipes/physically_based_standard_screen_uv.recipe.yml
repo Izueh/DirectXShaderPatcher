@@ -1,0 +1,47 @@
+version: 1
+reserved_temps: 1
+temp_decls:
+  - handle: screen_uv_temp
+predicates:
+  - kind: check_shader_version
+    major: 5
+    minor: 0
+input_decls:
+  - handle: screen_uv_x
+    auto_bind: true
+    interpolation_mode: linear
+  - handle: screen_uv_y
+    auto_bind: true
+    interpolation_mode: linear
+output_decls:
+  - handle: screen_uv_out
+    auto_bind: true
+steps:
+  - name: inject_screen_uv_math
+    application_mode: MatchAll
+    rules:
+      - match:
+          sequence:
+            - opcode: ret
+        emit:
+          - opcode: div
+            operands:
+              - { type: temp, bind_handle: screen_uv_temp, components: { kind: mask, value: xy } }
+              - { type: input, bind_handle: screen_uv_x, components: { kind: swizzle, value: xyxx } }
+              - { type: input, bind_handle: screen_uv_x, components: { kind: swizzle, value: wwww } }
+          - opcode: div
+            operands:
+              - { type: temp, bind_handle: screen_uv_temp, components: { kind: mask, value: zw } }
+              - { type: input, bind_handle: screen_uv_y, components: { kind: swizzle, value: xxxy } }
+              - { type: input, bind_handle: screen_uv_y, components: { kind: swizzle, value: wwww } }
+          - opcode: add
+            operands:
+              - { type: temp, bind_handle: screen_uv_temp, components: { kind: mask, value: xy } }
+              - { type: temp, bind_handle: screen_uv_temp, modifier: neg, components: { kind: swizzle, value: zwzz } }
+              - { type: temp, bind_handle: screen_uv_temp, components: { kind: swizzle, value: xyxx } }
+          - opcode: mul
+            operands:
+              - { type: output, bind_handle: screen_uv_out, components: { kind: mask, value: xy } }
+              - { type: temp, bind_handle: screen_uv_temp, components: { kind: swizzle, value: xyxx } }
+              - { type: immediate32, immediates_f32: [0.5, -0.5, 0.0, 0.0] }
+          - opcode: ret

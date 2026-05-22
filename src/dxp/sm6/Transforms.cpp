@@ -664,8 +664,9 @@ static llvm::Function *FindDxilOpPrototype(llvm::Function &entryFunction,
       if (!IsDxOpCall(instruction, opCode))
         continue;
 
-      llvm::CallInst *call = llvm::dyn_cast<llvm::CallInst>(&instruction);
-      llvm::Function *callee = call != nullptr ? call->getCalledFunction() : nullptr;
+      const llvm::CallInst *call = llvm::dyn_cast<llvm::CallInst>(&instruction);
+      llvm::Function *callee =
+          call != nullptr ? call->getCalledFunction() : nullptr;
       if (callee != nullptr)
         return callee;
     }
@@ -762,9 +763,9 @@ static llvm::Value *ResolveEmitOperandValue(
     llvm::Constant *resourcePropsConstant =
         BuildEmitResourcePropertiesConstant(dxilOp, dxilModule, *resource);
     llvm::Function *createHandleFunction = FindDxilOpPrototype(
-      *entryFunction, hlsl::OP::OpCode::CreateHandleFromBinding);
+        *entryFunction, hlsl::OP::OpCode::CreateHandleFromBinding);
     llvm::Function *annotateHandleFunction =
-      FindDxilOpPrototype(*entryFunction, hlsl::OP::OpCode::AnnotateHandle);
+        FindDxilOpPrototype(*entryFunction, hlsl::OP::OpCode::AnnotateHandle);
     if (resourceBindingConstant == nullptr ||
         resourcePropsConstant == nullptr || createHandleFunction == nullptr ||
         annotateHandleFunction == nullptr) {
@@ -955,7 +956,7 @@ static bool BuildDeclarativeSequenceRewriteResult(
 
       llvm::Constant *resourceBindingConstant =
           BuildEmitResourceBindingConstant(dxilOp, dxilModule, resolvedBinding);
-        llvm::Function *createHandleFunction = FindDxilOpPrototype(
+      llvm::Function *createHandleFunction = FindDxilOpPrototype(
           *entryFunction, hlsl::OP::OpCode::CreateHandleFromBinding);
       if (resourceBindingConstant == nullptr || createHandleFunction == nullptr)
         return false;
@@ -998,7 +999,7 @@ static bool BuildDeclarativeSequenceRewriteResult(
 
       llvm::Constant *resourcePropsConstant =
           BuildEmitResourcePropertiesConstant(dxilOp, dxilModule, *resource);
-        llvm::Function *annotateHandleFunction =
+      llvm::Function *annotateHandleFunction =
           FindDxilOpPrototype(*entryFunction, hlsl::OP::OpCode::AnnotateHandle);
       if (resourcePropsConstant == nullptr || annotateHandleFunction == nullptr)
         return false;
@@ -1145,9 +1146,9 @@ static bool BuildDeclarativeRewriteResult(const DxilRewriteRule &rule,
                 dxilOp.GetResourcePropertiesType(),
                 *dxilModule.GetShaderModel());
         llvm::Function *createHandleFunction = FindDxilOpPrototype(
-          *entryFunction, hlsl::OP::OpCode::CreateHandleFromBinding);
+            *entryFunction, hlsl::OP::OpCode::CreateHandleFromBinding);
         llvm::Function *annotateHandleFunction = FindDxilOpPrototype(
-          *entryFunction, hlsl::OP::OpCode::AnnotateHandle);
+            *entryFunction, hlsl::OP::OpCode::AnnotateHandle);
         if (resourceBindingConstant == nullptr ||
             resourcePropsConstant == nullptr ||
             createHandleFunction == nullptr ||
@@ -1395,10 +1396,10 @@ bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
                                                  : effectiveMatch.rootCall;
 
       // Build replacements in a scratch basic block to avoid mutating
-    // the real IR during collection. Keep the block detached so later rule
-    // matching still sees the original function snapshot.
+      // the real IR during collection. Keep the block detached so later rule
+      // matching still sees the original function snapshot.
       llvm::BasicBlock *scratchBlock =
-      llvm::BasicBlock::Create(function.getContext(), "scratch");
+          llvm::BasicBlock::Create(function.getContext(), "scratch");
       llvm::IRBuilder<> builder(scratchBlock);
 
       DxilRewriteResult rewriteResult;
@@ -1431,9 +1432,10 @@ bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
 
   // Phase 2: materialize all collected replacements into the function, then
   // redirect uses and collect prune candidates.
-  for (ReplacementWork &work : replacements) {
-    llvm::Instruction *anchorInstruction = llvm::dyn_cast_or_null<llvm::Instruction>(
-        static_cast<llvm::Value *>(work.anchorInstruction));
+  for (const ReplacementWork &work : replacements) {
+    llvm::Instruction *anchorInstruction =
+        llvm::dyn_cast_or_null<llvm::Instruction>(
+            static_cast<llvm::Value *>(work.anchorInstruction));
     if (anchorInstruction == nullptr) {
       delete work.scratchBlock;
       continue;
@@ -1452,8 +1454,9 @@ bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
     }
     delete work.scratchBlock;
 
-    llvm::Instruction *replacementTarget = llvm::dyn_cast_or_null<llvm::Instruction>(
-        static_cast<llvm::Value *>(work.replacementTarget));
+    llvm::Instruction *replacementTarget =
+        llvm::dyn_cast_or_null<llvm::Instruction>(
+            static_cast<llvm::Value *>(work.replacementTarget));
     if (work.mode == DxilRewriteMode::Replace ||
         work.mode == DxilRewriteMode::ReplaceRange) {
       if (replacementTarget == nullptr)
@@ -1650,8 +1653,7 @@ bool ApplyDxilRewriteRules(llvm::Function &function, llvm::Module &module,
 bool ApplyDxilRewriteRulesOnce(llvm::Function &function, llvm::Module &module,
                                hlsl::DxilModule &dxilModule,
                                const std::vector<DxilRewriteRule> &rules,
-                               bool useLastMatch,
-                               unsigned *appliedRuleCount) {
+                               bool useLastMatch, unsigned *appliedRuleCount) {
   unsigned appliedCount = 0;
 
   auto applyMatch = [&](const DxilRewriteRule &rule,

@@ -1,0 +1,8 @@
+# Minimal SM5 no-op recipe used to validate CLI plumbing.
+# A no-op step parses successfully and performs no modifications.
+version: 1
+predicates: []
+steps:
+  - name: noop
+    required: false
+    rules: []

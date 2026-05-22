@@ -1,0 +1,40 @@
+version: 1
+predicates:
+  - kind: check_shader_version
+    major: 5
+    minor: 0
+raw_resource_decls:
+  - handle: injected_raw_srv
+    auto_bind: true
+structured_resource_decls:
+  - handle: injected_structured_srv
+    auto_bind: true
+    stride: 16
+uav_decls:
+  - handle: injected_raw_uav
+    auto_bind: true
+    kind: raw
+steps:
+  - name: verify_bind_handles_in_emit
+    rules:
+      - match:
+          sequence:
+            - opcode: mul
+              operands:
+                - capture: dst
+                - capture: src
+        emit:
+          - opcode: mov
+            operands:
+              - capture: dst
+              - capture: src
+          - opcode: mov
+            operands:
+              - scratch: raw_probe
+              - type: resource
+                bind_handle: injected_raw_srv
+          - opcode: mov
+            operands:
+              - scratch: uav_probe
+              - type: unordered_access_view
+                bind_handle: injected_raw_uav

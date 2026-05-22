@@ -1,0 +1,18 @@
+version: 1
+predicates:
+  - kind: check_shader_version
+    major: 5
+    minor: 0
+steps:
+  - name: interpolation_mode_bad_opcode
+    rules:
+      - match:
+          opcode: ret
+        emit:
+          - opcode: mov
+            interpolation_mode: linear
+            operands:
+              - type: temp
+                indices: [0]
+              - type: temp
+                indices: [1]

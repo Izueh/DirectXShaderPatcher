@@ -1,0 +1,41 @@
+version: 1
+predicates:
+  - kind: check_shader_version
+    major: 5
+    minor: 0
+raw_resource_decls:
+  - handle: raw_srv
+    auto_bind: true
+structured_resource_decls:
+  - handle: structured_srv
+    auto_bind: true
+    stride: 16
+uav_decls:
+  - handle: raw_uav
+    auto_bind: true
+    kind: raw
+steps:
+  - name: resource_uav_bind_handle
+    rules:
+      - match:
+          opcode: mul
+          operands:
+            - capture: dst
+            - capture: src
+        emit:
+          - opcode: mov
+            operands:
+              - capture: dst
+              - capture: src
+          - opcode: mov
+            operands:
+              - type: temp
+                indices: [0]
+              - type: resource
+                bind_handle: raw_srv
+          - opcode: mov
+            operands:
+              - type: temp
+                indices: [1]
+              - type: unordered_access_view
+                bind_handle: raw_uav

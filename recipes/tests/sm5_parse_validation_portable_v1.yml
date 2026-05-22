@@ -1,0 +1,44 @@
+version: 1
+predicates:
+  - kind: check_shader_version
+    major: 5
+    minor: 0
+texture_decls:
+  - handle: tex0
+    auto_bind: true
+sampler_decls:
+  - handle: samp0
+    auto_bind: true
+steps:
+  - name: portable
+    rules:
+      - match:
+          opcode: sample_l
+          operands:
+            - capture: dst
+            - capture: coord
+        emit:
+          - opcode: sample_l
+            operands:
+              - capture: dst
+              - capture: coord
+              - type: resource
+                bind_handle: tex0
+              - type: sampler
+                bind_handle: samp0
+              - type: immediate32
+                immediates_f32: [0.0]
+      - match:
+          opcode: mul
+          operands:
+            - type: temp
+              components:
+                kind: mask
+                value: xy
+              capture: out
+            - capture: src
+        emit:
+          - opcode: mov
+            operands:
+              - capture: out
+              - capture: src

@@ -1,0 +1,62 @@
+version: 1
+predicates: []
+cbuffer_decls:
+  - handle: frame_constants
+    auto_bind: true
+    elements: 1
+    access_pattern: immediateIndexed
+texture_decls:
+  - handle: ign_blue_noise
+    auto_bind: true
+    dimension: Texture2DArray
+sampler_decls:
+  - handle: ign_sampler
+    auto_bind: true
+    mode: default
+steps:
+  - name: objective
+    rules:
+      - match:
+          sequence:
+            - opcode: dp2
+              capture: ign_dp2
+              operands:
+                - type: temp
+                  capture: ign_dst
+                - capture: ign_coord
+            - opcode: frc
+            - opcode: mul
+            - opcode: frc
+        emit:
+          - opcode: mov
+            operands:
+              - scratch: ign_sample_coord
+                components:
+                  kind: mask
+                  value: xy
+              - capture: ign_coord
+          - opcode: utof
+            operands:
+              - scratch: ign_sample_coord
+                components:
+                  kind: mask
+                  value: z
+              - type: constant_buffer
+                bind_handle: frame_constants
+                indices: [0]
+                components:
+                  kind: select
+                  value: x
+          - opcode: sample_l
+            operands:
+              - capture: ign_dst
+              - scratch: ign_sample_coord
+                components:
+                  kind: swizzle
+                  value: xyzx
+              - type: resource
+                bind_handle: ign_blue_noise
+              - type: sampler
+                bind_handle: ign_sampler
+              - type: immediate32
+                immediates_f32: [0.0]

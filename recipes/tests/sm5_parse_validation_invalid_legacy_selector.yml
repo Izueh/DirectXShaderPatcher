@@ -1,0 +1,20 @@
+version: 1
+predicates:
+  - kind: check_shader_version
+    major: 5
+    minor: 0
+steps:
+  - name: bad_selector
+    rules:
+      - match:
+          opcode: mul
+          operands:
+            - type: temp
+              mask: xy
+              capture: dst
+            - capture: src
+        emit:
+          - opcode: mov
+            operands:
+              - capture: dst
+              - capture: src

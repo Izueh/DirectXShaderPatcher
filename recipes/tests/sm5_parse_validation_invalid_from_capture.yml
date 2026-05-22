@@ -1,0 +1,15 @@
+version: 1
+predicates:
+  - kind: check_shader_version
+    major: 5
+    minor: 0
+steps:
+  - name: bad_capture
+    rules:
+      - match:
+          opcode: frc
+          capture: ign_frc
+        emit:
+          - opcode: mov
+            operands:
+              - from_capture: ign_frc

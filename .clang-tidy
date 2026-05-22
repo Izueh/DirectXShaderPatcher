@@ -1,1 +1,4 @@
-Checks: '-*,clang-diagnostic-*,llvm-*,misc-*'
+Checks: '-*,clang-diagnostic-*,llvm-*,-llvm-header-guard,misc-*'
+HeaderFilterRegex: '^(.*[\\/])?(include[\\/]dxp|src[\\/]dxp|test)[\\/]'
+ExcludeHeaderFilterRegex: '^(.*[\\/])?(external[\\/]DirectXShaderCompiler|out[\\/]build[\\/].*[\\/]dxc)[\\/]'
+SystemHeaders: false

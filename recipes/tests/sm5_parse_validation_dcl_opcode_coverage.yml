@@ -1,0 +1,24 @@
+version: 1
+predicates:
+  - kind: check_shader_version
+    major: 5
+    minor: 0
+steps:
+  - name: dcl_opcode_names
+    rules:
+      - match:
+          opcode: ret
+        emit:
+          - opcode: dcl_output_siv
+            operands:
+              - type: output
+                indices: [1]
+          - opcode: dcl_resource_structured
+            operands:
+              - type: resource
+                indices: [3]
+          - opcode: dcl_thread_group_shared_memory_raw
+            operands:
+              - type: immediate32
+                immediates_u32: [16]
+          - opcode: ret

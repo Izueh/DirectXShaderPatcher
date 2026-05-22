@@ -42,6 +42,15 @@ add_library(dxp_lib STATIC
   "src/dxp/sm6/Recipe.cpp"
   "src/dxp/sm6/Resources.cpp"
   "src/dxp/sm6/Transforms.cpp"
+  "src/dxp/sm5/Container.cpp"
+  "src/dxp/sm5/Model.cpp"
+  "src/dxp/sm5/Parse.cpp"
+  "src/dxp/sm5/RecipeParse.cpp"
+  "src/dxp/sm5/Serialize.cpp"
+  "src/dxp/sm5/Match.cpp"
+  "src/dxp/sm5/Rewrite.cpp"
+  "src/dxp/sm5/Recipe.cpp"
+  "src/dxp/sm5/Patch.cpp"
 )
 
 add_library(dxil_patch_test_support STATIC
@@ -115,6 +124,82 @@ add_executable(dxil_patch_declarative_resource_name_match_recipe_test
 
 add_executable(dxil_patch_declarative_prefilter_recipe_test
   "test/declarative_prefilter_recipe_0x56C468C3.cpp"
+)
+
+add_executable(dxil_patch_sm5_container_roundtrip_test
+  "test/sm5_container_roundtrip.cpp"
+)
+
+add_executable(dxil_patch_sm5_replace_frc_with_mov_test
+  "test/sm5_replace_frc_with_mov.cpp"
+)
+
+add_executable(dxil_patch_sm5_recipe_replace_frc_with_mov_test
+  "test/sm5_recipe_replace_frc_with_mov.cpp"
+)
+
+add_executable(dxil_patch_sm5_recipe_emit_arbitrary_test
+  "test/sm5_recipe_emit_arbitrary.cpp"
+)
+
+add_executable(dxil_patch_sm5_recipe_replace_capture_test
+  "test/sm5_recipe_replace_capture.cpp"
+)
+
+add_executable(dxil_patch_sm5_recipe_match_sequence_test
+  "test/sm5_recipe_match_sequence.cpp"
+)
+
+add_executable(dxil_patch_sm5_recipe_add_sampler_decl_test
+  "test/sm5_recipe_add_sampler_decl.cpp"
+)
+
+add_executable(dxil_patch_sm5_recipe_objective_ign_texture_patch_test
+  "test/sm5_recipe_objective_ign_texture_patch.cpp"
+)
+
+add_executable(dxil_patch_sm5_recipe_reserve_temps_test
+  "test/sm5_recipe_reserve_temps.cpp"
+)
+
+add_executable(dxil_patch_sm5_recipe_custom_step_reserve_temps_test
+  "test/sm5_recipe_custom_step_reserve_temps.cpp"
+)
+
+add_executable(dxil_patch_sm5_recipe_state_temp_emit_test
+  "test/sm5_recipe_state_temp_emit.cpp"
+)
+
+add_executable(dxil_patch_sm5_recipe_pattern_prefilter_test
+  "test/sm5_recipe_pattern_prefilter.cpp"
+)
+
+add_executable(dxil_patch_sm5_recipe_rule_predicate_test
+  "test/sm5_recipe_rule_predicate.cpp"
+)
+
+add_executable(dxil_patch_sm5_recipe_parse_validation_test
+  "test/sm5_recipe_parse_validation.cpp"
+)
+
+add_executable(dxil_patch_sm5_recipe_screen_uv_insert_test
+  "test/sm5_recipe_screen_uv_insert.cpp"
+)
+
+add_executable(dxil_patch_sm5_recipe_resource_uav_decl_test
+  "test/sm5_recipe_resource_uav_decl.cpp"
+)
+
+set(DXP_PROJECT_INCLUDE_DIRS
+  "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+
+set(DXP_EXTERNAL_INCLUDE_DIRS
+  "${DXC_SOURCE_DIR}/include"
+  "${DXC_BINARY_DIR}/include"
+  "${DXC_BINARY_DIR}/tools/clang/include"
+  "${DXC_SOURCE_DIR}/tools/clang/include"
+  "${CMAKE_CURRENT_SOURCE_DIR}/external/WDK/includes"
 )
 
 target_compile_definitions(dxp_lib PRIVATE
@@ -231,138 +316,243 @@ target_compile_definitions(dxil_patch_declarative_prefilter_recipe_test PRIVATE
   $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
 )
 
+target_compile_definitions(dxil_patch_sm5_container_roundtrip_test PRIVATE
+  NOMINMAX
+  $<$<CONFIG:Debug>:_HAS_ITERATOR_DEBUGGING=0>
+  $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+)
+
+target_compile_definitions(dxil_patch_sm5_replace_frc_with_mov_test PRIVATE
+  NOMINMAX
+  $<$<CONFIG:Debug>:_HAS_ITERATOR_DEBUGGING=0>
+  $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+)
+
+target_compile_definitions(dxil_patch_sm5_recipe_replace_frc_with_mov_test PRIVATE
+  NOMINMAX
+  $<$<CONFIG:Debug>:_HAS_ITERATOR_DEBUGGING=0>
+  $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+)
+
+target_compile_definitions(dxil_patch_sm5_recipe_emit_arbitrary_test PRIVATE
+  NOMINMAX
+  $<$<CONFIG:Debug>:_HAS_ITERATOR_DEBUGGING=0>
+  $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+)
+
+target_compile_definitions(dxil_patch_sm5_recipe_replace_capture_test PRIVATE
+  NOMINMAX
+  $<$<CONFIG:Debug>:_HAS_ITERATOR_DEBUGGING=0>
+  $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+)
+
+target_compile_definitions(dxil_patch_sm5_recipe_match_sequence_test PRIVATE
+  NOMINMAX
+  $<$<CONFIG:Debug>:_HAS_ITERATOR_DEBUGGING=0>
+  $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+)
+
+target_compile_definitions(dxil_patch_sm5_recipe_add_sampler_decl_test PRIVATE
+  NOMINMAX
+  $<$<CONFIG:Debug>:_HAS_ITERATOR_DEBUGGING=0>
+  $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+)
+
+target_compile_definitions(dxil_patch_sm5_recipe_objective_ign_texture_patch_test PRIVATE
+  NOMINMAX
+  $<$<CONFIG:Debug>:_HAS_ITERATOR_DEBUGGING=0>
+  $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+)
+
+target_compile_definitions(dxil_patch_sm5_recipe_reserve_temps_test PRIVATE
+  NOMINMAX
+  $<$<CONFIG:Debug>:_HAS_ITERATOR_DEBUGGING=0>
+  $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+)
+
+target_compile_definitions(dxil_patch_sm5_recipe_custom_step_reserve_temps_test PRIVATE
+  NOMINMAX
+  $<$<CONFIG:Debug>:_HAS_ITERATOR_DEBUGGING=0>
+  $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+)
+
+target_compile_definitions(dxil_patch_sm5_recipe_state_temp_emit_test PRIVATE
+  NOMINMAX
+  $<$<CONFIG:Debug>:_HAS_ITERATOR_DEBUGGING=0>
+  $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+)
+
+target_compile_definitions(dxil_patch_sm5_recipe_pattern_prefilter_test PRIVATE
+  NOMINMAX
+  $<$<CONFIG:Debug>:_HAS_ITERATOR_DEBUGGING=0>
+  $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+)
+
+target_compile_definitions(dxil_patch_sm5_recipe_rule_predicate_test PRIVATE
+  NOMINMAX
+  $<$<CONFIG:Debug>:_HAS_ITERATOR_DEBUGGING=0>
+  $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+)
+
+target_compile_definitions(dxil_patch_sm5_recipe_parse_validation_test PRIVATE
+  NOMINMAX
+  $<$<CONFIG:Debug>:_HAS_ITERATOR_DEBUGGING=0>
+  $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+)
+
+target_compile_definitions(dxil_patch_sm5_recipe_screen_uv_insert_test PRIVATE
+  NOMINMAX
+  $<$<CONFIG:Debug>:_HAS_ITERATOR_DEBUGGING=0>
+  $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+)
+
+target_compile_definitions(dxil_patch_sm5_recipe_resource_uav_decl_test PRIVATE
+  NOMINMAX
+  $<$<CONFIG:Debug>:_HAS_ITERATOR_DEBUGGING=0>
+  $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+)
+
 target_include_directories(dxp_lib PUBLIC
-  "${CMAKE_CURRENT_SOURCE_DIR}/include"
-  "${DXC_SOURCE_DIR}/include"
-  "${DXC_BINARY_DIR}/include"
-  "${DXC_BINARY_DIR}/tools/clang/include"
-  "${DXC_SOURCE_DIR}/tools/clang/include"
+  ${DXP_PROJECT_INCLUDE_DIRS}
+)
+target_include_directories(dxp_lib SYSTEM PUBLIC
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
 )
 
-target_include_directories(dxil_patch_test_support PUBLIC
-  "${DXC_SOURCE_DIR}/include"
-  "${DXC_BINARY_DIR}/include"
-  "${DXC_BINARY_DIR}/tools/clang/include"
-  "${DXC_SOURCE_DIR}/tools/clang/include"
+target_include_directories(dxil_patch_test_support SYSTEM PUBLIC
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
 )
 
-target_include_directories(dxp PRIVATE
-  "${DXC_SOURCE_DIR}/include"
-  "${DXC_BINARY_DIR}/include"
-  "${DXC_BINARY_DIR}/tools/clang/include"
-  "${DXC_SOURCE_DIR}/tools/clang/include"
+target_include_directories(dxp SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
 )
 
-target_include_directories(dxil_patch_texture_add_test PRIVATE
-  "${DXC_SOURCE_DIR}/include"
-  "${DXC_BINARY_DIR}/include"
-  "${DXC_BINARY_DIR}/tools/clang/include"
-  "${DXC_SOURCE_DIR}/tools/clang/include"
+target_include_directories(dxil_patch_texture_add_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
 )
 
-target_include_directories(dxil_patch_texture2darray_add_test PRIVATE
-  "${DXC_SOURCE_DIR}/include"
-  "${DXC_BINARY_DIR}/include"
-  "${DXC_BINARY_DIR}/tools/clang/include"
-  "${DXC_SOURCE_DIR}/tools/clang/include"
+target_include_directories(dxil_patch_texture2darray_add_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
 )
 
-target_include_directories(dxil_patch_texture_uav_add_test PRIVATE
-  "${DXC_SOURCE_DIR}/include"
-  "${DXC_BINARY_DIR}/include"
-  "${DXC_BINARY_DIR}/tools/clang/include"
-  "${DXC_SOURCE_DIR}/tools/clang/include"
+target_include_directories(dxil_patch_texture_uav_add_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
 )
 
-target_include_directories(dxil_patch_cbuffer_add_test PRIVATE
-  "${DXC_SOURCE_DIR}/include"
-  "${DXC_BINARY_DIR}/include"
-  "${DXC_BINARY_DIR}/tools/clang/include"
-  "${DXC_SOURCE_DIR}/tools/clang/include"
+target_include_directories(dxil_patch_cbuffer_add_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
 )
 
-target_include_directories(dxil_patch_rendertarget_dsl_test PRIVATE
-  "${DXC_SOURCE_DIR}/include"
-  "${DXC_BINARY_DIR}/include"
-  "${DXC_BINARY_DIR}/tools/clang/include"
-  "${DXC_SOURCE_DIR}/tools/clang/include"
+target_include_directories(dxil_patch_rendertarget_dsl_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
 )
 
-target_include_directories(dxil_patch_gatherforeground_isfast_test PRIVATE
-  "${DXC_SOURCE_DIR}/include"
-  "${DXC_BINARY_DIR}/include"
-  "${DXC_BINARY_DIR}/tools/clang/include"
-  "${DXC_SOURCE_DIR}/tools/clang/include"
+target_include_directories(dxil_patch_gatherforeground_isfast_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
 )
 
-target_include_directories(dxil_patch_gatherforeground_isfast_compare_test PRIVATE
-  "${DXC_SOURCE_DIR}/include"
-  "${DXC_BINARY_DIR}/include"
-  "${DXC_BINARY_DIR}/tools/clang/include"
-  "${DXC_SOURCE_DIR}/tools/clang/include"
+target_include_directories(dxil_patch_gatherforeground_isfast_compare_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
 )
 
-target_include_directories(dxil_patch_gatherforeground_isfast_recipe_test PRIVATE
-  "${DXC_SOURCE_DIR}/include"
-  "${DXC_BINARY_DIR}/include"
-  "${DXC_BINARY_DIR}/tools/clang/include"
-  "${DXC_SOURCE_DIR}/tools/clang/include"
+target_include_directories(dxil_patch_gatherforeground_isfast_recipe_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
 )
 
-target_include_directories(dxil_patch_declarative_rewrite_recipe_test PRIVATE
-  "${DXC_SOURCE_DIR}/include"
-  "${DXC_BINARY_DIR}/include"
-  "${DXC_BINARY_DIR}/tools/clang/include"
-  "${DXC_SOURCE_DIR}/tools/clang/include"
+target_include_directories(dxil_patch_declarative_rewrite_recipe_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
 )
 
-target_include_directories(dxil_patch_declarative_emit_resource_recipe_test PRIVATE
-  "${DXC_SOURCE_DIR}/include"
-  "${DXC_BINARY_DIR}/include"
-  "${DXC_BINARY_DIR}/tools/clang/include"
-  "${DXC_SOURCE_DIR}/tools/clang/include"
+target_include_directories(dxil_patch_declarative_emit_resource_recipe_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
 )
 
-target_include_directories(dxil_patch_declarative_ign_nested_recipe_test PRIVATE
-  "${DXC_SOURCE_DIR}/include"
-  "${DXC_BINARY_DIR}/include"
-  "${DXC_BINARY_DIR}/tools/clang/include"
-  "${DXC_SOURCE_DIR}/tools/clang/include"
+target_include_directories(dxil_patch_declarative_ign_nested_recipe_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
 )
 
-target_include_directories(dxil_patch_declarative_ign_emit_recipe_test PRIVATE
-  "${DXC_SOURCE_DIR}/include"
-  "${DXC_BINARY_DIR}/include"
-  "${DXC_BINARY_DIR}/tools/clang/include"
-  "${DXC_SOURCE_DIR}/tools/clang/include"
+target_include_directories(dxil_patch_declarative_ign_emit_recipe_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
 )
 
-target_include_directories(dxil_patch_declarative_ign_emit_inmemory_recipe_test PRIVATE
-  "${DXC_SOURCE_DIR}/include"
-  "${DXC_BINARY_DIR}/include"
-  "${DXC_BINARY_DIR}/tools/clang/include"
-  "${DXC_SOURCE_DIR}/tools/clang/include"
+target_include_directories(dxil_patch_declarative_ign_emit_inmemory_recipe_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
 )
 
-target_include_directories(dxil_patch_declarative_blue_noise_emit_recipe_test PRIVATE
-  "${DXC_SOURCE_DIR}/include"
-  "${DXC_BINARY_DIR}/include"
-  "${DXC_BINARY_DIR}/tools/clang/include"
-  "${DXC_SOURCE_DIR}/tools/clang/include"
+target_include_directories(dxil_patch_declarative_blue_noise_emit_recipe_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
 )
 
-target_include_directories(dxil_patch_declarative_resource_name_match_recipe_test PRIVATE
-  "${DXC_SOURCE_DIR}/include"
-  "${DXC_BINARY_DIR}/include"
-  "${DXC_BINARY_DIR}/tools/clang/include"
-  "${DXC_SOURCE_DIR}/tools/clang/include"
+target_include_directories(dxil_patch_declarative_resource_name_match_recipe_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
 )
 
-target_include_directories(dxil_patch_declarative_prefilter_recipe_test PRIVATE
-  "${DXC_SOURCE_DIR}/include"
-  "${DXC_BINARY_DIR}/include"
-  "${DXC_BINARY_DIR}/tools/clang/include"
-  "${DXC_SOURCE_DIR}/tools/clang/include"
+target_include_directories(dxil_patch_declarative_prefilter_recipe_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
+)
+
+target_include_directories(dxil_patch_sm5_container_roundtrip_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
+)
+
+target_include_directories(dxil_patch_sm5_replace_frc_with_mov_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
+)
+
+target_include_directories(dxil_patch_sm5_recipe_replace_frc_with_mov_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
+)
+
+target_include_directories(dxil_patch_sm5_recipe_emit_arbitrary_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
+)
+
+target_include_directories(dxil_patch_sm5_recipe_replace_capture_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
+)
+
+target_include_directories(dxil_patch_sm5_recipe_match_sequence_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
+)
+
+target_include_directories(dxil_patch_sm5_recipe_add_sampler_decl_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
+)
+
+target_include_directories(dxil_patch_sm5_recipe_objective_ign_texture_patch_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
+)
+
+target_include_directories(dxil_patch_sm5_recipe_reserve_temps_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
+)
+
+target_include_directories(dxil_patch_sm5_recipe_custom_step_reserve_temps_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
+)
+
+target_include_directories(dxil_patch_sm5_recipe_state_temp_emit_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
+)
+
+target_include_directories(dxil_patch_sm5_recipe_pattern_prefilter_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
+)
+
+target_include_directories(dxil_patch_sm5_recipe_rule_predicate_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
+)
+
+target_include_directories(dxil_patch_sm5_recipe_parse_validation_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
+)
+
+target_include_directories(dxil_patch_sm5_recipe_screen_uv_insert_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
+)
+
+target_include_directories(dxil_patch_sm5_recipe_resource_uav_decl_test SYSTEM PRIVATE
+  ${DXP_EXTERNAL_INCLUDE_DIRS}
 )
 
 target_link_libraries(dxp_lib PUBLIC
@@ -457,6 +647,70 @@ target_link_libraries(dxil_patch_declarative_prefilter_recipe_test PRIVATE
   dxil_patch_test_support
 )
 
+target_link_libraries(dxil_patch_sm5_container_roundtrip_test PRIVATE
+  dxil_patch_test_support
+)
+
+target_link_libraries(dxil_patch_sm5_replace_frc_with_mov_test PRIVATE
+  dxil_patch_test_support
+)
+
+target_link_libraries(dxil_patch_sm5_recipe_replace_frc_with_mov_test PRIVATE
+  dxil_patch_test_support
+)
+
+target_link_libraries(dxil_patch_sm5_recipe_emit_arbitrary_test PRIVATE
+  dxil_patch_test_support
+)
+
+target_link_libraries(dxil_patch_sm5_recipe_replace_capture_test PRIVATE
+  dxil_patch_test_support
+)
+
+target_link_libraries(dxil_patch_sm5_recipe_match_sequence_test PRIVATE
+  dxil_patch_test_support
+)
+
+target_link_libraries(dxil_patch_sm5_recipe_add_sampler_decl_test PRIVATE
+  dxil_patch_test_support
+)
+
+target_link_libraries(dxil_patch_sm5_recipe_objective_ign_texture_patch_test PRIVATE
+  dxil_patch_test_support
+)
+
+target_link_libraries(dxil_patch_sm5_recipe_reserve_temps_test PRIVATE
+  dxil_patch_test_support
+)
+
+target_link_libraries(dxil_patch_sm5_recipe_custom_step_reserve_temps_test PRIVATE
+  dxil_patch_test_support
+)
+
+target_link_libraries(dxil_patch_sm5_recipe_state_temp_emit_test PRIVATE
+  dxil_patch_test_support
+)
+
+target_link_libraries(dxil_patch_sm5_recipe_pattern_prefilter_test PRIVATE
+  dxil_patch_test_support
+)
+
+target_link_libraries(dxil_patch_sm5_recipe_rule_predicate_test PRIVATE
+  dxil_patch_test_support
+)
+
+target_link_libraries(dxil_patch_sm5_recipe_parse_validation_test PRIVATE
+  dxil_patch_test_support
+)
+
+target_link_libraries(dxil_patch_sm5_recipe_screen_uv_insert_test PRIVATE
+  dxil_patch_test_support
+)
+
+target_link_libraries(dxil_patch_sm5_recipe_resource_uav_decl_test PRIVATE
+  dxil_patch_test_support
+)
+
 set_target_properties(dxil_patch_texture_add_test PROPERTIES
   VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
@@ -533,6 +787,86 @@ set_target_properties(dxil_patch_declarative_resource_name_match_recipe_test PRO
 )
 
 set_target_properties(dxil_patch_declarative_prefilter_recipe_test PROPERTIES
+  VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+set_target_properties(dxil_patch_sm5_container_roundtrip_test PROPERTIES
+  VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+set_target_properties(dxil_patch_sm5_replace_frc_with_mov_test PROPERTIES
+  VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+set_target_properties(dxil_patch_sm5_recipe_replace_frc_with_mov_test PROPERTIES
+  VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+set_target_properties(dxil_patch_sm5_recipe_emit_arbitrary_test PROPERTIES
+  VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+set_target_properties(dxil_patch_sm5_recipe_replace_capture_test PROPERTIES
+  VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+set_target_properties(dxil_patch_sm5_recipe_match_sequence_test PROPERTIES
+  VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+set_target_properties(dxil_patch_sm5_recipe_add_sampler_decl_test PROPERTIES
+  VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+set_target_properties(dxil_patch_sm5_recipe_objective_ign_texture_patch_test PROPERTIES
+  VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+set_target_properties(dxil_patch_sm5_recipe_reserve_temps_test PROPERTIES
+  VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+set_target_properties(dxil_patch_sm5_recipe_custom_step_reserve_temps_test PROPERTIES
+  VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+set_target_properties(dxil_patch_sm5_recipe_state_temp_emit_test PROPERTIES
+  VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+set_target_properties(dxil_patch_sm5_recipe_pattern_prefilter_test PROPERTIES
+  VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+set_target_properties(dxil_patch_sm5_recipe_rule_predicate_test PROPERTIES
+  VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+set_target_properties(dxil_patch_sm5_recipe_parse_validation_test PROPERTIES
+  VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+set_target_properties(dxil_patch_sm5_recipe_screen_uv_insert_test PROPERTIES
+  VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+set_target_properties(dxil_patch_sm5_recipe_resource_uav_decl_test PROPERTIES
   VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
@@ -688,4 +1022,145 @@ add_test(
   NAME declarative_prefilter_recipe_0x56C468C3
   COMMAND dxil_patch_declarative_prefilter_recipe_test
           "${CMAKE_CURRENT_SOURCE_DIR}/test/0x56C468C3.cs_6_6.cso"
+)
+
+add_test(
+  NAME dxp_validate_recipe_blue_noise_emit
+  COMMAND dxp validate
+          "${CMAKE_CURRENT_SOURCE_DIR}/recipes/blue_noise_emit.recipe.yml"
+)
+
+add_test(
+  NAME dxp_validate_sm5_recipe_noop
+  COMMAND dxp validate-sm5
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/sm5_noop.recipe.yml"
+)
+
+add_test(
+  NAME dxp_patch_sm5_recipe_noop_aliens_0x7AFF256C
+  COMMAND dxp patch-sm5
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/Aliens_Fireteam_Volumetric_IGN_0x7AFF256C.ps_5_0.cso"
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/sm5_noop.recipe.yml"
+          "${CMAKE_CURRENT_BINARY_DIR}/test-output/Aliens_Fireteam_Volumetric_IGN_0x7AFF256C.ps_5_0.noop.cli.patched.cso"
+)
+
+add_test(
+  NAME dxp_validate_sm5_recipe_objective
+  COMMAND dxp validate-sm5
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/sm5_objective.recipe.yml"
+)
+
+add_test(
+  NAME dxp_patch_sm5_recipe_objective_aliens_0x7AFF256C
+  COMMAND dxp patch-sm5
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/Aliens_Fireteam_Volumetric_IGN_0x7AFF256C.ps_5_0.cso"
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/sm5_objective.recipe.yml"
+          "${CMAKE_CURRENT_BINARY_DIR}/test-output/Aliens_Fireteam_Volumetric_IGN_0x7AFF256C.ps_5_0.objective.recipe.cli.patched.cso"
+)
+
+add_test(
+  NAME dxp_validate_recipe_invalid
+  COMMAND ${CMAKE_COMMAND}
+          -DDXP_EXE=$<TARGET_FILE:dxp>
+          -DRECIPE_PATH=${CMAKE_CURRENT_SOURCE_DIR}/test/invalid_recipe.recipe.yml
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/test/RunDxpInvalidRecipeValidation.cmake
+)
+
+add_test(
+  NAME sm5_container_roundtrip_aliens_0x7AFF256C
+  COMMAND dxil_patch_sm5_container_roundtrip_test
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/Aliens_Fireteam_Volumetric_IGN_0x7AFF256C.ps_5_0.cso"
+)
+
+add_test(
+  NAME sm5_replace_frc_with_mov_aliens_0x7AFF256C
+  COMMAND dxil_patch_sm5_replace_frc_with_mov_test
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/Aliens_Fireteam_Volumetric_IGN_0x7AFF256C.ps_5_0.cso"
+          "${CMAKE_CURRENT_BINARY_DIR}/test-output/Aliens_Fireteam_Volumetric_IGN_0x7AFF256C.ps_5_0.frc_to_mov.patched.cso"
+)
+
+add_test(
+  NAME sm5_recipe_replace_frc_with_mov_aliens_0x7AFF256C
+  COMMAND dxil_patch_sm5_recipe_replace_frc_with_mov_test
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/Aliens_Fireteam_Volumetric_IGN_0x7AFF256C.ps_5_0.cso"
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/sm5_frc_to_mov.recipe.yml"
+)
+
+add_test(
+  NAME sm5_recipe_emit_arbitrary_aliens_0x7AFF256C
+  COMMAND dxil_patch_sm5_recipe_emit_arbitrary_test
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/Aliens_Fireteam_Volumetric_IGN_0x7AFF256C.ps_5_0.cso"
+)
+
+add_test(
+  NAME sm5_recipe_replace_capture_aliens_0x7AFF256C
+  COMMAND dxil_patch_sm5_recipe_replace_capture_test
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/Aliens_Fireteam_Volumetric_IGN_0x7AFF256C.ps_5_0.cso"
+)
+
+add_test(
+  NAME sm5_recipe_match_sequence_aliens_0x7AFF256C
+  COMMAND dxil_patch_sm5_recipe_match_sequence_test
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/Aliens_Fireteam_Volumetric_IGN_0x7AFF256C.ps_5_0.cso"
+)
+
+add_test(
+  NAME sm5_recipe_add_sampler_decl_aliens_0x7AFF256C
+  COMMAND dxil_patch_sm5_recipe_add_sampler_decl_test
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/Aliens_Fireteam_Volumetric_IGN_0x7AFF256C.ps_5_0.cso"
+)
+
+add_test(
+  NAME sm5_recipe_objective_ign_texture_patch_aliens_0x7AFF256C
+  COMMAND dxil_patch_sm5_recipe_objective_ign_texture_patch_test
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/Aliens_Fireteam_Volumetric_IGN_0x7AFF256C.ps_5_0.cso"
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/sm5_objective.recipe.yml"
+          "${CMAKE_CURRENT_BINARY_DIR}/test-output/Aliens_Fireteam_Volumetric_IGN_0x7AFF256C.ps_5_0.objective.recipe.patched.cso"
+)
+
+add_test(
+  NAME sm5_recipe_reserve_temps_aliens_0x7AFF256C
+  COMMAND dxil_patch_sm5_recipe_reserve_temps_test
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/Aliens_Fireteam_Volumetric_IGN_0x7AFF256C.ps_5_0.cso"
+)
+
+add_test(
+  NAME sm5_recipe_custom_step_reserve_temps_aliens_0x7AFF256C
+  COMMAND dxil_patch_sm5_recipe_custom_step_reserve_temps_test
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/Aliens_Fireteam_Volumetric_IGN_0x7AFF256C.ps_5_0.cso"
+)
+
+add_test(
+  NAME sm5_recipe_state_temp_emit_aliens_0x7AFF256C
+  COMMAND dxil_patch_sm5_recipe_state_temp_emit_test
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/Aliens_Fireteam_Volumetric_IGN_0x7AFF256C.ps_5_0.cso"
+)
+
+add_test(
+  NAME sm5_recipe_pattern_prefilter_aliens_0x7AFF256C
+  COMMAND dxil_patch_sm5_recipe_pattern_prefilter_test
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/Aliens_Fireteam_Volumetric_IGN_0x7AFF256C.ps_5_0.cso"
+)
+
+add_test(
+  NAME sm5_recipe_rule_predicate_aliens_0x7AFF256C
+  COMMAND dxil_patch_sm5_recipe_rule_predicate_test
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/Aliens_Fireteam_Volumetric_IGN_0x7AFF256C.ps_5_0.cso"
+)
+
+add_test(
+  NAME sm5_recipe_parse_validation
+  COMMAND dxil_patch_sm5_recipe_parse_validation_test
+)
+
+add_test(
+  NAME sm5_recipe_screen_uv_insert_physically_based_standard_0x67A01779
+  COMMAND dxil_patch_sm5_recipe_screen_uv_insert_test
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/Physically_Based_Standard_Both_Shader_0x67A01779.ps_5_0.cso"
+)
+
+add_test(
+  NAME sm5_recipe_resource_uav_decl_aliens_0x7AFF256C
+  COMMAND dxil_patch_sm5_recipe_resource_uav_decl_test
+          "${CMAKE_CURRENT_SOURCE_DIR}/test/Aliens_Fireteam_Volumetric_IGN_0x7AFF256C.ps_5_0.cso"
 )

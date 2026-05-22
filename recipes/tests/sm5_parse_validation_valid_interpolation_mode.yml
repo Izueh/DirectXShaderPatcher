@@ -1,0 +1,24 @@
+version: 1
+predicates:
+  - kind: check_shader_version
+    major: 5
+    minor: 0
+input_decls:
+  - handle: interpolated_input
+    auto_bind: true
+    interpolation_mode: linear
+steps:
+  - name: interpolation_mode_ok
+    rules:
+      - match:
+          opcode: ret
+        emit:
+          - opcode: dcl_input_ps
+            interpolation_mode: linear
+            operands:
+              - type: input
+                bind_handle: interpolated_input
+                components:
+                  kind: mask
+                  value: xyzw
+          - opcode: ret

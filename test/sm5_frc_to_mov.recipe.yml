@@ -1,0 +1,13 @@
+version: 1
+predicates: []
+steps:
+  - name: frc_to_mov
+    rules:
+      - match:
+          opcode: frc
+          operands:
+            - capture: ign_frc
+        emit:
+          - opcode: mov
+            operands:
+              - capture: ign_frc
