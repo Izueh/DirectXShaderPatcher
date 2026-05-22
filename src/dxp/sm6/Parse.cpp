@@ -1330,18 +1330,10 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
                             : "prefilter")
               : stepModel.name;
       result.recipe.AddStep(MakePrefilterStep(stepName, std::move(patterns)));
-    } else if (loweredKind == "expect_texture") {
-      result.recipe.AddStep(MakeExpectTextureStep(stepModel.id));
-    } else if (loweredKind == "expect_texture_uav") {
-      result.recipe.AddStep(MakeExpectTextureUAVStep(stepModel.id));
-    } else if (loweredKind == "expect_cbuffer") {
-      result.recipe.AddStep(MakeExpectCBufferStep(stepModel.id));
     } else if (loweredKind == "refresh_resources") {
       result.recipe.AddStep(MakeRefreshResourcesStep());
     } else if (loweredKind == "prune_dead_code") {
       result.recipe.AddStep(MakePruneDeadCodeStep());
-    } else if (loweredKind == "verify_module") {
-      result.recipe.AddStep(MakeVerifyModuleStep());
     } else {
       result.error =
           sourceName.str() + ": unsupported step kind '" + stepModel.kind + "'";

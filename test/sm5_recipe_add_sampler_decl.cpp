@@ -63,6 +63,10 @@ int main(int argc, char **argv) {
 sampler_decls:
   - bind_point: 11
     mode: comparison
+steps:
+  - name: noop
+    required: false
+    rules: []
 )YAML";
 
   dxp::sm5::RecipeParseResult parseResult;

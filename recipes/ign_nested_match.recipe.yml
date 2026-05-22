@@ -48,4 +48,3 @@ steps:
     mode: MatchAll
     required: true
   - kind: prune_dead_code
-  - kind: verify_module

@@ -1,5 +1,5 @@
-version: 1
-predicates: []
+﻿version: 1
+prefilters: []
 cbuffer_decls:
   - handle: frame_constants
     auto_bind: true

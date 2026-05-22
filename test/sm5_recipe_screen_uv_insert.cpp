@@ -65,10 +65,6 @@ static int CountInputDeclOpcodes(const dxp::sm5::Program &program) {
   return count;
 }
 
-static std::filesystem::path RepoRootPath() {
-  return std::filesystem::path(__FILE__).parent_path().parent_path();
-}
-
 static bool IsReg(const dxp::sm5::Operand &operand,
                   dxp::sm5::OperandType type,
                   uint32_t index) {

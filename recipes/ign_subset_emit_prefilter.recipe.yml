@@ -355,4 +355,3 @@ steps:
     rule: ign_noise_lhs_inner
     mode: MatchAll
     required: false
-  - kind: verify_module

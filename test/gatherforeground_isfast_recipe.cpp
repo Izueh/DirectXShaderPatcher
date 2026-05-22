@@ -85,13 +85,10 @@ int main(int argc, char **argv) {
           "fast_noise",
         "frame_constants",
         true))
-      .AddStep(MakeExpectTextureStep("fast_noise"))
-      .AddStep(MakeExpectCBufferStep("frame_constants"))
       .AddStep(MakeExpectIgnCountStep(0))
       .AddStep(MakeExpectBlueNoiseCountStep(0))
       .AddStep(MakePruneDeadCodeStep())
-      .AddStep(MakeRefreshResourcesStep())
-      .AddStep(MakeVerifyModuleStep());
+      .AddStep(MakeRefreshResourcesStep());
 
   DxilRecipeContext recipeContext;
   if (!ExecuteDxilRecipe(recipe,

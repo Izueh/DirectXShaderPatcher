@@ -23,8 +23,8 @@ Top-level `prefilters` are optional lean probe patterns used only for fast shade
 Top-level `options` currently support only `restore_reflection`.
 
 - Final resource refresh runs automatically after resource-binding mutations if the recipe has not already executed an explicit `refresh_resources` step.
-- Final LLVM verification and DXC container validation run automatically after module mutations if the recipe has not already executed an explicit `verify_module` step.
-- Use `refresh_resources` and `verify_module` as step kinds only when you need those operations to happen at a specific point inside the recipe.
+- Final LLVM verification and DXC container validation run automatically at the end of patching.
+- Use `refresh_resources` as a step kind only when you need resource metadata refreshed at a specific point inside the recipe.
 
 ## Resources
 
@@ -188,12 +188,8 @@ Supported step kinds:
 - `prefilter`
 - `apply_rule`
 - `apply_rules`
-- `expect_texture`
-- `expect_texture_uav`
-- `expect_cbuffer`
 - `refresh_resources`
 - `prune_dead_code`
-- `verify_module`
 
 `apply_rule` step fields:
 
@@ -234,7 +230,6 @@ steps:
       - ign_noise_lhs_inner
     mode: MatchAll
     required: false
-  - kind: verify_module
 ```
 
 For simple identity-style matcher probes, prefer `mode: First` or `mode: Last` so the step selects one stable match instead of relying on a whole-pass side effect.

@@ -84,7 +84,7 @@ int main() {
     if (!Contains(parseResult.Error,
                   "schema version 1 requires steps and does not allow top-level rewrite_rules") &&
         !Contains(parseResult.Error,
-                  "schema version 1 uses predicates instead of prefilters")) {
+                  "schema version 1 uses prefilters instead of predicates")) {
       std::cerr << "Expected strict schema version 1 validation error.\n";
       return 1;
     }
@@ -114,7 +114,7 @@ int main() {
     }
 
     if (!Contains(parseResult.Error,
-                  "portable emit operands use capture instead of from_capture")) {
+                  "SM5 emit operands use capture instead of from_capture")) {
       std::cerr << "Expected from_capture validation error.\n";
       return 1;
     }
@@ -129,12 +129,12 @@ int main() {
     }
 
     if (!Contains(parseResult.Error,
-                  "portable operands require components.kind/components.value instead of mask/swizzle/select")) {
+                  "SM5 operands require components.kind/components.value instead of mask/swizzle/select")) {
       std::cerr << "Expected component selector validation error.\n";
       return 1;
     }
   }
 
-  std::cout << "SM5 parser strict validation accepts legacy forms and rejects invalid new-field usage.\n";
+  std::cout << "SM5 parser strict validation accepts canonical schema and rejects deprecated fields.\n";
   return 0;
 }

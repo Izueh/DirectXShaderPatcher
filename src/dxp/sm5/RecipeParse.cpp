@@ -89,12 +89,14 @@ struct YamlRule {
   YamlMatch match;
   std::vector<YamlEmitInstruction> emit;
   std::string replace;
+  std::string mode;
   std::string application_mode;
 };
 
 struct YamlStep {
   std::string name;
   bool required = true;
+  std::string mode;
   std::string application_mode;
   std::vector<YamlRule> rules;
 };
@@ -281,6 +283,7 @@ template <> struct MappingTraits<YamlRule> {
     io.mapOptional("match", rule.match);
     io.mapOptional("emit", rule.emit);
     io.mapOptional("replace", rule.replace);
+    io.mapOptional("mode", rule.mode);
     io.mapOptional("application_mode", rule.application_mode);
   }
 };
@@ -289,6 +292,7 @@ template <> struct MappingTraits<YamlStep> {
   static void mapping(IO &io, YamlStep &step) {
     io.mapOptional("name", step.name);
     io.mapOptional("required", step.required, true);
+    io.mapOptional("mode", step.mode);
     io.mapOptional("application_mode", step.application_mode);
     io.mapOptional("rules", step.rules);
   }
@@ -707,7 +711,6 @@ static bool TryParseComponentChar(char ch,
 
 static bool ParseOperandComponentMode(const YamlOperand &operandModel,
                                       OperandType operandType,
-                                      bool portableV2,
                                       uint32_t &numComponents,
                                       uint32_t &componentMode,
                                       std::string &error) {
@@ -717,11 +720,9 @@ static bool ParseOperandComponentMode(const YamlOperand &operandModel,
                                   !operandModel.mask.empty() ||
                                   !operandModel.swizzle.empty();
 
-  if (portableV2) {
-    if (hasLegacySelectors) {
-      error = "portable operands require components.kind/components.value instead of mask/swizzle/select";
-      return false;
-    }
+  if (hasLegacySelectors) {
+    error = "SM5 operands require components.kind/components.value instead of mask/swizzle/select";
+    return false;
   }
 
   if (hasSelectorObject && hasLegacySelectors) {
@@ -842,19 +843,16 @@ static bool ParseOperandComponentMode(const YamlOperand &operandModel,
 }
 
 static bool ParseEmitOperand(const YamlOperand &operandModel,
-                             bool portableV2,
                              Operand &operand,
                              std::string &error) {
   operand = Operand{};
 
-  const std::string captureRef = !operandModel.from_capture.empty()
-                                     ? operandModel.from_capture
-                                     : operandModel.capture;
-
-  if (portableV2 && !operandModel.from_capture.empty()) {
-    error = "portable emit operands use capture instead of from_capture";
+  if (!operandModel.from_capture.empty()) {
+    error = "SM5 emit operands use capture instead of from_capture";
     return false;
   }
+
+  const std::string &captureRef = operandModel.capture;
 
   if (!captureRef.empty() && !operandModel.scratch.empty()) {
     error = "SM5 emit operand cannot use both capture and scratch";
@@ -928,7 +926,6 @@ static bool ParseEmitOperand(const YamlOperand &operandModel,
   }
 
   if (!ParseOperandComponentMode(operandModel, operand.Type,
-                                 portableV2,
                                  operand.NumComponents,
                                  operand.ComponentMode, error)) {
     return false;
@@ -952,7 +949,6 @@ static bool ParseEmitOperand(const YamlOperand &operandModel,
 }
 
 static bool ParseMatchOperand(const YamlOperand &operandModel,
-                              bool portableV2,
                               OperandMatch &operandMatch,
                               std::string &error) {
   operandMatch = OperandMatch{};
@@ -978,7 +974,7 @@ static bool ParseMatchOperand(const YamlOperand &operandModel,
       !operandModel.components.kind.empty() ||
       !operandModel.components.value.empty() ||
       !operandModel.select.empty() || operandModel.num_components >= 0) {
-    if (!ParseOperandComponentMode(operandModel, componentType, portableV2, numComponents,
+    if (!ParseOperandComponentMode(operandModel, componentType, numComponents,
                      componentMode, error)) {
       return false;
     }
@@ -1011,7 +1007,6 @@ static bool ParseMatchOperand(const YamlOperand &operandModel,
 }
 
 static bool FillRecipeOperandPattern(const YamlOperand &operandModel,
-                                     bool portableV2,
                                      bool forEmit,
                                      RecipeOperandPattern &operandPattern,
                                      std::string &error) {
@@ -1028,6 +1023,12 @@ static bool FillRecipeOperandPattern(const YamlOperand &operandModel,
   operandPattern.MatchCapture = operandModel.match_capture;
   operandPattern.Scratch = operandModel.scratch;
 
+  if (!operandModel.mask.empty() || !operandModel.swizzle.empty() ||
+      !operandModel.select.empty()) {
+    error = "SM5 operands require components.kind/components.value instead of mask/swizzle/select";
+    return false;
+  }
+
   if (!operandModel.components.kind.empty() || !operandModel.components.value.empty()) {
     const std::string kind = Lowercase(operandModel.components.kind);
     if (kind == "mask") {
@@ -1040,24 +1041,20 @@ static bool FillRecipeOperandPattern(const YamlOperand &operandModel,
       error = "unsupported operand components.kind: " + operandModel.components.kind;
       return false;
     }
-  } else {
-    operandPattern.Mask = operandModel.mask;
-    operandPattern.Swizzle = operandModel.swizzle;
-    operandPattern.Select = operandModel.select;
   }
 
   if (forEmit) {
-    if (portableV2) {
-      if (!operandModel.from_capture.empty()) {
-        error = "portable emit operands use capture instead of from_capture";
-        return false;
-      }
-      operandPattern.FromCapture = operandModel.capture;
-      operandPattern.Capture.clear();
-    } else {
-      operandPattern.FromCapture = operandModel.from_capture;
+    if (!operandModel.from_capture.empty()) {
+      error = "SM5 emit operands use capture instead of from_capture";
+      return false;
     }
+    operandPattern.FromCapture = operandModel.capture;
+    operandPattern.Capture.clear();
   } else {
+    if (!operandModel.from_capture.empty()) {
+      error = "SM5 operands use capture instead of from_capture";
+      return false;
+    }
     operandPattern.FromCapture.clear();
   }
 
@@ -1066,7 +1063,6 @@ static bool FillRecipeOperandPattern(const YamlOperand &operandModel,
 
 static bool ParseInstructionMatch(
     const YamlInstructionMatch &matchModel,
-    bool portableV2,
     InstructionMatch &instructionMatch,
     std::string &error) {
   instructionMatch = InstructionMatch{};
@@ -1108,7 +1104,7 @@ static bool ParseInstructionMatch(
   }
   for (const YamlOperand &operandModel : matchModel.operands) {
     OperandMatch operandMatch;
-    if (!ParseMatchOperand(operandModel, portableV2, operandMatch, error)) {
+    if (!ParseMatchOperand(operandModel, operandMatch, error)) {
       return false;
     }
     instructionMatch.OperandPatterns.push_back(std::move(operandMatch));
@@ -1118,7 +1114,6 @@ static bool ParseInstructionMatch(
 }
 
 static bool ParseRule(const YamlRule &ruleModel,
-                      bool portableV2,
                       RecipeRuleApplicationMode inheritedMode,
                       RecipeRule &rule,
                       std::string &error) {
@@ -1126,7 +1121,12 @@ static bool ParseRule(const YamlRule &ruleModel,
   rule.ApplicationMode = inheritedMode;
 
   if (!ruleModel.application_mode.empty()) {
-    rule.ApplicationMode = ParseRuleApplicationMode(ruleModel.application_mode);
+    error = "SM5 rules use mode instead of application_mode";
+    return false;
+  }
+
+  if (!ruleModel.mode.empty()) {
+    rule.ApplicationMode = ParseRuleApplicationMode(ruleModel.mode);
   }
 
   if (!ruleModel.match.sequence.empty()) {
@@ -1140,7 +1140,7 @@ static bool ParseRule(const YamlRule &ruleModel,
 
     for (const YamlInstructionMatch &matchModel : ruleModel.match.sequence) {
       InstructionMatch instructionMatch;
-      if (!ParseInstructionMatch(matchModel, portableV2, instructionMatch, error)) {
+      if (!ParseInstructionMatch(matchModel, instructionMatch, error)) {
         return false;
       }
       RecipeInstructionPattern pattern;
@@ -1151,7 +1151,7 @@ static bool ParseRule(const YamlRule &ruleModel,
       pattern.TestBoolean = matchModel.test_boolean;
       for (const YamlOperand &operandModel : matchModel.operands) {
         RecipeOperandPattern operand;
-        if (!FillRecipeOperandPattern(operandModel, portableV2, false, operand, error)) {
+        if (!FillRecipeOperandPattern(operandModel, false, operand, error)) {
           return false;
         }
         pattern.Operands.push_back(std::move(operand));
@@ -1178,11 +1178,11 @@ static bool ParseRule(const YamlRule &ruleModel,
     rule.Match.TestBoolean = ruleModel.match.test_boolean;
     for (const YamlOperand &operandModel : ruleModel.match.operands) {
       OperandMatch operandMatch;
-      if (!ParseMatchOperand(operandModel, portableV2, operandMatch, error)) {
+      if (!ParseMatchOperand(operandModel, operandMatch, error)) {
         return false;
       }
       RecipeOperandPattern operand;
-      if (!FillRecipeOperandPattern(operandModel, portableV2, false, operand, error)) {
+      if (!FillRecipeOperandPattern(operandModel, false, operand, error)) {
         return false;
       }
       rule.Match.Operands.push_back(std::move(operand));
@@ -1238,7 +1238,7 @@ static bool ParseRule(const YamlRule &ruleModel,
     }
     for (const YamlOperand &operandModel : emitModel.operands) {
       Operand operand;
-      if (!ParseEmitOperand(operandModel, portableV2, operand, error)) {
+      if (!ParseEmitOperand(operandModel, operand, error)) {
         return false;
       }
       instruction.Operands.push_back(std::move(operand));
@@ -1250,7 +1250,7 @@ static bool ParseRule(const YamlRule &ruleModel,
     emitInstruction.TestBoolean = emitModel.test_boolean;
     for (const YamlOperand &operandModel : emitModel.operands) {
       RecipeOperandPattern operandPattern;
-      if (!FillRecipeOperandPattern(operandModel, portableV2, true,
+      if (!FillRecipeOperandPattern(operandModel, true,
                                     operandPattern, error)) {
         return false;
       }
@@ -1761,8 +1761,6 @@ bool ParseRecipeText(llvm::StringRef recipeText,
 
   std::string parseError;
 
-  const bool strictPortable = true;
-
   if (!document.rewrite_rules.empty()) {
     result.Error = sourceName.str() +
                    ": schema version 1 requires steps and does not allow top-level rewrite_rules";
@@ -1772,16 +1770,11 @@ bool ParseRecipeText(llvm::StringRef recipeText,
     result.Error = sourceName.str() + ": schema version 1 requires at least one step";
     return false;
   }
-  if (!document.prefilters.empty()) {
+  if (!document.predicates.empty()) {
     result.Error = sourceName.str() +
-                   ": schema version 1 uses predicates instead of prefilters";
+                   ": schema version 1 uses prefilters instead of predicates";
     return false;
   }
-  if (!ValidatePortableDeclarationModel(document, parseError)) {
-    result.Error = sourceName.str() + ": " + parseError;
-    return false;
-  }
-
   if (document.reserved_temps > 0) {
     result.Recipe.ReserveTemps(document.reserved_temps);
   }
@@ -1811,7 +1804,7 @@ bool ParseRecipeText(llvm::StringRef recipeText,
     return false;
   }
 
-  for (const YamlPrefilter &prefilterModel : document.predicates) {
+  for (const YamlPrefilter &prefilterModel : document.prefilters) {
     RecipePrefilter prefilter;
     if (!ParsePrefilterKindToken(prefilterModel.kind, prefilter.Kind,
                                  parseError)) {
@@ -1834,7 +1827,7 @@ bool ParseRecipeText(llvm::StringRef recipeText,
     prefilter.Match.TestBoolean = prefilterModel.match.test_boolean;
     for (const YamlOperand &operandModel : prefilterModel.match.operands) {
       RecipeOperandPattern operand;
-      if (!FillRecipeOperandPattern(operandModel, strictPortable, false,
+      if (!FillRecipeOperandPattern(operandModel, false,
                                     operand, parseError)) {
         result.Error = sourceName.str() + ": " + parseError;
         return false;
@@ -1849,7 +1842,7 @@ bool ParseRecipeText(llvm::StringRef recipeText,
       pattern.TestBoolean = matchModel.test_boolean;
       for (const YamlOperand &operandModel : matchModel.operands) {
         RecipeOperandPattern operand;
-        if (!FillRecipeOperandPattern(operandModel, strictPortable, false,
+        if (!FillRecipeOperandPattern(operandModel, false,
                                       operand, parseError)) {
           result.Error = sourceName.str() + ": " + parseError;
           return false;
@@ -1987,7 +1980,7 @@ bool ParseRecipeText(llvm::StringRef recipeText,
   auto appendRuleToStep = [&](const YamlRule &ruleModel,
                               RecipeStep &step) -> bool {
     RecipeRule rule;
-    if (!ParseRule(ruleModel, strictPortable, step.ApplicationMode, rule, parseError)) {
+    if (!ParseRule(ruleModel, step.ApplicationMode, rule, parseError)) {
       result.Error = sourceName.str() + ": " + parseError;
       return false;
     }
@@ -2003,7 +1996,12 @@ bool ParseRecipeText(llvm::StringRef recipeText,
                     : stepModel.name;
     step.Required = stepModel.required;
     if (!stepModel.application_mode.empty()) {
-      step.ApplicationMode = ParseRuleApplicationMode(stepModel.application_mode);
+      result.Error = sourceName.str() +
+                     ": SM5 steps use mode instead of application_mode";
+      return false;
+    }
+    if (!stepModel.mode.empty()) {
+      step.ApplicationMode = ParseRuleApplicationMode(stepModel.mode);
     }
 
     for (const YamlRule &ruleModel : stepModel.rules) {

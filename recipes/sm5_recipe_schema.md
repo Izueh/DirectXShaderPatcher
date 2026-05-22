@@ -2,16 +2,14 @@
 
 SM5 recipes use schema version `1`.
 
-This version is the portable DSL.
-
-## Portable Schema
+## Schema
 
 Top-level shape:
 
 ```yaml
 version: 1
 reserved_temps: 0
-predicates: []
+prefilters: []
 steps: []
 temp_decls: []
 texture_decls: []
@@ -22,23 +20,21 @@ sampler_decls: []
 uav_decls: []
 ```
 
-Portable schema rules:
+Schema rules:
 
-- Use `predicates` (not `prefilters`).
+- Use `prefilters`.
 - Use `steps` (top-level `rewrite_rules` is not allowed).
 - Emit operand capture references use `capture` (not `from_capture`).
 - Component selectors use `components.kind` + `components.value`.
-- Declarations are handle-first and auto-bound:
-  - `handle` is required.
-  - `auto_bind: true` is required.
-  - `bind_point` is not allowed.
+- Declarations support explicit `bind_point` and `auto_bind` forms.
+- `handle` is optional unless referenced by `bind_handle`.
 
 This schema is specific to `dxp::sm5`. It is separate from the DXIL schema in
 `recipes/recipe_schema.md` because SM5 patching works against DXBC token IR.
 
-## Predicates
+## Prefilters
 
-Supported predicate kinds:
+Supported prefilter kinds:
 
 - `check_shader_version`
 - `check_opcode_count`
@@ -48,7 +44,7 @@ Supported predicate kinds:
 Fields:
 
 ```yaml
-predicates:
+prefilters:
   - kind: check_shader_version
     name: ps_5_0_only
     required: true
@@ -85,7 +81,7 @@ Rules are grouped in explicit ordered `steps`.
 steps:
   - name: rewrite_ign
     required: true
-    application_mode: MatchAll
+    mode: MatchAll
     rules:
       - match:
           opcode: frc
@@ -100,7 +96,7 @@ Supported step fields:
 
 - `name`
 - `required`
-- `application_mode`
+- `mode`
 - `rules`
 
 Supported rule fields:
@@ -118,9 +114,9 @@ Supported rule fields:
 - `emit[].interpolation_mode`
 - `emit[].test_boolean`
 - `emit[].operands[]`
-- `application_mode`
+- `mode`
 
-`application_mode` accepts:
+`mode` accepts:
 
 - `First`
 - `Last`
@@ -189,7 +185,7 @@ Notes:
 - When `match.sequence[]` is used with `replace`, only the named captured instruction is replaced.
 - `immediates_f32` are encoded as raw SM5 immediate float tokens.
 
-## Portable Declaration Injection
+## Declaration Injection
 
 Temp declarations:
 
@@ -317,11 +313,11 @@ Notes:
 - `temp_decls` are mapped in-order onto the reserved temp range (starting at `ReservedTempBase`).
 - If both are present, effective reserved count is `max(reserved_temps, temp_decls.size())`.
 
-## Portable Example
+## Example
 
 ```yaml
 version: 1
-predicates:
+prefilters:
   - kind: check_shader_version
     major: 5
     minor: 0
@@ -333,7 +329,7 @@ sampler_decls:
     auto_bind: true
 steps:
   - name: rewrite_ign
-    application_mode: MatchAll
+    mode: MatchAll
     rules:
       - match:
           opcode: sample_l
@@ -353,4 +349,4 @@ steps:
                 immediates_f32: [0.0]
 ```
 
-Legacy compatibility forms are intentionally not supported.
+Legacy compatibility forms are not supported.

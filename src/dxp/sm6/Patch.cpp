@@ -303,9 +303,7 @@ bool PatchDxilContainerInMemory(const DxilRecipe &recipe, const void *inputData,
       op->RefreshCache();
   }
 
-  const bool shouldVerifyModule = recipeContext->moduleModified &&
-                                  !recipeContext->moduleVerified;
-  if (shouldVerifyModule) {
+  if (!recipeContext->moduleVerified) {
     if (!dxp::sm6::VerifyModuleOrReport(*shader->module))
       return false;
     recipeContext->moduleVerified = true;

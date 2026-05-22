@@ -1,5 +1,5 @@
-version: 1
-predicates:
+﻿version: 1
+prefilters:
   - kind: check_shader_version
     major: 5
     minor: 0

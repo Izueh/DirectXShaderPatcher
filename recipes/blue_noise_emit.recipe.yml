@@ -457,4 +457,3 @@ steps:
     required: false
   - kind: prune_dead_code
   - kind: refresh_resources
-  - kind: verify_module

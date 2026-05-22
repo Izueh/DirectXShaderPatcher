@@ -17,5 +17,3 @@ resources:
 steps:
   - kind: add_texture
     id: added_texture
-  - kind: expect_texture
-    id: added_texture

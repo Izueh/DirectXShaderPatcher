@@ -89,6 +89,3 @@ steps:
     rule: group_id_x_to_cbuffer
     mode: MatchAll
     required: true
-  - kind: expect_cbuffer
-    id: frame_constants
-  - kind: verify_module

@@ -2,7 +2,7 @@ version: 1
 reserved_temps: 1
 temp_decls:
   - handle: screen_uv_temp
-predicates:
+prefilters:
   - kind: check_shader_version
     major: 5
     minor: 0
@@ -18,7 +18,7 @@ output_decls:
     auto_bind: true
 steps:
   - name: inject_screen_uv_math
-    application_mode: MatchAll
+    mode: MatchAll
     rules:
       - match:
           sequence:

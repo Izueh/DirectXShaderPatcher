@@ -35,6 +35,10 @@ int main(int argc, char **argv) {
 
   const char *recipeText = R"YAML(version: 1
 reserved_temps: 3
+steps:
+  - name: noop
+    required: false
+    rules: []
 )YAML";
 
   dxp::sm5::RecipeParseResult parseResult;

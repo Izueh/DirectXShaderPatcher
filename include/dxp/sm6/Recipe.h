@@ -133,14 +133,6 @@ DxilRecipeStep MakePrefilterStep(std::string name,
                  std::vector<DxilCallPattern> patterns);
 DxilRecipeStep MakeRefreshResourcesStep(std::string name = "refresh_resources");
 DxilRecipeStep MakePruneDeadCodeStep(std::string name = "prune_dead_code");
-DxilRecipeStep MakeVerifyModuleStep(std::string name = "verify_module");
-DxilRecipeStep MakeExpectTextureStep(std::string id,
-                                     std::string name = "expect_texture");
-DxilRecipeStep
-MakeExpectTextureUAVStep(std::string id,
-                         std::string name = "expect_texture_uav");
-DxilRecipeStep MakeExpectCBufferStep(std::string id,
-                                     std::string name = "expect_cbuffer");
 bool ExecuteDxilRecipe(const DxilRecipe &recipe, llvm::Module &module,
                        hlsl::DxilModule &dxilModule,
                        DxilRecipeContext *outContext = nullptr,

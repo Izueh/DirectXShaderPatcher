@@ -191,4 +191,3 @@ steps:
   - kind: apply_rule
     rule: exact_typed_buffer_load_identity
     mode: First
-  - kind: verify_module
