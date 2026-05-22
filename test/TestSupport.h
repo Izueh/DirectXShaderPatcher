@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -38,6 +39,9 @@ struct LoadedDxilShader {
 
 bool ReadFile(const std::string &path, std::vector<uint8_t> &data);
 bool WriteFile(const std::string &path, const void *ptr, size_t size);
+std::filesystem::path RepoRootPath();
+std::string DefaultArtifactOutputPath(const std::string &inputPath,
+                                      const std::string &suffix);
 bool ExtractDxilProgramBitcode(const std::vector<uint8_t> &containerBytes,
                                DxilProgramBitcode &outBitcode);
 std::unique_ptr<llvm::Module>

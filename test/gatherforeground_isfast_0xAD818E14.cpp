@@ -12,11 +12,7 @@ struct ISFastFrameConstantsCpu {
 };
 
 static std::string BuildDefaultPatchedOutputPath(const std::string &inputPath) {
-  const size_t extensionPos = inputPath.rfind(".cso");
-  if (extensionPos != std::string::npos)
-    return inputPath.substr(0, extensionPos) + ".isfast.patched.cso";
-
-  return inputPath + ".isfast.patched.cso";
+  return DefaultArtifactOutputPath(inputPath, ".isfast.patched.cso");
 }
 
 } // namespace
@@ -24,8 +20,8 @@ static std::string BuildDefaultPatchedOutputPath(const std::string &inputPath) {
 int main(int argc, char **argv) {
   if (argc != 2 && argc != 3) {
     std::cerr << "Usage: gatherforeground_isfast_0xAD818E14 <input.cso> [output.cso]\n"
-              << "If [output.cso] is omitted, the test writes "
-              << "<input>.isfast.patched.cso next to the input shader.\n";
+              << "If [output.cso] is omitted, the test writes into "
+              << "artifacts/test-output under the repo root.\n";
     return 1;
   }
 

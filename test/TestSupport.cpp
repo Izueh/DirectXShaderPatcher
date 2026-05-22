@@ -1,5 +1,6 @@
 ﻿#include "TestSupport.h"
 
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 
@@ -117,6 +118,14 @@ bool ReadFile(const std::string &path, std::vector<uint8_t> &data) {
 }
 
 bool WriteFile(const std::string &path, const void *ptr, size_t size) {
+  const std::filesystem::path outputPath(path);
+  const std::filesystem::path parentPath = outputPath.parent_path();
+  if (!parentPath.empty()) {
+    std::error_code error;
+    if (!std::filesystem::create_directories(parentPath, error) && error)
+      return false;
+  }
+
   std::ofstream file(path, std::ios::binary);
   if (!file)
     return false;
@@ -127,6 +136,19 @@ bool WriteFile(const std::string &path, const void *ptr, size_t size) {
   }
 
   return !!file;
+}
+
+std::filesystem::path RepoRootPath() {
+  return std::filesystem::path(__FILE__).parent_path().parent_path();
+}
+
+std::string DefaultArtifactOutputPath(const std::string &inputPath,
+                                      const std::string &suffix) {
+  std::filesystem::path inputFile(inputPath);
+  const std::filesystem::path stem = inputFile.stem();
+  return (RepoRootPath() / "artifacts" / "test-output" /
+          (stem.string() + suffix))
+      .string();
 }
 
 bool ExtractDxilProgramBitcode(const std::vector<uint8_t> &containerBytes,

@@ -20,7 +20,10 @@ if (-not (Test-Path -LiteralPath $DecompilerPath)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
-  $OutputPath = "$InputShader.disasm.txt"
+  $repoRoot = Split-Path -Parent $PSScriptRoot
+  $artifactDir = Join-Path $repoRoot "artifacts\disasm"
+  $shaderName = [System.IO.Path]::GetFileNameWithoutExtension($InputShader)
+  $OutputPath = Join-Path $artifactDir ($shaderName + ".disasm.txt")
 }
 
 if ((Test-Path -LiteralPath $OutputPath) -and -not $Force) {

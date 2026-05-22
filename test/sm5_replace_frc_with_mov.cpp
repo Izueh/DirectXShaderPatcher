@@ -34,11 +34,7 @@ static bool WriteFile(const std::string &path, const std::vector<uint8_t> &bytes
 }
 
 static std::string DefaultOutPath(const std::string &inPath) {
-  const size_t dot = inPath.rfind(".cso");
-  if (dot == std::string::npos) {
-    return inPath + ".sm5.mov.patched.cso";
-  }
-  return inPath.substr(0, dot) + ".sm5.mov.patched.cso";
+  return DefaultArtifactOutputPath(inPath, ".sm5.mov.patched.cso");
 }
 
 static int FindNthOpcodeIndex(const dxp::sm5::Program &program,
