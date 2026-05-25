@@ -1,14 +1,17 @@
-name: Release Build And Package Distribution
+name: Build and Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
-  build-and-release:
+  build:
     name: Compile And Package Artifacts
-    runs-on: windows-2022
+    runs-on: windows-latest
 
     steps:
       - name: Checkout Source Code
@@ -22,11 +25,13 @@ jobs:
           arch: amd64
 
       - name: Setup Compiler Cache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@v1.2.23
         with:
           variant: sccache
-          key: ${{ runner.os }}-sccache-${{ github.sha }}
-          restore-keys: ${{ runner.os }}-sccache-
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-sccache
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-sccache-
+            ${{ runner.os }}-${{ runner.arch }}-sccache-
           max-size: 2G
 
       - name: Prepare Staging Directory
