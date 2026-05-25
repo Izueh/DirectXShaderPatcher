@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ImportGroup Label="PropertySheets" />
+  <PropertyGroup>
+    <IncludePath>$(MSBuildThisFileDirectory)include;$(IncludePath)</IncludePath>
+    <DXPSdkToolsetSubdir Condition="'$(PlatformToolset)'=='ClangCL'">clang</DXPSdkToolsetSubdir>
+    <DXPSdkToolsetSubdir Condition="'$(PlatformToolset)'!='ClangCL'">msvc</DXPSdkToolsetSubdir>
+    <LibraryPath Condition="Exists('$(MSBuildThisFileDirectory)lib\$(Configuration)\$(DXPSdkToolsetSubdir)')">$(MSBuildThisFileDirectory)lib\$(Configuration)\$(DXPSdkToolsetSubdir);$(LibraryPath)</LibraryPath>
+    <LibraryPath Condition="!Exists('$(MSBuildThisFileDirectory)lib\$(Configuration)\clang') and !Exists('$(MSBuildThisFileDirectory)lib\$(Configuration)\msvc')">$(MSBuildThisFileDirectory)lib\$(Configuration);$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <PreprocessorDefinitions>NOMINMAX;_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH;$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Configuration)'=='Debug'">_ITERATOR_DEBUG_LEVEL=0;$(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>@DXP_SDK_MSBUILD_DEPENDENCIES@;$(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>xcopy /y /d "$(MSBuildThisFileDirectory)bin\dxcompiler.dll" "$(TargetDir)"</Command>
+      <Message>Copying DirectXShaderPatcher runtime dependencies next to output application...</Message>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+</Project>

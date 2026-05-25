@@ -1,64 +1,146 @@
 {
-  "version": 6,
-  "cmakeMinimumRequired": {
-    "major": 3,
-    "minor": 25,
-    "patch": 0
-  },
+  "version": 3,
   "configurePresets": [
     {
-      "name": "ninja-base",
+      "name": "base-release",
       "hidden": true,
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/out/build/${presetName}",
-      "installDir": "${sourceDir}/out/install/${presetName}",
       "cacheVariables": {
-        "CMAKE_C_COMPILER": "cl",
-        "CMAKE_CXX_COMPILER": "cl",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "DXP_ENABLE_COMPILER_CACHE": "ON",
-        "LLVM_ENABLE_ASSERTIONS": "ON"
-      },
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Windows"
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_MSVC_DEBUG_INFORMATION_FORMAT": "Embedded"
       }
     },
     {
-      "name": "x64-debug",
-      "inherits": "ninja-base",
-      "displayName": "x64 Debug (Ninja)",
+      "name": "base-debug",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_POLICY_DEFAULT_CMP0091": "NEW"
+        "CMAKE_MSVC_DEBUG_INFORMATION_FORMAT": "Embedded"
       }
     },
     {
-      "name": "x64-release",
-      "inherits": "ninja-base",
-      "displayName": "x64 Release (Ninja)",
+      "name": "ninja-msvc-release",
+      "displayName": "Ninja + MSVC (Release)",
+      "description": "Release build with Ninja and MSVC",
+      "inherits": "base-release",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "CMAKE_POLICY_DEFAULT_CMP0091": "NEW"
+        "CMAKE_C_COMPILER": "cl",
+        "CMAKE_CXX_COMPILER": "cl"
+      }
+    },
+    {
+      "name": "ninja-msvc-debug",
+      "displayName": "Ninja + MSVC (Debug)",
+      "description": "Debug build with Ninja and MSVC",
+      "inherits": "base-debug",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "cl",
+        "CMAKE_CXX_COMPILER": "cl"
+      }
+    },
+    {
+      "name": "ninja-clang-release",
+      "displayName": "Ninja + Clang-cl (Release)",
+      "description": "Release build with Ninja and Clang-cl",
+      "inherits": "base-release",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang-cl",
+        "CMAKE_CXX_COMPILER": "clang-cl",
+        "CLANG_ADDITIONAL_DEFINITIONS": "-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH"
+      }
+    },
+    {
+      "name": "ninja-clang-debug",
+      "displayName": "Ninja + Clang-cl (Debug)",
+      "description": "Debug build with Ninja and Clang-cl",
+      "inherits": "base-debug",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang-cl",
+        "CMAKE_CXX_COMPILER": "clang-cl",
+        "CLANG_ADDITIONAL_DEFINITIONS": "-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH"
+      }
+    },
+    {
+      "name": "vs-msvc",
+      "displayName": "Visual Studio + MSVC",
+      "description": "Multi-config build with VS 2022 and MSVC",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_MSVC_DEBUG_INFORMATION_FORMAT": "Embedded"
+      }
+    },
+    {
+      "name": "vs-clang",
+      "displayName": "Visual Studio + Clang-cl",
+      "description": "Multi-config build with VS 2022 and Clang-cl toolset",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "toolset": "ClangCL",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_MSVC_DEBUG_INFORMATION_FORMAT": "Embedded"
       }
     }
   ],
   "buildPresets": [
     {
-      "name": "x64-debug",
-      "configurePreset": "x64-debug"
+      "name": "ninja-msvc-release",
+      "configurePreset": "ninja-msvc-release"
     },
     {
-      "name": "x64-release",
-      "configurePreset": "x64-release"
+      "name": "ninja-msvc-debug",
+      "configurePreset": "ninja-msvc-debug"
     },
     {
-      "name": "tool-debug",
-      "configurePreset": "x64-debug",
-      "targets": [
-        "dxp"
-      ]
+      "name": "ninja-clang-release",
+      "configurePreset": "ninja-clang-release"
+    },
+    {
+      "name": "ninja-clang-debug",
+      "configurePreset": "ninja-clang-debug"
+    },
+    {
+      "name": "vs-msvc-release",
+      "configurePreset": "vs-msvc",
+      "configuration": "Release"
+    },
+    {
+      "name": "vs-msvc-debug",
+      "configurePreset": "vs-msvc",
+      "configuration": "Debug"
+    },
+    {
+      "name": "vs-clang-release",
+      "configurePreset": "vs-clang",
+      "configuration": "Release"
+    },
+    {
+      "name": "vs-clang-debug",
+      "configurePreset": "vs-clang",
+      "configuration": "Debug"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "ninja-msvc-release",
+      "configurePreset": "ninja-msvc-release"
+    },
+    {
+      "name": "ninja-msvc-debug",
+      "configurePreset": "ninja-msvc-debug"
+    },
+    {
+      "name": "ninja-clang-release",
+      "configurePreset": "ninja-clang-release"
+    },
+    {
+      "name": "ninja-clang-debug",
+      "configurePreset": "ninja-clang-debug"
     }
   ]
 }

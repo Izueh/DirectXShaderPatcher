@@ -25,7 +25,8 @@ static bool TryGetConstantStructIntField(const llvm::Value *value,
 
   const llvm::ConstantStruct *constantStruct =
       llvm::dyn_cast<llvm::ConstantStruct>(constantValue);
-  if (constantStruct == nullptr || fieldIndex >= constantStruct->getNumOperands())
+  if (constantStruct == nullptr ||
+      fieldIndex >= constantStruct->getNumOperands())
     return false;
 
   const llvm::ConstantInt *fieldConstant =
@@ -37,11 +38,10 @@ static bool TryGetConstantStructIntField(const llvm::Value *value,
   return true;
 }
 
-static const hlsl::DxilResourceBase *FindResourceByBinding(
-    hlsl::DxilModule &dxilModule,
-    hlsl::DXIL::ResourceClass resourceClass,
-    unsigned bindPoint,
-    unsigned space) {
+static const hlsl::DxilResourceBase *
+FindResourceByBinding(hlsl::DxilModule &dxilModule,
+                      hlsl::DXIL::ResourceClass resourceClass,
+                      unsigned bindPoint, unsigned space) {
   switch (resourceClass) {
   case hlsl::DXIL::ResourceClass::SRV:
     for (const auto &srv : dxilModule.GetSRVs()) {
@@ -65,7 +65,8 @@ static const hlsl::DxilResourceBase *FindResourceByBinding(
     break;
   case hlsl::DXIL::ResourceClass::Sampler:
     for (const auto &sampler : dxilModule.GetSamplers()) {
-      if (sampler->GetLowerBound() == bindPoint && sampler->GetSpaceID() == space)
+      if (sampler->GetLowerBound() == bindPoint &&
+          sampler->GetSpaceID() == space)
         return sampler.get();
     }
     break;
@@ -76,10 +77,10 @@ static const hlsl::DxilResourceBase *FindResourceByBinding(
   return nullptr;
 }
 
-static const hlsl::DxilResourceBase *FindResourceByOrdinal(
-    hlsl::DxilModule &dxilModule,
-    hlsl::DXIL::ResourceClass resourceClass,
-    unsigned resourceIndex) {
+static const hlsl::DxilResourceBase *
+FindResourceByOrdinal(hlsl::DxilModule &dxilModule,
+                      hlsl::DXIL::ResourceClass resourceClass,
+                      unsigned resourceIndex) {
   switch (resourceClass) {
   case hlsl::DXIL::ResourceClass::SRV: {
     const auto &srvs = dxilModule.GetSRVs();
@@ -91,21 +92,23 @@ static const hlsl::DxilResourceBase *FindResourceByOrdinal(
   }
   case hlsl::DXIL::ResourceClass::CBuffer: {
     const auto &cbuffers = dxilModule.GetCBuffers();
-    return resourceIndex < cbuffers.size() ? cbuffers[resourceIndex].get() : nullptr;
+    return resourceIndex < cbuffers.size() ? cbuffers[resourceIndex].get()
+                                           : nullptr;
   }
   case hlsl::DXIL::ResourceClass::Sampler: {
     const auto &samplers = dxilModule.GetSamplers();
-    return resourceIndex < samplers.size() ? samplers[resourceIndex].get() : nullptr;
+    return resourceIndex < samplers.size() ? samplers[resourceIndex].get()
+                                           : nullptr;
   }
   default:
     return nullptr;
   }
 }
 
-static bool TryResolveHandleResource(llvm::Value *value,
-                                     hlsl::DxilModule &dxilModule,
-                                     hlsl::DXIL::ResourceClass preferredResourceClass,
-                                     const hlsl::DxilResourceBase *&resourceOut) {
+static bool
+TryResolveHandleResource(llvm::Value *value, hlsl::DxilModule &dxilModule,
+                         hlsl::DXIL::ResourceClass preferredResourceClass,
+                         const hlsl::DxilResourceBase *&resourceOut) {
   resourceOut = nullptr;
 
   llvm::CallInst *call = llvm::dyn_cast<llvm::CallInst>(value);
@@ -117,24 +120,27 @@ static bool TryResolveHandleResource(llvm::Value *value,
     createHandleCall = llvm::dyn_cast<llvm::CallInst>(call->getArgOperand(1));
 
   if (createHandleCall == nullptr ||
-      !IsDxOpCall(*createHandleCall, hlsl::OP::OpCode::CreateHandleFromBinding)) {
+      !IsDxOpCall(*createHandleCall,
+                  hlsl::OP::OpCode::CreateHandleFromBinding)) {
     return false;
   }
 
   uint64_t lowerBound = 0;
   uint64_t spaceId = 0;
   uint64_t resourceClassValue = 0;
-  if (!TryGetConstantStructIntField(createHandleCall->getArgOperand(1), 0, lowerBound) ||
-      !TryGetConstantStructIntField(createHandleCall->getArgOperand(1), 2, spaceId) ||
-      !TryGetConstantStructIntField(createHandleCall->getArgOperand(1),
-                                    3,
+  if (!TryGetConstantStructIntField(createHandleCall->getArgOperand(1), 0,
+                                    lowerBound) ||
+      !TryGetConstantStructIntField(createHandleCall->getArgOperand(1), 2,
+                                    spaceId) ||
+      !TryGetConstantStructIntField(createHandleCall->getArgOperand(1), 3,
                                     resourceClassValue)) {
     return false;
   }
 
   uint64_t handleIndex = lowerBound;
   if (const llvm::ConstantInt *handleIndexConstant =
-          llvm::dyn_cast<llvm::ConstantInt>(createHandleCall->getArgOperand(2))) {
+          llvm::dyn_cast<llvm::ConstantInt>(
+              createHandleCall->getArgOperand(2))) {
     handleIndex = handleIndexConstant->getZExtValue();
   }
 
@@ -145,15 +151,12 @@ static bool TryResolveHandleResource(llvm::Value *value,
     resolvedResourceClass = preferredResourceClass;
   }
 
-  resourceOut = FindResourceByBinding(
-      dxilModule,
-      resolvedResourceClass,
-      static_cast<unsigned>(handleIndex),
-      static_cast<unsigned>(spaceId));
+  resourceOut = FindResourceByBinding(dxilModule, resolvedResourceClass,
+                                      static_cast<unsigned>(handleIndex),
+                                      static_cast<unsigned>(spaceId));
   if (resourceOut == nullptr &&
       resolvedResourceClass != hlsl::DXIL::ResourceClass::Invalid) {
-    resourceOut = FindResourceByOrdinal(dxilModule,
-                                        resolvedResourceClass,
+    resourceOut = FindResourceByOrdinal(dxilModule, resolvedResourceClass,
                                         static_cast<unsigned>(handleIndex));
   }
   return resourceOut != nullptr;
@@ -169,7 +172,7 @@ static std::string EscapeRegexLiteral(llvm::StringRef text) {
     case '^':
     case '$':
     case '|':
-    case '(': 
+    case '(':
     case ')':
     case '[':
     case ']':
@@ -191,69 +194,69 @@ static std::string EscapeRegexLiteral(llvm::StringRef text) {
 static DxilCallPattern MakeExactTextureLoadPattern() {
   return DxOpCall(hlsl::OP::OpCode::TextureLoad)
       .Capture("texture_load")
-    .Args({ResourceHandleOperand(1)
-         .Capture("texture_handle")
-         .ResourceClass(hlsl::DXIL::ResourceClass::SRV)
-         .ResourceKind(hlsl::DXIL::ResourceKind::Texture2D)
-         .ResourceName("BlueNoise_ScalarTexture")
-         .Build(),
-       AnyOperand(2).Capture("mip_or_sample").Build(),
-       AnyOperand(3).Capture("coord_x").Build(),
-       AnyOperand(4).Capture("coord_y").Build(),
-       AnyOperand(5).Capture("coord_z").Build(),
-       AnyOperand(6).Capture("offset_x").Build(),
-       AnyOperand(7).Capture("offset_y").Build(),
-       AnyOperand(8).Capture("offset_z").Build()})
+      .Args({ResourceHandleOperand(1)
+                 .Capture("texture_handle")
+                 .ResourceClass(hlsl::DXIL::ResourceClass::SRV)
+                 .ResourceKind(hlsl::DXIL::ResourceKind::Texture2D)
+                 .ResourceName("BlueNoise_ScalarTexture")
+                 .Build(),
+             AnyOperand(2).Capture("mip_or_sample").Build(),
+             AnyOperand(3).Capture("coord_x").Build(),
+             AnyOperand(4).Capture("coord_y").Build(),
+             AnyOperand(5).Capture("coord_z").Build(),
+             AnyOperand(6).Capture("offset_x").Build(),
+             AnyOperand(7).Capture("offset_y").Build(),
+             AnyOperand(8).Capture("offset_z").Build()})
       .Build();
 }
 
 static DxilCallPattern MakeRegexSampleLevelPattern() {
   return DxOpCall(hlsl::OP::OpCode::SampleLevel)
       .Capture("sample_level")
-    .Args({ResourceHandleOperand(1)
-         .Capture("sampled_texture")
-         .ResourceClass(hlsl::DXIL::ResourceClass::SRV)
-         .ResourceNameLike("SceneTexturesStruct_.*Texture")
-         .Build(),
-       AnyOperand(2).Capture("sampled_sampler").Build(),
-       AnyOperand(3).Capture("coord0").Build(),
-       AnyOperand(4).Capture("coord1").Build(),
-       AnyOperand(5).Capture("coord2").Build(),
-       AnyOperand(6).Capture("coord3").Build(),
-       AnyOperand(7).Capture("offset0").Build(),
-       AnyOperand(8).Capture("offset1").Build(),
-       AnyOperand(9).Capture("offset2").Build(),
-       AnyOperand(10).Capture("lod").Build()})
+      .Args({ResourceHandleOperand(1)
+                 .Capture("sampled_texture")
+                 .ResourceClass(hlsl::DXIL::ResourceClass::SRV)
+                 .ResourceNameLike("SceneTexturesStruct_.*Texture")
+                 .Build(),
+             AnyOperand(2).Capture("sampled_sampler").Build(),
+             AnyOperand(3).Capture("coord0").Build(),
+             AnyOperand(4).Capture("coord1").Build(),
+             AnyOperand(5).Capture("coord2").Build(),
+             AnyOperand(6).Capture("coord3").Build(),
+             AnyOperand(7).Capture("offset0").Build(),
+             AnyOperand(8).Capture("offset1").Build(),
+             AnyOperand(9).Capture("offset2").Build(),
+             AnyOperand(10).Capture("lod").Build()})
       .Build();
 }
 
-    static DxilCallPattern MakeBroadSampleLevelPattern() {
-      return DxOpCall(hlsl::OP::OpCode::SampleLevel)
-        .Capture("sample_level")
-        .Args({AnyOperand(1).Capture("sampled_texture").Build(),
-           AnyOperand(2).Capture("sampled_sampler").Build(),
-           AnyOperand(3).Capture("coord0").Build(),
-           AnyOperand(4).Capture("coord1").Build(),
-           AnyOperand(5).Capture("coord2").Build(),
-           AnyOperand(6).Capture("coord3").Build(),
-           AnyOperand(7).Capture("offset0").Build(),
-           AnyOperand(8).Capture("offset1").Build(),
-           AnyOperand(9).Capture("offset2").Build(),
-           AnyOperand(10).Capture("lod").Build()})
-        .Build();
-    }
+static DxilCallPattern MakeBroadSampleLevelPattern() {
+  return DxOpCall(hlsl::OP::OpCode::SampleLevel)
+      .Capture("sample_level")
+      .Args({AnyOperand(1).Capture("sampled_texture").Build(),
+             AnyOperand(2).Capture("sampled_sampler").Build(),
+             AnyOperand(3).Capture("coord0").Build(),
+             AnyOperand(4).Capture("coord1").Build(),
+             AnyOperand(5).Capture("coord2").Build(),
+             AnyOperand(6).Capture("coord3").Build(),
+             AnyOperand(7).Capture("offset0").Build(),
+             AnyOperand(8).Capture("offset1").Build(),
+             AnyOperand(9).Capture("offset2").Build(),
+             AnyOperand(10).Capture("lod").Build()})
+      .Build();
+}
 
 static DxilCallPattern MakeTypedBufferLoadPattern() {
   return DxOpCall(hlsl::OP::OpCode::BufferLoad)
       .Capture("buffer_load")
-    .Args({ResourceHandleOperand(1)
-         .Capture("buffer_handle")
-         .ResourceClass(hlsl::DXIL::ResourceClass::SRV)
-         .ResourceKind(hlsl::DXIL::ResourceKind::TypedBuffer)
-         .ResourceName("VirtualVoxel_PageIndexBuffer")
-         .Build(),
-       AnyOperand(2).Capture("index").Build(),
-       AnyOperand(3).Capture("wot").Build()})
+      .Args({ResourceHandleOperand(1)
+                 .Capture("buffer_handle")
+                 .ResourceClass(hlsl::DXIL::ResourceClass::SRV)
+                 .ResourceKind(hlsl::DXIL::ResourceKind::TypedBuffer)
+                 .ResourceName("VirtualVoxel_PageIndexBuffer")
+                 .Build(),
+             AnyOperand(2).Capture("index").Build(),
+             AnyOperand(3).Capture("wot").Build()})
       .Build();
 }
 
@@ -265,9 +268,9 @@ static unsigned CountRuleMatches(llvm::Function &entryFunction,
   return static_cast<unsigned>(matches.size());
 }
 
-static std::vector<DxilMatchResult> CollectMatches(llvm::Function &entryFunction,
-                                                   hlsl::DxilModule &dxilModule,
-                                                   const DxilCallPattern &pattern) {
+static std::vector<DxilMatchResult>
+CollectMatches(llvm::Function &entryFunction, hlsl::DxilModule &dxilModule,
+               const DxilCallPattern &pattern) {
   std::vector<DxilMatchResult> matches;
   CollectDxilCallMatches(entryFunction, pattern, matches, &dxilModule);
   return matches;
@@ -275,14 +278,15 @@ static std::vector<DxilMatchResult> CollectMatches(llvm::Function &entryFunction
 
 int main(int argc, char **argv) {
   if (argc != 3) {
-    std::cerr << "Usage: declarative_resource_name_match_recipe_0x56C468C3 <input.cso> <recipe.yml>\n";
+    std::cerr << "Usage: declarative_resource_name_match_recipe_0x56C468C3 "
+                 "<input.cso> <recipe.yml>\n";
     return 1;
   }
 
   ScopedCoInitialize coinit;
 
   LoadedDxilShader shader;
-  if (!LoadShaderForMutation(argv[1], shader, true))
+  if (!LoadShaderFromPath(argv[1], shader, true))
     return 1;
 
   llvm::Function *entryFunction = shader.dxilModule->GetEntryFunction();
@@ -299,7 +303,8 @@ int main(int argc, char **argv) {
       CountDxOpCalls(*entryFunction, "dx.op.bufferLoad.i32");
   if (initialBlueNoiseCount == 0 || initialSampleLevelCount == 0 ||
       initialBufferLoadCount == 0) {
-    std::cerr << "Expected test shader to contain BlueNoise loads, sampleLevel calls, and bufferLoad.i32 calls.\n";
+    std::cerr << "Expected test shader to contain BlueNoise loads, sampleLevel "
+                 "calls, and bufferLoad.i32 calls.\n";
     return 1;
   }
 
@@ -313,33 +318,37 @@ int main(int argc, char **argv) {
   DxilCallPattern regexSampleLevelPattern = MakeRegexSampleLevelPattern();
   DxilCallPattern typedBufferPattern = MakeTypedBufferLoadPattern();
 
-  const unsigned exactTextureMatches =
-      CountRuleMatches(*entryFunction, *shader.dxilModule, exactTextureLoadPattern);
+  const unsigned exactTextureMatches = CountRuleMatches(
+      *entryFunction, *shader.dxilModule, exactTextureLoadPattern);
   if (exactTextureMatches == 0) {
-    std::cerr << "Expected exact resource_name TextureLoad matcher to find at least one match.\n";
+    std::cerr << "Expected exact resource_name TextureLoad matcher to find at "
+                 "least one match.\n";
     return 1;
   }
 
   DxilCallPattern wrongExactTexturePattern = exactTextureLoadPattern;
   wrongExactTexturePattern.operandPatterns[0].resourceName =
       "BlueNoise_ScalarTexture_DOES_NOT_EXIST";
-  if (CountRuleMatches(*entryFunction, *shader.dxilModule, wrongExactTexturePattern) != 0) {
-    std::cerr << "Expected non-matching exact resource_name TextureLoad matcher to find zero matches.\n";
+  if (CountRuleMatches(*entryFunction, *shader.dxilModule,
+                       wrongExactTexturePattern) != 0) {
+    std::cerr << "Expected non-matching exact resource_name TextureLoad "
+                 "matcher to find zero matches.\n";
     return 1;
   }
 
-  const std::vector<DxilMatchResult> broadSampleMatches =
-      CollectMatches(*entryFunction, *shader.dxilModule, MakeBroadSampleLevelPattern());
+  const std::vector<DxilMatchResult> broadSampleMatches = CollectMatches(
+      *entryFunction, *shader.dxilModule, MakeBroadSampleLevelPattern());
   if (broadSampleMatches.empty()) {
-    std::cerr << "Expected the test shader to contain at least one SampleLevel call with Texture2D and Sampler handles.\n";
+    std::cerr << "Expected the test shader to contain at least one SampleLevel "
+                 "call with Texture2D and Sampler handles.\n";
     return 1;
   }
 
   const hlsl::DxilResourceBase *sampleTextureResource = nullptr;
-  if (!TryResolveHandleResource(broadSampleMatches.front().GetCapture("sampled_texture"),
-                                *shader.dxilModule,
-                                hlsl::DXIL::ResourceClass::SRV,
-                                sampleTextureResource) ||
+  if (!TryResolveHandleResource(
+          broadSampleMatches.front().GetCapture("sampled_texture"),
+          *shader.dxilModule, hlsl::DXIL::ResourceClass::SRV,
+          sampleTextureResource) ||
       sampleTextureResource == nullptr) {
     std::string unresolvedHandleText;
     llvm::raw_string_ostream handleStream(unresolvedHandleText);
@@ -355,7 +364,8 @@ int main(int argc, char **argv) {
       handleStream << "<null>";
     }
     handleStream.flush();
-    std::cerr << "Failed to resolve the SampleLevel texture handle for regex matcher validation: "
+    std::cerr << "Failed to resolve the SampleLevel texture handle for regex "
+                 "matcher validation: "
               << unresolvedHandleText << "\n";
     return 1;
   }
@@ -363,37 +373,44 @@ int main(int argc, char **argv) {
   regexSampleLevelPattern.operandPatterns[0].resourceNameLikePattern =
       "^" + EscapeRegexLiteral(sampleTextureResource->GetGlobalName()) + "$";
 
-  const unsigned regexSampleMatches =
-      CountRuleMatches(*entryFunction, *shader.dxilModule, regexSampleLevelPattern);
+  const unsigned regexSampleMatches = CountRuleMatches(
+      *entryFunction, *shader.dxilModule, regexSampleLevelPattern);
   if (regexSampleMatches == 0) {
-    std::cerr << "Expected resource_name_like SampleLevel matcher to find at least one match.\n";
+    std::cerr << "Expected resource_name_like SampleLevel matcher to find at "
+                 "least one match.\n";
     return 1;
   }
 
   DxilCallPattern wrongRegexSamplePattern = regexSampleLevelPattern;
   wrongRegexSamplePattern.operandPatterns[0].resourceNameLikePattern =
       "DefinitelyNoSceneTextureMatch";
-  if (CountRuleMatches(*entryFunction, *shader.dxilModule, wrongRegexSamplePattern) != 0) {
-    std::cerr << "Expected non-matching resource_name_like SampleLevel matcher to find zero matches.\n";
+  if (CountRuleMatches(*entryFunction, *shader.dxilModule,
+                       wrongRegexSamplePattern) != 0) {
+    std::cerr << "Expected non-matching resource_name_like SampleLevel matcher "
+                 "to find zero matches.\n";
     return 1;
   }
 
   const unsigned typedBufferMatches =
       CountRuleMatches(*entryFunction, *shader.dxilModule, typedBufferPattern);
   if (typedBufferMatches == 0) {
-    std::cerr << "Expected TypedBuffer resource matcher to find at least one match.\n";
+    std::cerr << "Expected TypedBuffer resource matcher to find at least one "
+                 "match.\n";
     return 1;
   }
 
   DxilCallPattern wrongTypedBufferPattern = typedBufferPattern;
   wrongTypedBufferPattern.operandPatterns[0].resourceName =
       "VirtualVoxel_PageIndexBuffer_DOES_NOT_EXIST";
-  if (CountRuleMatches(*entryFunction, *shader.dxilModule, wrongTypedBufferPattern) != 0) {
-    std::cerr << "Expected non-matching TypedBuffer resource_name matcher to find zero matches.\n";
+  if (CountRuleMatches(*entryFunction, *shader.dxilModule,
+                       wrongTypedBufferPattern) != 0) {
+    std::cerr << "Expected non-matching TypedBuffer resource_name matcher to "
+                 "find zero matches.\n";
     return 1;
   }
 
-  std::cout << "Declarative resource-name matching parsed and matched exact, regex, and TypedBuffer resource rules successfully.\n";
+  std::cout << "Declarative resource-name matching parsed and matched exact, "
+               "regex, and TypedBuffer resource rules successfully.\n";
   std::cout.flush();
   std::cerr.flush();
   return 0;

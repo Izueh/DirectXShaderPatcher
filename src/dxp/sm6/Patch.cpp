@@ -9,11 +9,10 @@
 #include <string>
 #include <vector>
 
-// NOLINTBEGIN(misc-include-cleaner)
+#include <Unknwn.h>
 #include <ObjIdl.h>
 #include <atlbase.h>
 #include "dxc/dxcapi.h"
-// NOLINTEND(misc-include-cleaner)
 
 #include "Container.h"
 
@@ -29,31 +28,7 @@
 using llvm::LLVMContext;
 using llvm::Module;
 
-// Windows COM entry points and ATL smart pointers are reported as
-// direct-include misses here even with explicit SDK headers in this toolchain
-// setup. NOLINTBEGIN(misc-include-cleaner)
-// NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace)
 namespace {
-
-static void ReleaseDxilStateForModule(std::unique_ptr<llvm::Module> &module,
-                                      hlsl::DxilModule *&dxilModule) {
-  if (!module) {
-    dxilModule = nullptr;
-    return;
-  }
-
-  if (module->HasDxilModule()) {
-    // DXC teardown is unstable for mutated modules in this workflow. Detach the
-    // embedded DxilModule so llvm::Module can be destroyed without invoking the
-    // vendored reset hook.
-    module->pfnRemoveGlobal = nullptr;
-    module->pfnResetDxilModule = nullptr;
-    module->SetDxilModule(nullptr);
-  }
-
-  dxilModule = nullptr;
-  module.reset();
-}
 
 class ScopedPatchCoInitialize {
 public:
@@ -131,9 +106,8 @@ static bool ValidatePatchedContainerOrReport(std::vector<uint8_t> &container) {
   }
 
   CComPtr<IDxcOperationResult> validationResult;
-  if (DXC_FAILED(validator->Validate(containerBlob,
-                                     DxcValidatorFlags_InPlaceEdit,
-                                     &validationResult)) ||
+  if (DXC_FAILED(validator->Validate(
+          containerBlob, DxcValidatorFlags_InPlaceEdit, &validationResult)) ||
       !validationResult) {
     std::cerr << "DXIL validator invocation failed.\n";
     return false;
@@ -153,9 +127,9 @@ static bool ValidatePatchedContainerOrReport(std::vector<uint8_t> &container) {
       CComPtr<IDxcBlobUtf8> errorText;
       if (SUCCEEDED(dxcUtils->GetBlobAsUtf8(errorBlob, &errorText)) &&
           errorText && errorText->GetStringLength() != 0) {
-        std::cerr.write(errorText->GetStringPointer(),
-                        static_cast<std::streamsize>(
-                            errorText->GetStringLength()));
+        std::cerr.write(
+            errorText->GetStringPointer(),
+            static_cast<std::streamsize>(errorText->GetStringLength()));
         if (errorText->GetStringPointer()[errorText->GetStringLength() - 1] !=
             '\n') {
           std::cerr << '\n';
@@ -168,31 +142,35 @@ static bool ValidatePatchedContainerOrReport(std::vector<uint8_t> &container) {
 
   const uint8_t *validatedBytes =
       reinterpret_cast<const uint8_t *>(containerBlob->GetBufferPointer());
-  const size_t validatedSize = static_cast<size_t>(containerBlob->GetBufferSize());
+  const size_t validatedSize =
+      static_cast<size_t>(containerBlob->GetBufferSize());
   container.assign(validatedBytes, validatedBytes + validatedSize);
   return true;
 }
 
 } // namespace
-// NOLINTEND(llvm-prefer-static-over-anonymous-namespace)
-// NOLINTEND(misc-include-cleaner)
 
 DxilLoadedShaderState::~DxilLoadedShaderState() {
-  ReleaseDxilStateForModule(module, dxilModule);
+  if (module && module->HasDxilModule()) {
+
+    module->pfnRemoveGlobal = nullptr;
+    module->pfnResetDxilModule = nullptr;
+    module->SetDxilModule(nullptr);
+  }
+
+  dxilModule = nullptr;
+  module.reset();
   reflectionContext.reset();
 }
 
-bool LoadDxilContainerForMutation(const void *containerData,
-                                  size_t containerSize,
-                                  DxilLoadedShaderState &shader,
-                                  bool restoreReflection) {
+bool LoadDxilContainer(const void *containerData, size_t containerSize,
+                       DxilLoadedShaderState &shader, bool restoreReflection) {
   shader.module.reset();
   shader.reflectionContext.reset();
   shader.dxilModule = nullptr;
 
   if (containerData == nullptr && containerSize != 0) {
-    std::cerr
-        << "LoadDxilContainerForMutation received a null container pointer.\n";
+    std::cerr << "LoadDxilContainer received a null container pointer.\n";
     return false;
   }
 
@@ -220,19 +198,17 @@ bool LoadDxilContainerForMutation(const void *containerData,
   }
 
   if (restoreReflection) {
-    shader.reflectionContext = std::make_unique<LLVMContext>();
     RestoreOriginalResourceReflection(shader.inputBytes, *shader.dxilModule,
-                                      *shader.reflectionContext);
+                                      shader.context);
   }
 
   return true;
 }
 
-bool LoadDxilContainerForMutation(const std::vector<uint8_t> &containerBytes,
-                                  DxilLoadedShaderState &shader,
-                                  bool restoreReflection) {
-  return LoadDxilContainerForMutation(
-      containerBytes.data(), containerBytes.size(), shader, restoreReflection);
+bool LoadDxilContainer(const std::vector<uint8_t> &containerBytes,
+                       DxilLoadedShaderState &shader, bool restoreReflection) {
+  return LoadDxilContainer(containerBytes.data(), containerBytes.size(), shader,
+                           restoreReflection);
 }
 
 bool ReloadDxilContainerFromMemory(const std::vector<uint8_t> &containerBytes,
@@ -261,11 +237,10 @@ bool ReloadDxilContainerFromMemory(const std::vector<uint8_t> &containerBytes,
   return true;
 }
 
-bool PatchDxilContainerInMemory(const DxilRecipe &recipe, const void *inputData,
-                                size_t inputSize,
-                                std::vector<uint8_t> &outputContainer,
-                                const DxilContainerPatchOptions &options,
-                                DxilRecipeContext *outContext) {
+bool PatchDxilContainer(const DxilRecipe &recipe, const void *inputData,
+                        size_t inputSize, std::vector<uint8_t> &outputContainer,
+                        const DxilContainerPatchOptions &options,
+                        DxilRecipeContext *outContext) {
   const ScopedPatchCoInitialize coinit;
   const bool traceEnabled = options.recipeExecutionOptions.traceEnabled;
 
@@ -273,14 +248,15 @@ bool PatchDxilContainerInMemory(const DxilRecipe &recipe, const void *inputData,
 
   std::unique_ptr<DxilLoadedShaderState> shader =
       std::make_unique<DxilLoadedShaderState>();
-  if (!LoadDxilContainerForMutation(inputData, inputSize, *shader,
-                                    options.restoreReflection)) {
+  if (!LoadDxilContainer(inputData, inputSize, *shader,
+                         options.restoreReflection)) {
     return false;
   }
 
   TracePatchMessage(traceEnabled, "patch: execute recipe");
   DxilRecipeContext localContext;
-  DxilRecipeContext *recipeContext = outContext != nullptr ? outContext : &localContext;
+  DxilRecipeContext *recipeContext =
+      outContext != nullptr ? outContext : &localContext;
   if (!ExecuteDxilRecipe(recipe, *shader->module, *shader->dxilModule,
                          options.recipeExecutionOptions, recipeContext)) {
     return false;
@@ -290,13 +266,11 @@ bool PatchDxilContainerInMemory(const DxilRecipe &recipe, const void *inputData,
                                       !recipeContext->resourcesRefreshed;
   if (shouldRefreshResources) {
     TracePatchMessage(traceEnabled, "patch: refresh resources");
-    RefreshDxilAfterResourceMutation(
-        *shader->dxilModule, options.recipeExecutionOptions.traceEnabled);
+    RefreshDxilModule(*shader->dxilModule,
+                      options.recipeExecutionOptions.traceEnabled);
     recipeContext->resourcesRefreshed = true;
   }
 
-  // Always refresh the OP cache before serialization — pruning may have
-  // left stale function pointers in the cache.
   {
     hlsl::OP *op = shader->dxilModule->GetOP();
     if (op)
@@ -319,14 +293,14 @@ bool PatchDxilContainerInMemory(const DxilRecipe &recipe, const void *inputData,
   return ok;
 }
 
-bool PatchDxilContainerInMemory(const DxilRecipe &recipe,
-                                const std::vector<uint8_t> &inputContainer,
-                                std::vector<uint8_t> &outputContainer,
-                                const DxilContainerPatchOptions &options,
-                                DxilRecipeContext *outContext) {
-  return PatchDxilContainerInMemory(recipe, inputContainer.data(),
-                                    inputContainer.size(), outputContainer,
-                                    options, outContext);
+bool PatchDxilContainer(const DxilRecipe &recipe,
+                        const std::vector<uint8_t> &inputContainer,
+                        std::vector<uint8_t> &outputContainer,
+                        const DxilContainerPatchOptions &options,
+                        DxilRecipeContext *outContext) {
+  return PatchDxilContainer(recipe, inputContainer.data(),
+                            inputContainer.size(), outputContainer, options,
+                            outContext);
 }
 
 std::vector<uint8_t> SerializeModuleToBitcode(Module &module) {
@@ -341,7 +315,7 @@ bool SerializePatchedContainer(hlsl::DxilModule &dxilModule,
                                const std::vector<uint8_t> &moduleBitcode,
                                std::vector<uint8_t> &outputContainer) {
   CComPtr<IMalloc> mallocInterface;
-  // NOLINTNEXTLINE(misc-include-cleaner)
+
   if (DXC_FAILED(::CoGetMalloc(1, &mallocInterface)) || !mallocInterface) {
     std::cerr << "CoGetMalloc failed.\n";
     return false;

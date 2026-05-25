@@ -3,21 +3,28 @@ prefilters:
   - kind: check_shader_version
     major: 5
     minor: 0
-raw_resource_decls:
-  - handle: injected_raw_srv
+steps:
+  - kind: add_raw_resource
+    name: add_injected_raw_srv
+    handle: injected_raw_srv
     auto_bind: true
-structured_resource_decls:
-  - handle: injected_structured_srv
+
+  - kind: add_structured_resource
+    name: add_injected_structured_srv
+    handle: injected_structured_srv
     auto_bind: true
     stride: 16
-uav_decls:
-  - handle: injected_raw_uav
+
+  - kind: add_uav
+    name: add_injected_raw_uav
+    handle: injected_raw_uav
     auto_bind: true
-    kind: raw
-steps:
+    uav_kind: raw
+
   - name: verify_bind_handles_in_emit
     rules:
       - match:
+          rewrite_mode: ReplaceRange
           sequence:
             - opcode: mul
               operands:

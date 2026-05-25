@@ -17,6 +17,7 @@
 
 #include "Resources.h"
 
+/// @brief Identifies the kind of DXIL operand pattern to match.
 enum class DxilOperandPatternKind {
   Any,
   DxOpCall,
@@ -25,6 +26,7 @@ enum class DxilOperandPatternKind {
   ConstantInt,
 };
 
+/// @brief Describes one operand constraint in a DXIL call pattern.
 struct DxilOperandPattern {
   unsigned operandIndex = 0;
   DxilOperandPatternKind kind = DxilOperandPatternKind::Any;
@@ -47,6 +49,7 @@ struct DxilOperandPattern {
   std::vector<DxilOperandPattern> operandPatterns;
 };
 
+/// @brief Describes a DXIL call pattern to match.
 struct DxilCallPattern {
   std::string calleeName;
   bool matchDxilOpCode = false;
@@ -55,12 +58,14 @@ struct DxilCallPattern {
   std::vector<DxilOperandPattern> operandPatterns;
 };
 
+/// @brief Identifies a render-target output component.
 struct RenderTargetStoreDesc {
   unsigned outputSigId = 0;
   unsigned rowIndex = 0;
   unsigned componentIndex = 0;
 };
 
+/// @brief Stores one DXIL pattern match and its captured values.
 struct DxilMatchResult {
   llvm::CallInst *rootCall = nullptr;
   std::unordered_map<std::string, llvm::Value *> captures;
@@ -75,13 +80,16 @@ struct DxilMatchResult {
   }
 };
 
+/// @brief Selects how a DXIL rewrite is applied.
 enum class DxilRewriteMode {
+  None,
   Before,
   After,
   Replace,
   ReplaceRange,
 };
 
+/// @brief Reports the result of applying one DXIL rewrite.
 struct DxilRewriteResult {
   bool success = true;
   bool handledReplacement = false;
@@ -89,6 +97,7 @@ struct DxilRewriteResult {
   std::vector<llvm::Instruction *> pruneRoots;
 };
 
+/// @brief Identifies how an emitted operand is sourced.
 enum class DxilRewriteEmitOperandKind {
   Capture,
   Temporary,
@@ -97,6 +106,7 @@ enum class DxilRewriteEmitOperandKind {
   Undef,
 };
 
+/// @brief Describes one operand used by emitted rewrite code.
 struct DxilRewriteEmitOperand {
   unsigned operandIndex = 0;
   DxilRewriteEmitOperandKind kind = DxilRewriteEmitOperandKind::Capture;
@@ -107,6 +117,7 @@ struct DxilRewriteEmitOperand {
   ResourceBindingDesc resourceBinding;
 };
 
+/// @brief Identifies the kind of emitted value to build.
 enum class DxilRewriteEmitValueKind {
   DxOpCall,
   ExtractValue,
@@ -116,6 +127,7 @@ enum class DxilRewriteEmitValueKind {
   AnnotateHandleForResource,
 };
 
+/// @brief Describes one emitted intermediate value in a rewrite sequence.
 struct DxilRewriteEmitValue {
   std::string name;
   DxilRewriteEmitValueKind kind = DxilRewriteEmitValueKind::DxOpCall;
@@ -133,11 +145,13 @@ struct DxilRewriteEmitValue {
   unsigned extractIndex = 0;
 };
 
+/// @brief Describes a sequence of emitted values and the final replacement.
 struct DxilRewriteEmitSequence {
   std::vector<DxilRewriteEmitValue> values;
   std::string replacementValueName;
 };
 
+/// @brief Describes a single emitted DXIL operation call.
 struct DxilRewriteEmitCall {
   bool enabled = false;
   hlsl::OP::OpCode dxilOpCode = static_cast<hlsl::OP::OpCode>(0);
@@ -145,6 +159,7 @@ struct DxilRewriteEmitCall {
   std::vector<DxilRewriteEmitOperand> operands;
 };
 
+/// @brief Fluent builder for DxilRewriteResult values.
 class DxilRewriteResultBuilder {
 public:
   DxilRewriteResultBuilder &Success(bool success = true) {
@@ -185,11 +200,14 @@ private:
   DxilRewriteResult result_;
 };
 
+/// @brief Predicate signature used to filter DXIL matches.
 using DxilMatchPredicate = std::function<bool(const DxilMatchResult &)>;
+/// @brief Callback signature used to build custom DXIL rewrites.
 using DxilRewriteCallback = std::function<DxilRewriteResult(
     const DxilMatchResult &, llvm::IRBuilder<> &, llvm::Module &,
     hlsl::DxilModule &)>;
 
+/// @brief Describes one DXIL rewrite rule.
 struct DxilRewriteRule {
   std::string name;
   DxilCallPattern pattern;
@@ -207,6 +225,7 @@ struct DxilRewriteRule {
   DxilRewriteCallback replacementCallback;
 };
 
+/// @brief Fluent builder for DxilOperandPattern values.
 class DxilOperandPatternBuilder {
 public:
   explicit DxilOperandPatternBuilder(DxilOperandPattern pattern)
@@ -283,6 +302,7 @@ private:
   DxilOperandPattern pattern_;
 };
 
+/// @brief Fluent builder for DxilCallPattern values.
 class DxilCallPatternBuilder {
 public:
   explicit DxilCallPatternBuilder(DxilCallPattern pattern)
@@ -314,6 +334,7 @@ private:
   DxilCallPattern pattern_;
 };
 
+/// @brief Fluent builder for DxilRewriteRule values.
 class DxilRewriteRuleBuilder {
 public:
   explicit DxilRewriteRuleBuilder(std::string name) {
@@ -643,6 +664,7 @@ inline RenderTargetStoreBuilder RenderTarget(unsigned outputSigId = 0) {
   return RenderTargetStoreBuilder(std::move(desc));
 }
 
+/// @brief Creates a call pattern for `dx.op.storeOutput`.
 inline DxilCallPatternBuilder
 RenderTargetStoreCall(const RenderTargetStoreDesc &desc) {
   return DxOpCall(hlsl::OP::OpCode::StoreOutput)
@@ -651,35 +673,52 @@ RenderTargetStoreCall(const RenderTargetStoreDesc &desc) {
              ConstantIntOperand(3, desc.componentIndex), AnyOperand(4)});
 }
 
+/// @brief Creates a fluent builder for a named rewrite rule.
 inline DxilRewriteRuleBuilder RewriteRule(std::string name) {
   return DxilRewriteRuleBuilder(std::move(name));
 }
 
+/// @brief Finds the first call in a function that matches a pattern.
 bool FindDxilCallMatch(llvm::Function &function, const DxilCallPattern &pattern,
                        DxilMatchResult &result,
                        hlsl::DxilModule *dxilModule = nullptr);
+
+/// @brief Collects all calls in a function that match a pattern.
 unsigned CollectDxilCallMatches(llvm::Function &function,
                                 const DxilCallPattern &pattern,
                                 std::vector<DxilMatchResult> &results,
                                 hlsl::DxilModule *dxilModule = nullptr);
+
+/// @brief Applies all matching rewrite rules in one pass.
 bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
                                    llvm::Module &module,
                                    hlsl::DxilModule &dxilModule,
                                    const std::vector<DxilRewriteRule> &rules,
-                                   unsigned *appliedRuleCount = nullptr);
+                                   unsigned *appliedRuleCount = nullptr,
+                                   unsigned *mutatedRuleCount = nullptr);
 
+/// @brief Applies the first or last matching rewrite rule once.
 bool ApplyDxilRewriteRulesOnce(llvm::Function &function, llvm::Module &module,
                                hlsl::DxilModule &dxilModule,
                                const std::vector<DxilRewriteRule> &rules,
                                bool useLastMatch = false,
-                               unsigned *appliedRuleCount = nullptr);
+                               unsigned *appliedRuleCount = nullptr,
+                               unsigned *mutatedRuleCount = nullptr);
 
+/// @brief Applies rewrite rules using the default match mode.
 bool ApplyDxilRewriteRules(llvm::Function &function, llvm::Module &module,
                            hlsl::DxilModule &dxilModule,
                            const std::vector<DxilRewriteRule> &rules,
-                           unsigned *appliedRuleCount = nullptr);
+                           unsigned *appliedRuleCount = nullptr,
+                           unsigned *mutatedRuleCount = nullptr);
+
+/// @brief Prunes instructions reachable from the supplied roots when dead.
 void PruneInstructionRoots(const std::vector<llvm::Instruction *> &roots);
+
+/// @brief Removes dead code from a function after rewrites.
 void PruneFunctionDeadCode(llvm::Function &function);
+
+/// @brief Injects a texture sample sequence into the shader entry point.
 bool InjectTextureSampleIntoEntryPoint(llvm::Module &module,
                                        hlsl::DxilModule &dxilModule,
                                        const TextureResourceDesc &desc,

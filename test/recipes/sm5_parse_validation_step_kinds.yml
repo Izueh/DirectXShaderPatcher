@@ -1,0 +1,15 @@
+version: 1
+steps:
+  - kind: apply_rules
+    name: apply_probe
+    mode: MatchAll
+    rules:
+      - match:
+          opcode: frc
+          rewrite_mode: None
+
+  - kind: refresh_resources
+    name: refresh
+
+  - kind: verify_program
+    name: verify

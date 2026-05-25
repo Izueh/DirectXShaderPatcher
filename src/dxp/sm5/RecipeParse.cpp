@@ -1,7 +1,7 @@
 #include "dxp/sm5/RecipeParse.h"
 
-#include "dxp/sm5/Match.h"
 #include "dxp/sm5/Model.h"
+#include "dxp/sm5/Transforms.h"
 
 #include <cctype>
 #include <cstdlib>
@@ -34,9 +34,47 @@ ParseRuleApplicationMode(const std::string &value) {
   return dxp::sm5::RecipeRuleApplicationMode::First;
 }
 
+static bool ParseRuleRewriteMode(const std::string &value,
+                                 dxp::sm5::RecipeRuleRewriteMode &mode,
+                                 std::string &error) {
+  const std::string lowered = Lowercase(value);
+  if (lowered.empty()) {
+    mode = dxp::sm5::RecipeRuleRewriteMode::Replace;
+    return true;
+  }
+  if (lowered == "auto") {
+    error = "SM5 rewrite mode Auto was removed; use Replace or ReplaceRange";
+    return false;
+  }
+  if (lowered == "none") {
+    mode = dxp::sm5::RecipeRuleRewriteMode::None;
+    return true;
+  }
+  if (lowered == "replace") {
+    mode = dxp::sm5::RecipeRuleRewriteMode::Replace;
+    return true;
+  }
+  if (lowered == "before") {
+    mode = dxp::sm5::RecipeRuleRewriteMode::Before;
+    return true;
+  }
+  if (lowered == "after") {
+    mode = dxp::sm5::RecipeRuleRewriteMode::After;
+    return true;
+  }
+  if (lowered == "replacerange" || lowered == "replace_range") {
+    mode = dxp::sm5::RecipeRuleRewriteMode::ReplaceRange;
+    return true;
+  }
+
+  error = "unsupported SM5 rewrite mode '" + value + "'";
+  return false;
+}
+
 struct YamlMatch {
   std::string opcode;
   std::string capture;
+  std::string rewrite_mode;
   std::string saturate;
   std::string interpolation_mode;
   int32_t test_boolean = -1;
@@ -73,7 +111,6 @@ struct YamlOperand {
   std::vector<float> immediates_f32;
   std::string capture;
   std::string match_capture;
-  std::string from_capture;
   std::string scratch;
 };
 
@@ -90,15 +127,27 @@ struct YamlRule {
   std::vector<YamlEmitInstruction> emit;
   std::string replace;
   std::string mode;
-  std::string application_mode;
 };
 
 struct YamlStep {
+  std::string kind;
   std::string name;
   bool required = true;
   std::string mode;
-  std::string application_mode;
   std::vector<YamlRule> rules;
+
+  int32_t bind_point = -1;
+  std::string handle;
+  bool auto_bind = false;
+  std::string dimension = "Texture2D";
+  std::string interpolation_mode = "linear";
+  uint32_t elements = 1;
+  std::string access_pattern = "immediateIndexed";
+  std::string sampler_mode = "default";
+  std::string uav_kind = "typed";
+  uint32_t stride = 16;
+  bool globally_coherent = false;
+  bool has_counter = false;
 };
 
 struct YamlPrefilter {
@@ -180,10 +229,10 @@ struct YamlRecipeDocument {
   uint32_t version = 1;
   uint32_t reserved_temps = 0;
   std::vector<YamlPrefilter> prefilters;
-  std::vector<YamlPrefilter> predicates;
   std::vector<YamlRule> rewrite_rules;
   std::vector<YamlStep> steps;
   std::vector<YamlTempDecl> temp_decls;
+
   std::vector<YamlTextureDecl> texture_decls;
   std::vector<YamlInputDecl> input_decls;
   std::vector<YamlOutputDecl> output_decls;
@@ -240,7 +289,6 @@ template <> struct MappingTraits<YamlOperand> {
     io.mapOptional("immediates_f32", operand.immediates_f32);
     io.mapOptional("capture", operand.capture);
     io.mapOptional("match_capture", operand.match_capture);
-    io.mapOptional("from_capture", operand.from_capture);
     io.mapOptional("scratch", operand.scratch);
   }
 };
@@ -260,6 +308,7 @@ template <> struct MappingTraits<YamlMatch> {
   static void mapping(IO &io, YamlMatch &match) {
     io.mapOptional("opcode", match.opcode);
     io.mapOptional("capture", match.capture);
+    io.mapOptional("rewrite_mode", match.rewrite_mode);
     io.mapOptional("saturate", match.saturate);
     io.mapOptional("interpolation_mode", match.interpolation_mode);
     io.mapOptional("test_boolean", match.test_boolean, -1);
@@ -284,17 +333,30 @@ template <> struct MappingTraits<YamlRule> {
     io.mapOptional("emit", rule.emit);
     io.mapOptional("replace", rule.replace);
     io.mapOptional("mode", rule.mode);
-    io.mapOptional("application_mode", rule.application_mode);
   }
 };
 
 template <> struct MappingTraits<YamlStep> {
   static void mapping(IO &io, YamlStep &step) {
+    io.mapOptional("kind", step.kind);
     io.mapOptional("name", step.name);
     io.mapOptional("required", step.required, true);
     io.mapOptional("mode", step.mode);
-    io.mapOptional("application_mode", step.application_mode);
     io.mapOptional("rules", step.rules);
+    io.mapOptional("bind_point", step.bind_point, -1);
+    io.mapOptional("handle", step.handle);
+    io.mapOptional("auto_bind", step.auto_bind, false);
+    io.mapOptional("dimension", step.dimension, std::string("Texture2D"));
+    io.mapOptional("interpolation_mode", step.interpolation_mode,
+                   std::string("linear"));
+    io.mapOptional("elements", step.elements, 1u);
+    io.mapOptional("access_pattern", step.access_pattern,
+                   std::string("immediateIndexed"));
+    io.mapOptional("sampler_mode", step.sampler_mode, std::string("default"));
+    io.mapOptional("uav_kind", step.uav_kind, std::string("typed"));
+    io.mapOptional("stride", step.stride, 16u);
+    io.mapOptional("globally_coherent", step.globally_coherent, false);
+    io.mapOptional("has_counter", step.has_counter, false);
   }
 };
 
@@ -400,7 +462,6 @@ template <> struct MappingTraits<YamlRecipeDocument> {
     io.mapOptional("version", document.version, 1u);
     io.mapOptional("reserved_temps", document.reserved_temps, 0u);
     io.mapOptional("prefilters", document.prefilters);
-    io.mapOptional("predicates", document.predicates);
     io.mapOptional("rewrite_rules", document.rewrite_rules);
     io.mapOptional("steps", document.steps);
     io.mapOptional("temp_decls", document.temp_decls);
@@ -408,7 +469,8 @@ template <> struct MappingTraits<YamlRecipeDocument> {
     io.mapOptional("input_decls", document.input_decls);
     io.mapOptional("output_decls", document.output_decls);
     io.mapOptional("raw_resource_decls", document.raw_resource_decls);
-    io.mapOptional("structured_resource_decls", document.structured_resource_decls);
+    io.mapOptional("structured_resource_decls",
+                   document.structured_resource_decls);
     io.mapOptional("cbuffer_decls", document.cbuffer_decls);
     io.mapOptional("sampler_decls", document.sampler_decls);
     io.mapOptional("uav_decls", document.uav_decls);
@@ -469,8 +531,7 @@ static bool ParseCBufferAccessPatternToken(const std::string &value,
   return false;
 }
 
-static bool ParseSamplerModeToken(const std::string &value,
-                                  uint32_t &mode,
+static bool ParseSamplerModeToken(const std::string &value, uint32_t &mode,
                                   std::string &error) {
   const std::string lowered = Lowercase(value);
   if (lowered == "default") {
@@ -490,8 +551,7 @@ static bool ParseSamplerModeToken(const std::string &value,
   return false;
 }
 
-static bool ParseUavKindToken(const std::string &value,
-                              RecipeUavKind &kind,
+static bool ParseUavKindToken(const std::string &value, RecipeUavKind &kind,
                               std::string &error) {
   const std::string lowered = Lowercase(value);
   if (lowered == "typed") {
@@ -512,8 +572,7 @@ static bool ParseUavKindToken(const std::string &value,
 }
 
 static bool ParsePrefilterKindToken(const std::string &value,
-                                    PrefilterKind &kind,
-                                    std::string &error) {
+                                    PrefilterKind &kind, std::string &error) {
   const std::string lowered = Lowercase(value);
   if (lowered == "check_shader_version") {
     kind = PrefilterKind::CheckShaderVersion;
@@ -536,8 +595,7 @@ static bool ParsePrefilterKindToken(const std::string &value,
   return false;
 }
 
-static bool ParseBoolToken(const std::string &value,
-                           bool &parsedValue,
+static bool ParseBoolToken(const std::string &value, bool &parsedValue,
                            std::string &error) {
   const std::string lowered = Lowercase(value);
   if (lowered == "true") {
@@ -554,8 +612,7 @@ static bool ParseBoolToken(const std::string &value,
 }
 
 static bool ParseInterpolationModeToken(const std::string &value,
-                                        uint32_t &mode,
-                                        std::string &error) {
+                                        uint32_t &mode, std::string &error) {
   const std::string lowered = Lowercase(value);
   if (lowered == "undefined") {
     mode = D3D10_SB_INTERPOLATION_UNDEFINED;
@@ -602,8 +659,7 @@ static uint32_t FloatAsUint(float value) {
   return bits;
 }
 
-static bool ParseOperandType(const std::string &value,
-                             OperandType &type,
+static bool ParseOperandType(const std::string &value, OperandType &type,
                              std::string &error) {
   const std::string lowered = Lowercase(value);
   if (lowered == "temp") {
@@ -687,25 +743,24 @@ static bool ParseOperandModifier(const std::string &value,
   return false;
 }
 
-static bool TryParseComponentChar(char ch,
-                                  D3D10_SB_4_COMPONENT_NAME &component,
+static bool TryParseComponentChar(char ch, D3D10_SB_4_COMPONENT_NAME &component,
                                   std::string &error) {
   switch (static_cast<char>(std::tolower(static_cast<unsigned char>(ch)))) {
-    case 'x':
-      component = D3D10_SB_4_COMPONENT_X;
-      return true;
-    case 'y':
-      component = D3D10_SB_4_COMPONENT_Y;
-      return true;
-    case 'z':
-      component = D3D10_SB_4_COMPONENT_Z;
-      return true;
-    case 'w':
-      component = D3D10_SB_4_COMPONENT_W;
-      return true;
-    default:
-      error = std::string("unsupported SM5 component selector: ") + ch;
-      return false;
+  case 'x':
+    component = D3D10_SB_4_COMPONENT_X;
+    return true;
+  case 'y':
+    component = D3D10_SB_4_COMPONENT_Y;
+    return true;
+  case 'z':
+    component = D3D10_SB_4_COMPONENT_Z;
+    return true;
+  case 'w':
+    component = D3D10_SB_4_COMPONENT_W;
+    return true;
+  default:
+    error = std::string("unsupported SM5 component selector: ") + ch;
+    return false;
   }
 }
 
@@ -721,7 +776,8 @@ static bool ParseOperandComponentMode(const YamlOperand &operandModel,
                                   !operandModel.swizzle.empty();
 
   if (hasLegacySelectors) {
-    error = "SM5 operands require components.kind/components.value instead of mask/swizzle/select";
+    error = "SM5 operands require components.kind/components.value instead of "
+            "mask/swizzle/select";
     return false;
   }
 
@@ -751,7 +807,8 @@ static bool ParseOperandComponentMode(const YamlOperand &operandModel,
     } else if (kind == "swizzle") {
       swizzleToken = operandModel.components.value;
     } else {
-      error = "unsupported operand components.kind: " + operandModel.components.kind;
+      error = "unsupported operand components.kind: " +
+              operandModel.components.kind;
       return false;
     }
   }
@@ -759,8 +816,7 @@ static bool ParseOperandComponentMode(const YamlOperand &operandModel,
   if (!selectToken.empty()) {
     D3D10_SB_4_COMPONENT_NAME component = D3D10_SB_4_COMPONENT_X;
     if (selectToken.size() != 1 ||
-        !TryParseComponentChar(selectToken.front(), component,
-                               error)) {
+        !TryParseComponentChar(selectToken.front(), component, error)) {
       return false;
     }
     numComponents = D3D10_SB_OPERAND_4_COMPONENT;
@@ -774,21 +830,21 @@ static bool ParseOperandComponentMode(const YamlOperand &operandModel,
     uint32_t mask = 0;
     for (char ch : maskToken) {
       switch (static_cast<char>(std::tolower(static_cast<unsigned char>(ch)))) {
-        case 'x':
-          mask |= D3D10_SB_OPERAND_4_COMPONENT_MASK_X;
-          break;
-        case 'y':
-          mask |= D3D10_SB_OPERAND_4_COMPONENT_MASK_Y;
-          break;
-        case 'z':
-          mask |= D3D10_SB_OPERAND_4_COMPONENT_MASK_Z;
-          break;
-        case 'w':
-          mask |= D3D10_SB_OPERAND_4_COMPONENT_MASK_W;
-          break;
-        default:
-          error = std::string("unsupported SM5 mask component: ") + ch;
-          return false;
+      case 'x':
+        mask |= D3D10_SB_OPERAND_4_COMPONENT_MASK_X;
+        break;
+      case 'y':
+        mask |= D3D10_SB_OPERAND_4_COMPONENT_MASK_Y;
+        break;
+      case 'z':
+        mask |= D3D10_SB_OPERAND_4_COMPONENT_MASK_Z;
+        break;
+      case 'w':
+        mask |= D3D10_SB_OPERAND_4_COMPONENT_MASK_W;
+        break;
+      default:
+        error = std::string("unsupported SM5 mask component: ") + ch;
+        return false;
       }
     }
     numComponents = D3D10_SB_OPERAND_4_COMPONENT;
@@ -805,17 +861,17 @@ static bool ParseOperandComponentMode(const YamlOperand &operandModel,
     }
     D3D10_SB_4_COMPONENT_NAME components[4] = {};
     for (size_t index = 0; index < 4; ++index) {
-      if (!TryParseComponentChar(swizzleToken[index],
-                                 components[index], error)) {
+      if (!TryParseComponentChar(swizzleToken[index], components[index],
+                                 error)) {
         return false;
       }
     }
     numComponents = D3D10_SB_OPERAND_4_COMPONENT;
-    componentMode = ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(
-                        D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE) |
-                    ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE(
-                        components[0], components[1], components[2],
-                        components[3]);
+    componentMode =
+        ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(
+            D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE) |
+        ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE(
+            components[0], components[1], components[2], components[3]);
     return true;
   }
 
@@ -842,15 +898,9 @@ static bool ParseOperandComponentMode(const YamlOperand &operandModel,
   return true;
 }
 
-static bool ParseEmitOperand(const YamlOperand &operandModel,
-                             Operand &operand,
+static bool ParseEmitOperand(const YamlOperand &operandModel, Operand &operand,
                              std::string &error) {
   operand = Operand{};
-
-  if (!operandModel.from_capture.empty()) {
-    error = "SM5 emit operands use capture instead of from_capture";
-    return false;
-  }
 
   const std::string &captureRef = operandModel.capture;
 
@@ -871,7 +921,8 @@ static bool ParseEmitOperand(const YamlOperand &operandModel,
 
   if (operandModel.type.empty() && operandModel.scratch.empty() &&
       operandModel.state_temp.empty()) {
-    error = "literal SM5 emit operands require type, capture, scratch, or state_temp";
+    error = "literal SM5 emit operands require type, capture, scratch, or "
+            "state_temp";
     return false;
   }
 
@@ -926,8 +977,8 @@ static bool ParseEmitOperand(const YamlOperand &operandModel,
   }
 
   if (!ParseOperandComponentMode(operandModel, operand.Type,
-                                 operand.NumComponents,
-                                 operand.ComponentMode, error)) {
+                                 operand.NumComponents, operand.ComponentMode,
+                                 error)) {
     return false;
   }
 
@@ -949,8 +1000,7 @@ static bool ParseEmitOperand(const YamlOperand &operandModel,
 }
 
 static bool ParseMatchOperand(const YamlOperand &operandModel,
-                              OperandMatch &operandMatch,
-                              std::string &error) {
+                              OperandMatch &operandMatch, std::string &error) {
   operandMatch = OperandMatch{};
 
   if (!operandModel.type.empty()) {
@@ -966,16 +1016,17 @@ static bool ParseMatchOperand(const YamlOperand &operandModel,
     operandMatch.HasIndexMatch = true;
   }
 
-  OperandType componentType = operandMatch.HasTypeMatch ? operandMatch.MatchType
-                                                        : D3D10_SB_OPERAND_TYPE_TEMP;
+  OperandType componentType = operandMatch.HasTypeMatch
+                                  ? operandMatch.MatchType
+                                  : D3D10_SB_OPERAND_TYPE_TEMP;
   uint32_t numComponents = 0;
   uint32_t componentMode = 0;
   if (!operandModel.mask.empty() || !operandModel.swizzle.empty() ||
       !operandModel.components.kind.empty() ||
-      !operandModel.components.value.empty() ||
-      !operandModel.select.empty() || operandModel.num_components >= 0) {
+      !operandModel.components.value.empty() || !operandModel.select.empty() ||
+      operandModel.num_components >= 0) {
     if (!ParseOperandComponentMode(operandModel, componentType, numComponents,
-                     componentMode, error)) {
+                                   componentMode, error)) {
       return false;
     }
     operandMatch.MatchNumComponents = numComponents;
@@ -985,8 +1036,8 @@ static bool ParseMatchOperand(const YamlOperand &operandModel,
   }
 
   if (!operandModel.modifier.empty()) {
-    if (!ParseOperandModifier(operandModel.modifier,
-                  operandMatch.MatchModifier, error)) {
+    if (!ParseOperandModifier(operandModel.modifier, operandMatch.MatchModifier,
+                              error)) {
       return false;
     }
     operandMatch.HasModifierMatch = true;
@@ -1019,17 +1070,18 @@ static bool FillRecipeOperandPattern(const YamlOperand &operandModel,
   operandPattern.Modifier = operandModel.modifier;
   operandPattern.ImmediateU32 = operandModel.immediates_u32;
   operandPattern.ImmediateF32 = operandModel.immediates_f32;
-  operandPattern.Capture = operandModel.capture;
   operandPattern.MatchCapture = operandModel.match_capture;
   operandPattern.Scratch = operandModel.scratch;
 
   if (!operandModel.mask.empty() || !operandModel.swizzle.empty() ||
       !operandModel.select.empty()) {
-    error = "SM5 operands require components.kind/components.value instead of mask/swizzle/select";
+    error = "SM5 operands require components.kind/components.value instead of "
+            "mask/swizzle/select";
     return false;
   }
 
-  if (!operandModel.components.kind.empty() || !operandModel.components.value.empty()) {
+  if (!operandModel.components.kind.empty() ||
+      !operandModel.components.value.empty()) {
     const std::string kind = Lowercase(operandModel.components.kind);
     if (kind == "mask") {
       operandPattern.Mask = operandModel.components.value;
@@ -1038,33 +1090,20 @@ static bool FillRecipeOperandPattern(const YamlOperand &operandModel,
     } else if (kind == "select") {
       operandPattern.Select = operandModel.components.value;
     } else {
-      error = "unsupported operand components.kind: " + operandModel.components.kind;
+      error =
+          "unsupported SM5 component selector: " + operandModel.components.kind;
       return false;
     }
   }
 
-  if (forEmit) {
-    if (!operandModel.from_capture.empty()) {
-      error = "SM5 emit operands use capture instead of from_capture";
-      return false;
-    }
-    operandPattern.FromCapture = operandModel.capture;
-    operandPattern.Capture.clear();
-  } else {
-    if (!operandModel.from_capture.empty()) {
-      error = "SM5 operands use capture instead of from_capture";
-      return false;
-    }
-    operandPattern.FromCapture.clear();
-  }
+  operandPattern.Capture = operandModel.capture;
 
   return true;
 }
 
-static bool ParseInstructionMatch(
-    const YamlInstructionMatch &matchModel,
-    InstructionMatch &instructionMatch,
-    std::string &error) {
+static bool ParseInstructionMatch(const YamlInstructionMatch &matchModel,
+                                  InstructionMatch &instructionMatch,
+                                  std::string &error) {
   instructionMatch = InstructionMatch{};
 
   if (!ParseOpcode(matchModel.opcode, instructionMatch.Opcode)) {
@@ -1095,8 +1134,8 @@ static bool ParseInstructionMatch(
     }
     if (instructionMatch.Opcode != Opcode{D3D10_SB_OPCODE_DCL_INPUT_PS} &&
         instructionMatch.Opcode != Opcode{D3D10_SB_OPCODE_DCL_INPUT_PS_SIV}) {
-      error =
-          "SM5 interpolation_mode is only valid for dcl_input_ps and dcl_input_ps_siv";
+      error = "SM5 interpolation_mode is only valid for dcl_input_ps and "
+              "dcl_input_ps_siv";
       return false;
     }
     instructionMatch.HasInputInterpolationModeMatch = true;
@@ -1114,27 +1153,28 @@ static bool ParseInstructionMatch(
 }
 
 static bool ParseRule(const YamlRule &ruleModel,
-                      RecipeRuleApplicationMode inheritedMode,
-                      RecipeRule &rule,
+                      RecipeRuleApplicationMode inheritedMode, RecipeRule &rule,
                       std::string &error) {
   rule = RecipeRule{};
   rule.ApplicationMode = inheritedMode;
-
-  if (!ruleModel.application_mode.empty()) {
-    error = "SM5 rules use mode instead of application_mode";
-    return false;
-  }
 
   if (!ruleModel.mode.empty()) {
     rule.ApplicationMode = ParseRuleApplicationMode(ruleModel.mode);
   }
 
+  if (!ParseRuleRewriteMode(ruleModel.match.rewrite_mode, rule.RewriteMode,
+                            error)) {
+    return false;
+  }
+
   if (!ruleModel.match.sequence.empty()) {
     if (!ruleModel.match.opcode.empty() || !ruleModel.match.capture.empty() ||
-      !ruleModel.match.saturate.empty() || !ruleModel.match.interpolation_mode.empty() ||
-        ruleModel.match.test_boolean >= 0 || !ruleModel.match.operands.empty()) {
-      error =
-          "SM5 match.sequence cannot be combined with single-instruction match fields";
+        !ruleModel.match.saturate.empty() ||
+        !ruleModel.match.interpolation_mode.empty() ||
+        ruleModel.match.test_boolean >= 0 ||
+        !ruleModel.match.operands.empty()) {
+      error = "SM5 match.sequence cannot be combined with single-instruction "
+              "match fields";
       return false;
     }
 
@@ -1194,6 +1234,18 @@ static bool ParseRule(const YamlRule &ruleModel,
 
   rule.Replace = ruleModel.replace;
 
+  if (rule.RewriteMode == RecipeRuleRewriteMode::None) {
+    if (!rule.Replace.empty() || !ruleModel.emit.empty()) {
+      error = "SM5 rewrite mode None cannot be combined with replace or emit";
+      return false;
+    }
+  } else {
+    if (ruleModel.emit.empty()) {
+      error = "SM5 rules without emit must use match.rewrite_mode: None";
+      return false;
+    }
+  }
+
   for (const YamlEmitInstruction &emitModel : ruleModel.emit) {
     if (emitModel.opcode.empty()) {
       error = "SM5 emit entries require opcode";
@@ -1228,8 +1280,8 @@ static bool ParseRule(const YamlRule &ruleModel,
       const auto opcode = static_cast<OpcodeType>(instruction.Opcode);
       if (opcode != D3D10_SB_OPCODE_DCL_INPUT_PS &&
           opcode != D3D10_SB_OPCODE_DCL_INPUT_PS_SIV) {
-        error =
-            "SM5 interpolation_mode is only valid for dcl_input_ps and dcl_input_ps_siv";
+        error = "SM5 interpolation_mode is only valid for dcl_input_ps and "
+                "dcl_input_ps_siv";
         return false;
       }
 
@@ -1250,8 +1302,8 @@ static bool ParseRule(const YamlRule &ruleModel,
     emitInstruction.TestBoolean = emitModel.test_boolean;
     for (const YamlOperand &operandModel : emitModel.operands) {
       RecipeOperandPattern operandPattern;
-      if (!FillRecipeOperandPattern(operandModel, true,
-                                    operandPattern, error)) {
+      if (!FillRecipeOperandPattern(operandModel, true, operandPattern,
+                                    error)) {
         return false;
       }
       emitInstruction.Operands.push_back(std::move(operandPattern));
@@ -1263,171 +1315,141 @@ static bool ParseRule(const YamlRule &ruleModel,
 }
 
 static bool IsEmptyYamlMatch(const YamlMatch &match) {
-  return match.opcode.empty() && match.capture.empty() && match.saturate.empty() &&
-         match.interpolation_mode.empty() &&
-         match.test_boolean < 0 && match.operands.empty() && match.sequence.empty();
+  return match.opcode.empty() && match.capture.empty() &&
+         match.saturate.empty() && match.interpolation_mode.empty() &&
+         match.test_boolean < 0 && match.operands.empty() &&
+         match.sequence.empty();
 }
 
 static bool ValidatePrefilterModel(const YamlPrefilter &prefilter,
-                                   PrefilterKind kind,
-                                   std::string &error) {
+                                   PrefilterKind kind, std::string &error) {
   switch (kind) {
-    case PrefilterKind::CheckShaderVersion:
-    case PrefilterKind::CheckResourceCount:
-      return true;
-    case PrefilterKind::CheckOpcodeCount:
-      if (prefilter.opcode.empty()) {
-        error = "SM5 check_opcode_count prefilter requires opcode";
-        return false;
-      }
-      return true;
-    case PrefilterKind::CheckPatternMatch:
-      if (IsEmptyYamlMatch(prefilter.match)) {
-        error = "SM5 check_pattern_match prefilter requires match.opcode or match.sequence";
-        return false;
-      }
-      if (!prefilter.match.sequence.empty() &&
-          (!prefilter.match.opcode.empty() || !prefilter.match.capture.empty() ||
-           !prefilter.match.saturate.empty() || !prefilter.match.interpolation_mode.empty() ||
-           prefilter.match.test_boolean >= 0 ||
-           !prefilter.match.operands.empty())) {
-        error =
-            "SM5 prefilter match.sequence cannot be combined with single-instruction match fields";
-        return false;
-      }
-      if (prefilter.match.sequence.empty() && prefilter.match.opcode.empty()) {
-        error = "SM5 check_pattern_match prefilter requires match.opcode when match.sequence is omitted";
-        return false;
-      }
-      return true;
+  case PrefilterKind::CheckShaderVersion:
+  case PrefilterKind::CheckResourceCount:
+    return true;
+  case PrefilterKind::CheckOpcodeCount:
+    if (prefilter.opcode.empty()) {
+      error = "SM5 check_opcode_count prefilter requires opcode";
+      return false;
+    }
+    return true;
+  case PrefilterKind::CheckPatternMatch:
+    if (IsEmptyYamlMatch(prefilter.match)) {
+      error = "SM5 check_pattern_match prefilter requires match.opcode or "
+              "match.sequence";
+      return false;
+    }
+    if (!prefilter.match.sequence.empty() &&
+        (!prefilter.match.opcode.empty() || !prefilter.match.capture.empty() ||
+         !prefilter.match.saturate.empty() ||
+         !prefilter.match.interpolation_mode.empty() ||
+         prefilter.match.test_boolean >= 0 ||
+         !prefilter.match.operands.empty())) {
+      error = "SM5 prefilter match.sequence cannot be combined with "
+              "single-instruction match fields";
+      return false;
+    }
+    if (prefilter.match.sequence.empty() && prefilter.match.opcode.empty()) {
+      error = "SM5 check_pattern_match prefilter requires match.opcode when "
+              "match.sequence is omitted";
+      return false;
+    }
+    return true;
   }
 
   return false;
 }
 
-static bool ValidateUniqueDeclarationHandles(
-  const std::vector<YamlTempDecl> &tempDecls,
-  const std::vector<YamlInputDecl> &inputDecls,
-  const std::vector<YamlOutputDecl> &outputDecls,
-    const std::vector<YamlTextureDecl> &textureDecls,
-    const std::vector<YamlRawResourceDecl> &rawResourceDecls,
-    const std::vector<YamlStructuredResourceDecl> &structuredResourceDecls,
-    const std::vector<YamlCBufferDecl> &cbufferDecls,
-    const std::vector<YamlSamplerDecl> &samplerDecls,
-    const std::vector<YamlUavDecl> &uavDecls,
-    std::string &error) {
-  std::unordered_map<std::string, uint32_t> resourceHandles;
-  std::unordered_map<std::string, uint32_t> tempHandles;
-  std::unordered_map<std::string, uint32_t> inputHandles;
-  std::unordered_map<std::string, uint32_t> outputHandles;
-  std::unordered_map<std::string, uint32_t> cbufferHandles;
-  std::unordered_map<std::string, uint32_t> samplerHandles;
-  std::unordered_map<std::string, uint32_t> uavHandles;
-
-  for (uint32_t i = 0; i < tempDecls.size(); ++i) {
-    if (tempDecls[i].handle.empty()) {
-      continue;
+static bool CollectDeclarationHandlesFromSteps(
+    const std::vector<YamlStep> &steps,
+    std::unordered_map<std::string, uint32_t> &inputHandles,
+    std::unordered_map<std::string, uint32_t> &outputHandles,
+    std::unordered_map<std::string, uint32_t> &resourceHandles,
+    std::unordered_map<std::string, uint32_t> &cbufferHandles,
+    std::unordered_map<std::string, uint32_t> &samplerHandles,
+    std::unordered_map<std::string, uint32_t> &uavHandles, std::string &error) {
+  uint32_t ordinal = 0;
+  auto insertHandle = [&](std::unordered_map<std::string, uint32_t> &table,
+                          const std::string &handle, const char *kind) -> bool {
+    if (handle.empty()) {
+      return true;
     }
-    if (!tempHandles.emplace(tempDecls[i].handle, i).second) {
-      error = "duplicate SM5 temp declaration handle: '" + tempDecls[i].handle + "'";
+    if (!table.emplace(handle, ordinal++).second) {
+      error = std::string("duplicate SM5 ") + kind + " declaration handle: '" +
+              handle + "'";
       return false;
     }
-  }
+    return true;
+  };
 
-  for (uint32_t i = 0; i < inputDecls.size(); ++i) {
-    if (inputDecls[i].handle.empty()) {
-      continue;
-    }
-    if (!inputHandles.emplace(inputDecls[i].handle, i).second) {
-      error = "duplicate SM5 input declaration handle: '" + inputDecls[i].handle + "'";
-      return false;
-    }
-  }
-
-  for (uint32_t i = 0; i < outputDecls.size(); ++i) {
-    if (outputDecls[i].handle.empty()) {
-      continue;
-    }
-    if (!outputHandles.emplace(outputDecls[i].handle, i).second) {
-      error = "duplicate SM5 output declaration handle: '" + outputDecls[i].handle + "'";
-      return false;
-    }
-  }
-
-  for (uint32_t i = 0; i < textureDecls.size(); ++i) {
-    if (textureDecls[i].handle.empty()) {
-      continue;
-    }
-    if (!resourceHandles.emplace(textureDecls[i].handle, i).second) {
-      error = "duplicate SM5 resource declaration handle: '" + textureDecls[i].handle + "'";
-      return false;
-    }
-  }
-
-  for (uint32_t i = 0; i < rawResourceDecls.size(); ++i) {
-    if (rawResourceDecls[i].handle.empty()) {
-      continue;
-    }
-    if (!resourceHandles.emplace(rawResourceDecls[i].handle,
-                                 textureDecls.size() + i).second) {
-      error = "duplicate SM5 resource declaration handle: '" + rawResourceDecls[i].handle + "'";
-      return false;
-    }
-  }
-
-  for (uint32_t i = 0; i < structuredResourceDecls.size(); ++i) {
-    if (structuredResourceDecls[i].handle.empty()) {
-      continue;
-    }
-    if (!resourceHandles.emplace(structuredResourceDecls[i].handle,
-                                 textureDecls.size() + rawResourceDecls.size() + i).second) {
-      error = "duplicate SM5 resource declaration handle: '" + structuredResourceDecls[i].handle + "'";
-      return false;
-    }
-  }
-
-  for (uint32_t i = 0; i < cbufferDecls.size(); ++i) {
-    if (cbufferDecls[i].handle.empty()) {
-      continue;
-    }
-    if (!cbufferHandles.emplace(cbufferDecls[i].handle, i).second) {
-      error = "duplicate SM5 cbuffer declaration handle: '" + cbufferDecls[i].handle + "'";
-      return false;
-    }
-  }
-
-  for (uint32_t i = 0; i < samplerDecls.size(); ++i) {
-    if (samplerDecls[i].handle.empty()) {
-      continue;
-    }
-    if (!samplerHandles.emplace(samplerDecls[i].handle, i).second) {
-      error = "duplicate SM5 sampler declaration handle: '" + samplerDecls[i].handle + "'";
-      return false;
-    }
-  }
-
-  for (uint32_t i = 0; i < uavDecls.size(); ++i) {
-    if (uavDecls[i].handle.empty()) {
-      continue;
-    }
-    if (!uavHandles.emplace(uavDecls[i].handle, i).second) {
-      error = "duplicate SM5 uav declaration handle: '" + uavDecls[i].handle + "'";
-      return false;
+  for (const YamlStep &step : steps) {
+    const std::string stepKind =
+        step.kind.empty() ? "apply_rules" : Lowercase(step.kind);
+    if (stepKind == "add_input") {
+      if (!insertHandle(inputHandles, step.handle, "input")) {
+        return false;
+      }
+    } else if (stepKind == "add_output") {
+      if (!insertHandle(outputHandles, step.handle, "output")) {
+        return false;
+      }
+    } else if (stepKind == "add_texture" || stepKind == "add_raw_resource" ||
+               stepKind == "add_structured_resource") {
+      if (!insertHandle(resourceHandles, step.handle, "resource")) {
+        return false;
+      }
+    } else if (stepKind == "add_cbuffer") {
+      if (!insertHandle(cbufferHandles, step.handle, "cbuffer")) {
+        return false;
+      }
+    } else if (stepKind == "add_sampler") {
+      if (!insertHandle(samplerHandles, step.handle, "sampler")) {
+        return false;
+      }
+    } else if (stepKind == "add_uav") {
+      if (!insertHandle(uavHandles, step.handle, "uav")) {
+        return false;
+      }
     }
   }
 
   return true;
 }
 
+static bool ValidateUniqueDeclarationHandles(const YamlRecipeDocument &document,
+                                             std::string &error) {
+  std::unordered_map<std::string, uint32_t> tempHandles;
+  for (uint32_t i = 0; i < document.temp_decls.size(); ++i) {
+    if (document.temp_decls[i].handle.empty()) {
+      continue;
+    }
+    if (!tempHandles.emplace(document.temp_decls[i].handle, i).second) {
+      error = "duplicate SM5 temp declaration handle: '" +
+              document.temp_decls[i].handle + "'";
+      return false;
+    }
+  }
+
+  std::unordered_map<std::string, uint32_t> inputHandles;
+  std::unordered_map<std::string, uint32_t> outputHandles;
+  std::unordered_map<std::string, uint32_t> resourceHandles;
+  std::unordered_map<std::string, uint32_t> cbufferHandles;
+  std::unordered_map<std::string, uint32_t> samplerHandles;
+  std::unordered_map<std::string, uint32_t> uavHandles;
+  return CollectDeclarationHandlesFromSteps(
+      document.steps, inputHandles, outputHandles, resourceHandles,
+      cbufferHandles, samplerHandles, uavHandles, error);
+}
+
 static bool ValidateEmitOperandHandleReference(
     const YamlOperand &operand,
-  const std::unordered_map<std::string, uint32_t> &tempHandles,
-  const std::unordered_map<std::string, uint32_t> &inputHandles,
-  const std::unordered_map<std::string, uint32_t> &outputHandles,
-  const std::unordered_map<std::string, uint32_t> &resourceHandles,
+    const std::unordered_map<std::string, uint32_t> &tempHandles,
+    const std::unordered_map<std::string, uint32_t> &inputHandles,
+    const std::unordered_map<std::string, uint32_t> &outputHandles,
+    const std::unordered_map<std::string, uint32_t> &resourceHandles,
     const std::unordered_map<std::string, uint32_t> &cbufferHandles,
     const std::unordered_map<std::string, uint32_t> &samplerHandles,
-  const std::unordered_map<std::string, uint32_t> &uavHandles,
+    const std::unordered_map<std::string, uint32_t> &uavHandles,
     std::string &error) {
   if (operand.bind_handle.empty()) {
     return true;
@@ -1444,58 +1466,61 @@ static bool ValidateEmitOperandHandleReference(
   }
 
   switch (type) {
-    case D3D10_SB_OPERAND_TYPE_TEMP:
-      if (tempHandles.find(operand.bind_handle) == tempHandles.end()) {
-        error = "SM5 bind_handle references unknown temp declaration handle '" +
-                operand.bind_handle + "'";
-        return false;
-      }
-      return true;
-    case D3D10_SB_OPERAND_TYPE_INPUT:
-      if (inputHandles.find(operand.bind_handle) == inputHandles.end()) {
-        error = "SM5 bind_handle references unknown input declaration handle '" +
-                operand.bind_handle + "'";
-        return false;
-      }
-      return true;
-    case D3D10_SB_OPERAND_TYPE_OUTPUT:
-      if (outputHandles.find(operand.bind_handle) == outputHandles.end()) {
-        error = "SM5 bind_handle references unknown output declaration handle '" +
-                operand.bind_handle + "'";
-        return false;
-      }
-      return true;
-    case D3D10_SB_OPERAND_TYPE_RESOURCE:
-      if (resourceHandles.find(operand.bind_handle) == resourceHandles.end()) {
-        error = "SM5 bind_handle references unknown resource declaration handle '" +
-                operand.bind_handle + "'";
-        return false;
-      }
-      return true;
-    case D3D11_SB_OPERAND_TYPE_UNORDERED_ACCESS_VIEW:
-      if (uavHandles.find(operand.bind_handle) == uavHandles.end()) {
-        error = "SM5 bind_handle references unknown uav declaration handle '" +
-                operand.bind_handle + "'";
-        return false;
-      }
-      return true;
-    case D3D10_SB_OPERAND_TYPE_CONSTANT_BUFFER:
-      if (cbufferHandles.find(operand.bind_handle) == cbufferHandles.end()) {
-        error = "SM5 bind_handle references unknown cbuffer declaration handle '" +
-                operand.bind_handle + "'";
-        return false;
-      }
-      return true;
-    case D3D10_SB_OPERAND_TYPE_SAMPLER:
-      if (samplerHandles.find(operand.bind_handle) == samplerHandles.end()) {
-        error = "SM5 bind_handle references unknown sampler declaration handle '" +
-                operand.bind_handle + "'";
-        return false;
-      }
-      return true;
-    default:
-      error = "SM5 bind_handle operand type is unsupported for resource binding";
+  case D3D10_SB_OPERAND_TYPE_TEMP:
+    if (tempHandles.find(operand.bind_handle) == tempHandles.end()) {
+      error = "SM5 bind_handle references unknown temp declaration handle '" +
+              operand.bind_handle + "'";
       return false;
+    }
+    return true;
+  case D3D10_SB_OPERAND_TYPE_INPUT:
+    if (inputHandles.find(operand.bind_handle) == inputHandles.end()) {
+      error = "SM5 bind_handle references unknown input declaration handle '" +
+              operand.bind_handle + "'";
+      return false;
+    }
+    return true;
+  case D3D10_SB_OPERAND_TYPE_OUTPUT:
+    if (outputHandles.find(operand.bind_handle) == outputHandles.end()) {
+      error = "SM5 bind_handle references unknown output declaration handle '" +
+              operand.bind_handle + "'";
+      return false;
+    }
+    return true;
+  case D3D10_SB_OPERAND_TYPE_RESOURCE:
+    if (resourceHandles.find(operand.bind_handle) == resourceHandles.end()) {
+      error =
+          "SM5 bind_handle references unknown resource declaration handle '" +
+          operand.bind_handle + "'";
+      return false;
+    }
+    return true;
+  case D3D11_SB_OPERAND_TYPE_UNORDERED_ACCESS_VIEW:
+    if (uavHandles.find(operand.bind_handle) == uavHandles.end()) {
+      error = "SM5 bind_handle references unknown uav declaration handle '" +
+              operand.bind_handle + "'";
+      return false;
+    }
+    return true;
+  case D3D10_SB_OPERAND_TYPE_CONSTANT_BUFFER:
+    if (cbufferHandles.find(operand.bind_handle) == cbufferHandles.end()) {
+      error =
+          "SM5 bind_handle references unknown cbuffer declaration handle '" +
+          operand.bind_handle + "'";
+      return false;
+    }
+    return true;
+  case D3D10_SB_OPERAND_TYPE_SAMPLER:
+    if (samplerHandles.find(operand.bind_handle) == samplerHandles.end()) {
+      error =
+          "SM5 bind_handle references unknown sampler declaration handle '" +
+          operand.bind_handle + "'";
+      return false;
+    }
+    return true;
+  default:
+    error = "SM5 bind_handle operand type is unsupported for resource binding";
+    return false;
   }
 }
 
@@ -1515,64 +1540,20 @@ static bool ValidateEmitHandleReferences(const YamlRecipeDocument &document,
     }
   }
 
-  for (uint32_t i = 0; i < document.input_decls.size(); ++i) {
-    if (!document.input_decls[i].handle.empty()) {
-      inputHandles.emplace(document.input_decls[i].handle, i);
-    }
-  }
-  for (uint32_t i = 0; i < document.output_decls.size(); ++i) {
-    if (!document.output_decls[i].handle.empty()) {
-      outputHandles.emplace(document.output_decls[i].handle, i);
-    }
-  }
-
-  for (uint32_t i = 0; i < document.texture_decls.size(); ++i) {
-    if (!document.texture_decls[i].handle.empty()) {
-      resourceHandles.emplace(document.texture_decls[i].handle, i);
-    }
-  }
-  for (uint32_t i = 0; i < document.raw_resource_decls.size(); ++i) {
-    if (!document.raw_resource_decls[i].handle.empty()) {
-      resourceHandles.emplace(document.raw_resource_decls[i].handle,
-                              document.texture_decls.size() + i);
-    }
-  }
-  for (uint32_t i = 0; i < document.structured_resource_decls.size(); ++i) {
-    if (!document.structured_resource_decls[i].handle.empty()) {
-      resourceHandles.emplace(document.structured_resource_decls[i].handle,
-                              document.texture_decls.size() +
-                                  document.raw_resource_decls.size() + i);
-    }
-  }
-  for (uint32_t i = 0; i < document.cbuffer_decls.size(); ++i) {
-    if (!document.cbuffer_decls[i].handle.empty()) {
-      cbufferHandles.emplace(document.cbuffer_decls[i].handle, i);
-    }
-  }
-  for (uint32_t i = 0; i < document.sampler_decls.size(); ++i) {
-    if (!document.sampler_decls[i].handle.empty()) {
-      samplerHandles.emplace(document.sampler_decls[i].handle, i);
-    }
-  }
-  for (uint32_t i = 0; i < document.uav_decls.size(); ++i) {
-    if (!document.uav_decls[i].handle.empty()) {
-      uavHandles.emplace(document.uav_decls[i].handle, i);
-    }
+  if (!CollectDeclarationHandlesFromSteps(
+          document.steps, inputHandles, outputHandles, resourceHandles,
+          cbufferHandles, samplerHandles, uavHandles, error)) {
+    return false;
   }
 
   for (const YamlStep &step : document.steps) {
     for (const YamlRule &rule : step.rules) {
       for (const YamlEmitInstruction &emit : rule.emit) {
         for (const YamlOperand &operand : emit.operands) {
-          if (!ValidateEmitOperandHandleReference(operand,
-                                                  tempHandles,
-                                                  inputHandles,
-                                                  outputHandles,
-                                                  resourceHandles,
-                                                  cbufferHandles,
-                                                  samplerHandles,
-                                                  uavHandles,
-                                                  error)) {
+          if (!ValidateEmitOperandHandleReference(
+                  operand, tempHandles, inputHandles, outputHandles,
+                  resourceHandles, cbufferHandles, samplerHandles, uavHandles,
+                  error)) {
             return false;
           }
         }
@@ -1696,17 +1677,20 @@ static bool ValidatePortableDeclarationModel(const YamlRecipeDocument &document,
     }
   }
 
-  for (const YamlStructuredResourceDecl &decl : document.structured_resource_decls) {
+  for (const YamlStructuredResourceDecl &decl :
+       document.structured_resource_decls) {
     if (decl.handle.empty()) {
       error = "portable schema structured_resource_decls require handle";
       return false;
     }
     if (!decl.auto_bind) {
-      error = "portable schema structured_resource_decls require auto_bind: true";
+      error =
+          "portable schema structured_resource_decls require auto_bind: true";
       return false;
     }
     if (decl.bind_point >= 0) {
-      error = "portable schema structured_resource_decls do not allow bind_point";
+      error =
+          "portable schema structured_resource_decls do not allow bind_point";
       return false;
     }
   }
@@ -1741,8 +1725,7 @@ static bool ValidatePortableDeclarationModel(const YamlRecipeDocument &document,
 
 } // namespace
 
-bool ParseRecipeText(llvm::StringRef recipeText,
-                     RecipeParseResult &result,
+bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
                      llvm::StringRef sourceName) {
   result = RecipeParseResult{};
 
@@ -1762,17 +1745,23 @@ bool ParseRecipeText(llvm::StringRef recipeText,
   std::string parseError;
 
   if (!document.rewrite_rules.empty()) {
-    result.Error = sourceName.str() +
-                   ": schema version 1 requires steps and does not allow top-level rewrite_rules";
+    result.Error = sourceName.str() + ": schema version 1 requires steps and "
+                                      "does not allow top-level rewrite_rules";
     return false;
   }
   if (document.steps.empty()) {
-    result.Error = sourceName.str() + ": schema version 1 requires at least one step";
+    result.Error =
+        sourceName.str() + ": schema version 1 requires at least one step";
     return false;
   }
-  if (!document.predicates.empty()) {
+  if (!document.input_decls.empty() || !document.output_decls.empty() ||
+      !document.texture_decls.empty() || !document.raw_resource_decls.empty() ||
+      !document.structured_resource_decls.empty() ||
+      !document.cbuffer_decls.empty() || !document.sampler_decls.empty() ||
+      !document.uav_decls.empty()) {
     result.Error = sourceName.str() +
-                   ": schema version 1 uses prefilters instead of predicates";
+                   ": schema version 1 does not allow top-level "
+                   "*_decls; use add_* declaration steps";
     return false;
   }
   if (document.reserved_temps > 0) {
@@ -1785,16 +1774,7 @@ bool ParseRecipeText(llvm::StringRef recipeText,
     result.Recipe.AddTempDecl(std::move(decl));
   }
 
-  if (!ValidateUniqueDeclarationHandles(document.temp_decls,
-                                        document.input_decls,
-                                        document.output_decls,
-                                        document.texture_decls,
-                                        document.raw_resource_decls,
-                                        document.structured_resource_decls,
-                                        document.cbuffer_decls,
-                                        document.sampler_decls,
-                                        document.uav_decls,
-                                        parseError)) {
+  if (!ValidateUniqueDeclarationHandles(document, parseError)) {
     result.Error = sourceName.str() + ": " + parseError;
     return false;
   }
@@ -1827,14 +1807,14 @@ bool ParseRecipeText(llvm::StringRef recipeText,
     prefilter.Match.TestBoolean = prefilterModel.match.test_boolean;
     for (const YamlOperand &operandModel : prefilterModel.match.operands) {
       RecipeOperandPattern operand;
-      if (!FillRecipeOperandPattern(operandModel, false,
-                                    operand, parseError)) {
+      if (!FillRecipeOperandPattern(operandModel, false, operand, parseError)) {
         result.Error = sourceName.str() + ": " + parseError;
         return false;
       }
       prefilter.Match.Operands.push_back(std::move(operand));
     }
-    for (const YamlInstructionMatch &matchModel : prefilterModel.match.sequence) {
+    for (const YamlInstructionMatch &matchModel :
+         prefilterModel.match.sequence) {
       RecipeInstructionPattern pattern;
       pattern.Opcode = matchModel.opcode;
       pattern.Capture = matchModel.capture;
@@ -1842,8 +1822,8 @@ bool ParseRecipeText(llvm::StringRef recipeText,
       pattern.TestBoolean = matchModel.test_boolean;
       for (const YamlOperand &operandModel : matchModel.operands) {
         RecipeOperandPattern operand;
-        if (!FillRecipeOperandPattern(operandModel, false,
-                                      operand, parseError)) {
+        if (!FillRecipeOperandPattern(operandModel, false, operand,
+                                      parseError)) {
           result.Error = sourceName.str() + ": " + parseError;
           return false;
         }
@@ -1854,127 +1834,14 @@ bool ParseRecipeText(llvm::StringRef recipeText,
     if (!prefilterModel.opcode.empty()) {
       Opcode parsedOpcode;
       if (!ParseOpcode(prefilterModel.opcode, parsedOpcode)) {
-        result.Error = sourceName.str() +
-                       ": Unknown SM5 opcode in prefilter: " +
-                       prefilterModel.opcode;
+        result.Error =
+            sourceName.str() +
+            ": Unknown SM5 opcode in prefilter: " + prefilterModel.opcode;
         return false;
       }
       prefilter.Opcode = prefilterModel.opcode;
     }
     result.Recipe.AddPrefilter(std::move(prefilter));
-  }
-
-  for (const YamlInputDecl &declModel : document.input_decls) {
-    RecipeInputDecl decl;
-    decl.BindPoint = declModel.bind_point >= 0
-                         ? static_cast<uint32_t>(declModel.bind_point)
-                         : 0u;
-    decl.Handle = declModel.handle;
-    decl.AutoBind = declModel.auto_bind;
-    if (!ParseInterpolationModeToken(declModel.interpolation_mode,
-                                     decl.InterpolationMode, parseError)) {
-      result.Error = sourceName.str() + ": " + parseError;
-      return false;
-    }
-    result.Recipe.AddInputDecl(std::move(decl));
-  }
-
-  for (const YamlOutputDecl &declModel : document.output_decls) {
-    RecipeOutputDecl decl;
-    decl.BindPoint = declModel.bind_point >= 0
-                         ? static_cast<uint32_t>(declModel.bind_point)
-                         : 0u;
-    decl.Handle = declModel.handle;
-    decl.AutoBind = declModel.auto_bind;
-    result.Recipe.AddOutputDecl(std::move(decl));
-  }
-
-  for (const YamlTextureDecl &declModel : document.texture_decls) {
-    RecipeTextureDecl decl;
-    decl.BindPoint = declModel.bind_point >= 0
-                         ? static_cast<uint32_t>(declModel.bind_point)
-                         : 0u;
-    decl.Handle = declModel.handle;
-    decl.AutoBind = declModel.auto_bind;
-    if (!ParseTextureDimensionToken(declModel.dimension, decl.Dimension,
-                                    parseError)) {
-      result.Error = sourceName.str() + ": " + parseError;
-      return false;
-    }
-    result.Recipe.AddTextureDecl(std::move(decl));
-  }
-
-  for (const YamlCBufferDecl &declModel : document.cbuffer_decls) {
-    RecipeCBufferDecl decl;
-    decl.BindPoint = declModel.bind_point >= 0
-                         ? static_cast<uint32_t>(declModel.bind_point)
-                         : 0u;
-    decl.Elements = declModel.elements;
-    decl.Handle = declModel.handle;
-    decl.AutoBind = declModel.auto_bind;
-    if (!ParseCBufferAccessPatternToken(declModel.access_pattern,
-                                        decl.AccessPattern, parseError)) {
-      result.Error = sourceName.str() + ": " + parseError;
-      return false;
-    }
-    result.Recipe.AddCBufferDecl(std::move(decl));
-  }
-
-  for (const YamlRawResourceDecl &declModel : document.raw_resource_decls) {
-    RecipeRawResourceDecl decl;
-    decl.BindPoint = declModel.bind_point >= 0
-                         ? static_cast<uint32_t>(declModel.bind_point)
-                         : 0u;
-    decl.Handle = declModel.handle;
-    decl.AutoBind = declModel.auto_bind;
-    result.Recipe.AddRawResourceDecl(std::move(decl));
-  }
-
-  for (const YamlStructuredResourceDecl &declModel : document.structured_resource_decls) {
-    RecipeStructuredResourceDecl decl;
-    decl.BindPoint = declModel.bind_point >= 0
-                         ? static_cast<uint32_t>(declModel.bind_point)
-                         : 0u;
-    decl.StructureStride = declModel.stride;
-    decl.Handle = declModel.handle;
-    decl.AutoBind = declModel.auto_bind;
-    result.Recipe.AddStructuredResourceDecl(std::move(decl));
-  }
-
-  for (const YamlSamplerDecl &declModel : document.sampler_decls) {
-    RecipeSamplerDecl decl;
-    decl.BindPoint = declModel.bind_point >= 0
-                         ? static_cast<uint32_t>(declModel.bind_point)
-                         : 0u;
-    decl.Handle = declModel.handle;
-    decl.AutoBind = declModel.auto_bind;
-    if (!ParseSamplerModeToken(declModel.mode, decl.Mode, parseError)) {
-      result.Error = sourceName.str() + ": " + parseError;
-      return false;
-    }
-    result.Recipe.AddSamplerDecl(std::move(decl));
-  }
-
-  for (const YamlUavDecl &declModel : document.uav_decls) {
-    RecipeUavDecl decl;
-    decl.BindPoint = declModel.bind_point >= 0
-                         ? static_cast<uint32_t>(declModel.bind_point)
-                         : 0u;
-    decl.Handle = declModel.handle;
-    decl.AutoBind = declModel.auto_bind;
-    decl.StructureStride = declModel.stride;
-    decl.GloballyCoherent = declModel.globally_coherent;
-    decl.HasOrderPreservingCounter = declModel.has_counter;
-    if (!ParseUavKindToken(declModel.kind, decl.Kind, parseError)) {
-      result.Error = sourceName.str() + ": " + parseError;
-      return false;
-    }
-    if (!ParseTextureDimensionToken(declModel.dimension, decl.Dimension,
-                                    parseError)) {
-      result.Error = sourceName.str() + ": " + parseError;
-      return false;
-    }
-    result.Recipe.AddUavDecl(std::move(decl));
   }
 
   auto appendRuleToStep = [&](const YamlRule &ruleModel,
@@ -1991,33 +1858,151 @@ bool ParseRecipeText(llvm::StringRef recipeText,
   for (size_t stepIndex = 0; stepIndex < document.steps.size(); ++stepIndex) {
     const YamlStep &stepModel = document.steps[stepIndex];
     RecipeStep step;
-    step.Name = stepModel.name.empty()
-                    ? "step_" + std::to_string(result.Recipe.GetSteps().size() + 1)
-                    : stepModel.name;
+    const std::string stepKind =
+        stepModel.kind.empty() ? "apply_rules" : Lowercase(stepModel.kind);
+    step.Name = stepModel.name.empty() ? stepKind : stepModel.name;
     step.Required = stepModel.required;
-    if (!stepModel.application_mode.empty()) {
+
+    if (stepKind == "apply_rules") {
+      if (!stepModel.mode.empty()) {
+        step.ApplicationMode = ParseRuleApplicationMode(stepModel.mode);
+      }
+
+      for (const YamlRule &ruleModel : stepModel.rules) {
+        if (!appendRuleToStep(ruleModel, step)) {
+          return false;
+        }
+      }
+
+      result.Recipe.AddStep(std::move(step));
+      continue;
+    }
+
+    if (!stepModel.mode.empty()) {
       result.Error = sourceName.str() +
-                     ": SM5 steps use mode instead of application_mode";
+                     ": SM5 step mode is only valid for apply_rules steps";
       return false;
     }
-    if (!stepModel.mode.empty()) {
-      step.ApplicationMode = ParseRuleApplicationMode(stepModel.mode);
+
+    if (!stepModel.rules.empty()) {
+      result.Error =
+          sourceName.str() + ": SM5 non-apply_rules steps cannot define rules";
+      return false;
     }
 
-    for (const YamlRule &ruleModel : stepModel.rules) {
-      if (!appendRuleToStep(ruleModel, step)) {
+    if (stepKind == "refresh_resources") {
+      result.Recipe.AddStep(MakeRefreshResourcesStep(step.Name));
+    } else if (stepKind == "verify_program") {
+      result.Recipe.AddStep(MakeVerifyProgramStep(step.Name));
+    } else if (stepKind == "add_input") {
+      RecipeInputDecl decl;
+      decl.BindPoint = stepModel.bind_point >= 0
+                           ? static_cast<uint32_t>(stepModel.bind_point)
+                           : 0u;
+      decl.Handle = stepModel.handle;
+      decl.AutoBind = stepModel.auto_bind;
+      if (!ParseInterpolationModeToken(stepModel.interpolation_mode,
+                                       decl.InterpolationMode, parseError)) {
+        result.Error = sourceName.str() + ": " + parseError;
         return false;
       }
+      result.Recipe.AddStep(MakeAddInputStep(step.Name, decl));
+    } else if (stepKind == "add_output") {
+      RecipeOutputDecl decl;
+      decl.BindPoint = stepModel.bind_point >= 0
+                           ? static_cast<uint32_t>(stepModel.bind_point)
+                           : 0u;
+      decl.Handle = stepModel.handle;
+      decl.AutoBind = stepModel.auto_bind;
+      result.Recipe.AddStep(MakeAddOutputStep(step.Name, decl));
+    } else if (stepKind == "add_texture") {
+      RecipeTextureDecl decl;
+      decl.BindPoint = stepModel.bind_point >= 0
+                           ? static_cast<uint32_t>(stepModel.bind_point)
+                           : 0u;
+      decl.Handle = stepModel.handle;
+      decl.AutoBind = stepModel.auto_bind;
+      if (!ParseTextureDimensionToken(stepModel.dimension, decl.Dimension,
+                                      parseError)) {
+        result.Error = sourceName.str() + ": " + parseError;
+        return false;
+      }
+      result.Recipe.AddStep(MakeAddTextureStep(step.Name, decl));
+    } else if (stepKind == "add_raw_resource") {
+      RecipeRawResourceDecl decl;
+      decl.BindPoint = stepModel.bind_point >= 0
+                           ? static_cast<uint32_t>(stepModel.bind_point)
+                           : 0u;
+      decl.Handle = stepModel.handle;
+      decl.AutoBind = stepModel.auto_bind;
+      result.Recipe.AddStep(MakeAddRawResourceStep(step.Name, decl));
+    } else if (stepKind == "add_structured_resource") {
+      RecipeStructuredResourceDecl decl;
+      decl.BindPoint = stepModel.bind_point >= 0
+                           ? static_cast<uint32_t>(stepModel.bind_point)
+                           : 0u;
+      decl.StructureStride = stepModel.stride;
+      decl.Handle = stepModel.handle;
+      decl.AutoBind = stepModel.auto_bind;
+      result.Recipe.AddStep(MakeAddStructuredResourceStep(step.Name, decl));
+    } else if (stepKind == "add_cbuffer") {
+      RecipeCBufferDecl decl;
+      decl.BindPoint = stepModel.bind_point >= 0
+                           ? static_cast<uint32_t>(stepModel.bind_point)
+                           : 0u;
+      decl.Elements = stepModel.elements;
+      decl.Handle = stepModel.handle;
+      decl.AutoBind = stepModel.auto_bind;
+      if (!ParseCBufferAccessPatternToken(stepModel.access_pattern,
+                                          decl.AccessPattern, parseError)) {
+        result.Error = sourceName.str() + ": " + parseError;
+        return false;
+      }
+      result.Recipe.AddStep(MakeAddCBufferStep(step.Name, decl));
+    } else if (stepKind == "add_sampler") {
+      RecipeSamplerDecl decl;
+      decl.BindPoint = stepModel.bind_point >= 0
+                           ? static_cast<uint32_t>(stepModel.bind_point)
+                           : 0u;
+      decl.Handle = stepModel.handle;
+      decl.AutoBind = stepModel.auto_bind;
+      if (!ParseSamplerModeToken(stepModel.sampler_mode, decl.Mode,
+                                 parseError)) {
+        result.Error = sourceName.str() + ": " + parseError;
+        return false;
+      }
+      result.Recipe.AddStep(MakeAddSamplerStep(step.Name, decl));
+    } else if (stepKind == "add_uav") {
+      RecipeUavDecl decl;
+      decl.BindPoint = stepModel.bind_point >= 0
+                           ? static_cast<uint32_t>(stepModel.bind_point)
+                           : 0u;
+      decl.Handle = stepModel.handle;
+      decl.AutoBind = stepModel.auto_bind;
+      decl.StructureStride = stepModel.stride;
+      decl.GloballyCoherent = stepModel.globally_coherent;
+      decl.HasOrderPreservingCounter = stepModel.has_counter;
+      if (!ParseUavKindToken(stepModel.uav_kind, decl.Kind, parseError)) {
+        result.Error = sourceName.str() + ": " + parseError;
+        return false;
+      }
+      if (!ParseTextureDimensionToken(stepModel.dimension, decl.Dimension,
+                                      parseError)) {
+        result.Error = sourceName.str() + ": " + parseError;
+        return false;
+      }
+      result.Recipe.AddStep(MakeAddUavStep(step.Name, decl));
+    } else {
+      result.Error = sourceName.str() + ": unsupported SM5 step kind '" +
+                     stepModel.kind + "'";
+      return false;
     }
-
-    result.Recipe.AddStep(std::move(step));
   }
 
   return true;
 }
 
-bool ParseRecipeFile(const std::string &recipePath,
-                     RecipeParseResult &result) {
+bool ParseRecipeFile(const std::string &recipePath, RecipeParseResult &result) {
   std::ifstream file(recipePath);
   if (!file) {
     result.Error = "failed to open recipe file: " + recipePath;

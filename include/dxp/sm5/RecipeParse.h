@@ -8,17 +8,24 @@
 
 namespace dxp::sm5 {
 
-/// Parse a declarative SM5 recipe from YAML text.
+/// @brief Holds the result of parsing an SM5 recipe document.
 struct RecipeParseResult {
   Recipe Recipe;
   std::string Error;
 };
 
-bool ParseRecipeText(llvm::StringRef recipeText,
-                     RecipeParseResult &result,
+/// @brief Parses a declarative SM5 recipe from YAML text.
+/// @param recipeText YAML recipe contents.
+/// @param result Receives the parsed recipe or parse error.
+/// @param sourceName Logical source name used in diagnostics.
+/// @return `true` on success.
+bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
                      llvm::StringRef sourceName = "recipe");
 
-bool ParseRecipeFile(const std::string &recipePath,
-                     RecipeParseResult &result);
+/// @brief Parses a declarative SM5 recipe from a file path.
+/// @param recipePath Path to the YAML recipe file.
+/// @param result Receives the parsed recipe or parse error.
+/// @return `true` on success.
+bool ParseRecipeFile(const std::string &recipePath, RecipeParseResult &result);
 
 } // namespace dxp::sm5

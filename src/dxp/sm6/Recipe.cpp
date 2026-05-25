@@ -19,7 +19,6 @@
 
 using llvm::Module;
 
-// NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace)
 namespace {
 
 static void AppendRecipeDiagnostic(DxilRecipeContext &context,
@@ -96,20 +95,21 @@ ApplyRecipeRewriteRules(DxilRecipeContext &context,
   }
 
   unsigned totalMatches = 0;
+  unsigned totalMutations = 0;
   if (mode == DxilRecipeRuleApplicationMode::MatchAll) {
     if (!ApplyDxilRewriteRulesMatchAll(*context.entryFunction, *context.module,
                                        *context.dxilModule, rules,
-                                       &totalMatches)) {
-      return FailRecipeStep(
-          context, stepName + ": rewrite rule application failed");
+                                       &totalMatches, &totalMutations)) {
+      return FailRecipeStep(context,
+                            stepName + ": rewrite rule application failed");
     }
   } else {
     if (!ApplyDxilRewriteRulesOnce(*context.entryFunction, *context.module,
                                    *context.dxilModule, rules,
                                    mode == DxilRecipeRuleApplicationMode::Last,
-                                   &totalMatches)) {
-      return FailRecipeStep(
-          context, stepName + ": rewrite rule application failed");
+                                   &totalMatches, &totalMutations)) {
+      return FailRecipeStep(context,
+                            stepName + ": rewrite rule application failed");
     }
   }
 
@@ -119,9 +119,9 @@ ApplyRecipeRewriteRules(DxilRecipeContext &context,
   }
 
   DxilRecipeStepResult result;
-  result.changed = totalMatches != 0;
+  result.changed = totalMutations != 0;
   result.matchCount = totalMatches;
-  result.invalidatedAnalyses = totalMatches != 0;
+  result.invalidatedAnalyses = totalMutations != 0;
   return result;
 }
 
@@ -154,13 +154,13 @@ EvaluateRecipePrefilter(DxilRecipeContext &context,
     }
   }
 
-  AppendRecipeDiagnostic(context, stepName +
-                                      ": prefilter did not match; skipping remaining recipe steps");
+  AppendRecipeDiagnostic(
+      context,
+      stepName + ": prefilter did not match; skipping remaining recipe steps");
   return MakeRecipeStepSuccess(false, 0, false, true);
 }
 
 } // namespace
-// NOLINTEND(llvm-prefer-static-over-anonymous-namespace)
 
 DxilRecipeStepResult MakeRecipeStepSuccess(bool changed, unsigned matchCount,
                                            bool invalidatedAnalyses,
@@ -328,11 +328,10 @@ DxilRecipeStep MakeApplyRewriteRulesStep(std::string name,
 
 DxilRecipeStep MakePrefilterStep(std::string name,
                                  std::vector<DxilCallPattern> patterns) {
-  return DxilRecipeStep{name, [patterns = std::move(patterns),
-                               name](DxilRecipeContext &context) {
-                          return EvaluateRecipePrefilter(context, patterns,
-                                                         name);
-                        }};
+  return DxilRecipeStep{
+      name, [patterns = std::move(patterns), name](DxilRecipeContext &context) {
+        return EvaluateRecipePrefilter(context, patterns, name);
+      }};
 }
 
 DxilRecipeStep MakeRefreshResourcesStep(std::string name) {
@@ -343,8 +342,7 @@ DxilRecipeStep MakeRefreshResourcesStep(std::string name) {
               context, name + ": recipe context is missing DXIL module");
         }
 
-        RefreshDxilAfterResourceMutation(*context.dxilModule,
-                                         context.traceEnabled);
+        RefreshDxilModule(*context.dxilModule, context.traceEnabled);
         DxilRecipeStepResult result;
         result.changed = true;
         result.resourcesRefreshed = true;
@@ -368,9 +366,6 @@ DxilRecipeStep MakePruneDeadCodeStep(std::string name) {
 
         PruneFunctionDeadCode(*context.entryFunction);
 
-        // Refresh OP cache after pruning — pruning may have deleted
-        // DXIL op function call instructions, leaving stale pointers
-        // in the cache that cause crashes during module destruction.
         {
           hlsl::OP *op = context.dxilModule->GetOP();
           if (op)
@@ -413,9 +408,9 @@ bool ExecuteDxilRecipe(const DxilRecipe &recipe, Module &module,
     context.totalRuleMatches += result.matchCount;
     context.moduleModified = context.moduleModified || result.changed;
     context.resourceBindingsChanged =
-      context.resourceBindingsChanged || result.resourceBindingsChanged;
+        context.resourceBindingsChanged || result.resourceBindingsChanged;
     context.resourcesRefreshed =
-      context.resourcesRefreshed || result.resourcesRefreshed;
+        context.resourcesRefreshed || result.resourcesRefreshed;
     context.moduleVerified = context.moduleVerified || result.moduleVerified;
     context.entryFunction = dxilModule.GetEntryFunction();
     if (!result.success) {

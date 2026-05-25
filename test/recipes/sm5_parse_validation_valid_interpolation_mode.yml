@@ -3,11 +3,13 @@ prefilters:
   - kind: check_shader_version
     major: 5
     minor: 0
-input_decls:
-  - handle: interpolated_input
+steps:
+  - kind: add_input
+    name: add_interpolated_input
+    handle: interpolated_input
     auto_bind: true
     interpolation_mode: linear
-steps:
+
   - name: interpolation_mode_ok
     rules:
       - match:

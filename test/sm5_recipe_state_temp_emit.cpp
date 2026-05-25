@@ -1,7 +1,5 @@
 #include "TestSupport.h"
-#include "dxp/sm5/Container.h"
 #include "dxp/sm5/Patch.h"
-#include "dxp/sm5/Parse.h"
 #include "dxp/sm5/Recipe.h"
 
 #include <iostream>
@@ -9,33 +7,34 @@
 
 namespace {
 
-static bool OperandsEqual(const dxp::sm5::Operand &lhs,
-                          const dxp::sm5::Operand &rhs) {
+static bool OperandsEqual(const dxp::sm5::ProgramOperand &lhs,
+                          const dxp::sm5::ProgramOperand &rhs) {
   if (lhs.Type != rhs.Type || lhs.NumComponents != rhs.NumComponents ||
       lhs.ComponentMode != rhs.ComponentMode || lhs.Modifier != rhs.Modifier ||
-      lhs.Indices != rhs.Indices || lhs.ImmediateValues != rhs.ImmediateValues) {
+      lhs.Indices != rhs.Indices ||
+      lhs.ImmediateValues != rhs.ImmediateValues) {
     return false;
   }
 
-  if (static_cast<bool>(lhs.RelativeOperand) !=
-      static_cast<bool>(rhs.RelativeOperand)) {
+  if (lhs.RelativeOperands.size() != rhs.RelativeOperands.size()) {
     return false;
   }
 
-  if (lhs.RelativeOperand && rhs.RelativeOperand) {
-    return OperandsEqual(*lhs.RelativeOperand, *rhs.RelativeOperand);
+  if (!lhs.RelativeOperands.empty() &&
+      !OperandsEqual(lhs.RelativeOperands.front(),
+                     rhs.RelativeOperands.front())) {
+    return false;
   }
 
   return true;
 }
 
-static int FindFrcMulSequence(const dxp::sm5::Program &program) {
+static int FindFrcMulSequence(const dxp::sm5::ProgramInspection &program) {
   for (size_t index = 0; index + 1 < program.Instructions.size(); ++index) {
     const auto &first = program.Instructions[index];
     const auto &second = program.Instructions[index + 1];
-    if (static_cast<dxp::sm5::OpcodeType>(first.Opcode) == D3D10_SB_OPCODE_FRC &&
-        static_cast<dxp::sm5::OpcodeType>(second.Opcode) == D3D10_SB_OPCODE_MUL &&
-        second.Operands.size() >= 2) {
+    if (first.Opcode == D3D10_SB_OPCODE_FRC &&
+        second.Opcode == D3D10_SB_OPCODE_MUL && second.Operands.size() >= 2) {
       return static_cast<int>(index);
     }
   }
@@ -56,15 +55,11 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  dxp::sm5::Container inputContainer;
-  if (!dxp::sm5::ParseDxbcContainer(inputBytes, inputContainer)) {
-    std::cerr << "Failed to parse input DXBC container.\n";
-    return 1;
-  }
-
-  dxp::sm5::Program inputProgram;
-  if (!dxp::sm5::ParseShaderChunk(inputContainer, inputProgram)) {
-    std::cerr << "Failed to parse input SM5 program.\n";
+  dxp::sm5::ProgramInspection inputProgram;
+  std::string inspectError;
+  if (!dxp::sm5::InspectProgram(inputBytes, inputProgram, &inspectError)) {
+    std::cerr << "Failed to inspect input SM5 program: " << inspectError
+              << "\n";
     return 1;
   }
 
@@ -75,25 +70,27 @@ int main(int argc, char **argv) {
   }
 
   const uint32_t initialTempCount = inputProgram.TempCount;
-    const dxp::sm5::Instruction originalMulInstruction =
-      inputProgram.Instructions[static_cast<size_t>(targetInstructionIndex + 1)];
+  const dxp::sm5::ProgramInstruction originalMulInstruction =
+      inputProgram
+          .Instructions[static_cast<size_t>(targetInstructionIndex + 1)];
 
   dxp::sm5::RecipeRule stateTempRule;
-    dxp::sm5::RecipeInstructionPattern firstInstruction;
-    firstInstruction.Opcode = "frc";
-    firstInstruction.Capture = "ign_frc";
-    stateTempRule.Match.Sequence.push_back(firstInstruction);
+  stateTempRule.RewriteMode = dxp::sm5::RecipeRuleRewriteMode::ReplaceRange;
+  dxp::sm5::RecipeInstructionPattern firstInstruction;
+  firstInstruction.Opcode = "frc";
+  firstInstruction.Capture = "ign_frc";
+  stateTempRule.Match.Sequence.push_back(firstInstruction);
 
-    dxp::sm5::RecipeInstructionPattern secondInstruction;
-    secondInstruction.Opcode = "mul";
-    secondInstruction.Capture = "ign_mul";
-    dxp::sm5::RecipeOperandPattern matchDst;
-    matchDst.Capture = "dst";
-    secondInstruction.Operands.push_back(matchDst);
-    dxp::sm5::RecipeOperandPattern matchSrc;
-    matchSrc.Capture = "src";
-    secondInstruction.Operands.push_back(matchSrc);
-    stateTempRule.Match.Sequence.push_back(secondInstruction);
+  dxp::sm5::RecipeInstructionPattern secondInstruction;
+  secondInstruction.Opcode = "mul";
+  secondInstruction.Capture = "ign_mul";
+  dxp::sm5::RecipeOperandPattern matchDst;
+  matchDst.Capture = "dst";
+  secondInstruction.Operands.push_back(matchDst);
+  dxp::sm5::RecipeOperandPattern matchSrc;
+  matchSrc.Capture = "src";
+  secondInstruction.Operands.push_back(matchSrc);
+  stateTempRule.Match.Sequence.push_back(secondInstruction);
 
   dxp::sm5::RecipeInstructionTemplate saveValue;
   saveValue.Opcode = "mov";
@@ -102,14 +99,14 @@ int main(int argc, char **argv) {
   saveDst.StateTemp = "shared_temp_r";
   saveValue.Operands.push_back(saveDst);
   dxp::sm5::RecipeOperandPattern saveSrc;
-  saveSrc.FromCapture = "src";
+  saveSrc.Capture = "src";
   saveValue.Operands.push_back(saveSrc);
   stateTempRule.Emit.push_back(saveValue);
 
   dxp::sm5::RecipeInstructionTemplate restoreValue;
   restoreValue.Opcode = "mov";
   dxp::sm5::RecipeOperandPattern restoreDst;
-  restoreDst.FromCapture = "dst";
+  restoreDst.Capture = "dst";
   restoreValue.Operands.push_back(restoreDst);
   dxp::sm5::RecipeOperandPattern restoreSrc;
   restoreSrc.Type = "temp";
@@ -122,8 +119,8 @@ int main(int argc, char **argv) {
       "reserve_shared_temp", [](dxp::sm5::RecipeContext &context) {
         uint32_t baseIndex = 0;
         if (!dxp::sm5::ReserveTempRegisters(context, 1, baseIndex)) {
-          return dxp::sm5::MakeRecipeStepFailure(
-              context, "ReserveTempRegisters failed");
+          return dxp::sm5::MakeRecipeStepFailure(context,
+                                                 "ReserveTempRegisters failed");
         }
         context.SetState("shared_temp_r", baseIndex);
         return dxp::sm5::MakeRecipeStepSuccess(true, 0, false);
@@ -132,7 +129,7 @@ int main(int argc, char **argv) {
       "rewrite_with_state_temp", {stateTempRule},
       dxp::sm5::RecipeRuleApplicationMode::First, true));
 
-  const auto patchResult = dxp::sm5::PatchContainerInMemory(inputBytes, recipe);
+  const auto patchResult = dxp::sm5::PatchContainer(inputBytes, recipe);
   if (!patchResult.Success) {
     std::cerr << "Failed to patch SM5 shader: " << patchResult.Error << "\n";
     return 1;
@@ -150,15 +147,11 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  dxp::sm5::Container patchedContainer;
-  if (!dxp::sm5::ParseDxbcContainer(patchResult.OutputBytes, patchedContainer)) {
-    std::cerr << "Failed to parse patched DXBC container.\n";
-    return 1;
-  }
-
-  dxp::sm5::Program patchedProgram;
-  if (!dxp::sm5::ParseShaderChunk(patchedContainer, patchedProgram)) {
-    std::cerr << "Failed to parse patched SM5 program.\n";
+  dxp::sm5::ProgramInspection patchedProgram;
+  if (!dxp::sm5::InspectProgram(patchResult.OutputBytes, patchedProgram,
+                                &inspectError)) {
+    std::cerr << "Failed to inspect patched SM5 program: " << inspectError
+              << "\n";
     return 1;
   }
 
@@ -169,8 +162,7 @@ int main(int argc, char **argv) {
 
   const auto &saveInstruction =
       patchedProgram.Instructions[static_cast<size_t>(targetInstructionIndex)];
-  if (static_cast<dxp::sm5::OpcodeType>(saveInstruction.Opcode) !=
-      D3D10_SB_OPCODE_MOV) {
+  if (saveInstruction.Opcode != D3D10_SB_OPCODE_MOV) {
     std::cerr << "Expected first emitted instruction to be MOV.\n";
     return 1;
   }
@@ -183,14 +175,15 @@ int main(int argc, char **argv) {
   if (saveInstruction.Operands[0].Type != D3D10_SB_OPERAND_TYPE_TEMP ||
       saveInstruction.Operands[0].Indices.empty() ||
       saveInstruction.Operands[0].Indices[0] != *sharedTempBase) {
-    std::cerr << "Expected first MOV destination to target resolved state_temp register.\n";
+    std::cerr << "Expected first MOV destination to target resolved state_temp "
+                 "register.\n";
     return 1;
   }
 
   const auto &restoreInstruction =
-      patchedProgram.Instructions[static_cast<size_t>(targetInstructionIndex + 1)];
-  if (static_cast<dxp::sm5::OpcodeType>(restoreInstruction.Opcode) !=
-      D3D10_SB_OPCODE_MOV) {
+      patchedProgram
+          .Instructions[static_cast<size_t>(targetInstructionIndex + 1)];
+  if (restoreInstruction.Opcode != D3D10_SB_OPCODE_MOV) {
     std::cerr << "Expected second emitted instruction to be MOV.\n";
     return 1;
   }
@@ -202,14 +195,16 @@ int main(int argc, char **argv) {
 
   if (!OperandsEqual(restoreInstruction.Operands[0],
                      originalMulInstruction.Operands[0])) {
-    std::cerr << "Expected second MOV destination to preserve captured destination.\n";
+    std::cerr << "Expected second MOV destination to preserve captured "
+                 "destination.\n";
     return 1;
   }
 
   if (restoreInstruction.Operands[1].Type != D3D10_SB_OPERAND_TYPE_TEMP ||
       restoreInstruction.Operands[1].Indices.empty() ||
       restoreInstruction.Operands[1].Indices[0] != *sharedTempBase) {
-    std::cerr << "Expected second MOV source to read resolved state_temp register.\n";
+    std::cerr
+        << "Expected second MOV source to read resolved state_temp register.\n";
     return 1;
   }
 

@@ -28,7 +28,7 @@ int main(int argc, char **argv) {
   }
 
   LoadedDxilShader shader;
-  if (!LoadShaderForMutation(argv[1], shader, false))
+  if (!LoadShaderFromPath(argv[1], shader, false))
     return 1;
 
   llvm::Function *entryFunction = shader.dxilModule->GetEntryFunction();
@@ -44,28 +44,25 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-    const DxilCallPattern impossibleProbe =
+  const DxilCallPattern impossibleProbe =
       DxOpCall(hlsl::OP::OpCode::Frc)
-        .Capture("probe_root")
-        .Args({ConstantIntOperand(1, 3735928559)})
-        .Build();
+          .Capture("probe_root")
+          .Args({ConstantIntOperand(1, 3735928559)})
+          .Build();
 
   DxilRecipe recipe;
-    recipe.AddStep(MakePrefilterStep("skip_if_probe_missing", {impossibleProbe}));
-    recipe.AddStep(MakeCustomRecipeStep(
-      "should_not_execute_after_prefilter",
-        [](DxilRecipeContext &context) {
-          return MakeRecipeStepFailure(
-              context,
-              "prefilter sentinel step executed unexpectedly");
+  recipe.AddStep(MakePrefilterStep("skip_if_probe_missing", {impossibleProbe}));
+  recipe.AddStep(MakeCustomRecipeStep(
+      "should_not_execute_after_prefilter", [](DxilRecipeContext &context) {
+        return MakeRecipeStepFailure(
+            context, "prefilter sentinel step executed unexpectedly");
       }));
 
   DxilRecipeContext recipeContext;
   std::vector<uint8_t> outputContainer;
-  if (!PatchDxilContainerInMemory(recipe, inputShader,
-                                  outputContainer, {},
-                                  &recipeContext)) {
-    std::cerr << "PatchDxilContainerInMemory failed.";
+  if (!PatchDxilContainer(recipe, inputShader, outputContainer, {},
+                          &recipeContext)) {
+    std::cerr << "PatchDxilContainer failed.";
     if (!recipeContext.lastError.empty())
       std::cerr << " " << recipeContext.lastError;
     std::cerr << "\n";
@@ -73,7 +70,8 @@ int main(int argc, char **argv) {
   }
 
   if (recipeContext.totalRuleMatches != 0) {
-    std::cerr << "Expected prefilter miss to skip later rewrite steps without applying rules.\n";
+    std::cerr << "Expected prefilter miss to skip later rewrite steps without "
+                 "applying rules.\n";
     return 1;
   }
 
@@ -105,9 +103,70 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  std::cout << "Declarative prefilter skipped later steps and preserved Frc count at "
-            << finalFrcCount << ".\n";
+  const char *matchOnlyRecipeText = R"YAML(version: 1
+rewrite_rules:
+  - id: match_only_frc_probe
+    match:
+      opcode: Frc
+      capture: probe_root
+      mode: None
+steps:
+  - kind: apply_rule
+    rule: match_only_frc_probe
+    mode: First
+    required: true
+)YAML";
+
+  DxilRecipeParseResult matchOnlyParseResult;
+  if (!ParseDxilRecipeText(matchOnlyRecipeText, matchOnlyParseResult,
+                           "inline-sm6-match-only-test")) {
+    std::cerr << "Failed to parse inline SM6 match-only recipe: "
+              << matchOnlyParseResult.error << "\n";
+    return 1;
+  }
+
+  DxilRecipeContext matchOnlyContext;
+  if (!ExecuteDxilRecipe(
+          matchOnlyParseResult.recipe, *shader.module, *shader.dxilModule,
+          matchOnlyParseResult.patchOptions.recipeExecutionOptions,
+          &matchOnlyContext)) {
+    std::cerr << "ExecuteDxilRecipe failed for inline SM6 match-only recipe.";
+    if (!matchOnlyContext.lastError.empty())
+      std::cerr << " " << matchOnlyContext.lastError;
+    std::cerr << "\n";
+    return 1;
+  }
+
+  if (matchOnlyContext.totalRuleMatches == 0) {
+    std::cerr
+        << "Expected SM6 match-only recipe to report at least one match.\n";
+    return 1;
+  }
+
+  if (matchOnlyContext.moduleModified) {
+    std::cerr << "Expected SM6 match-only recipe to avoid module mutation.\n";
+    return 1;
+  }
+
+  llvm::Function *finalEntryFunction = shader.dxilModule->GetEntryFunction();
+  if (finalEntryFunction == nullptr) {
+    std::cerr << "Failed to locate final DXIL entry function after match-only "
+                 "step.\n";
+    return 1;
+  }
+
+  const unsigned postMatchOnlyFrcCount =
+      CountOpMatches(*finalEntryFunction, hlsl::OP::OpCode::Frc);
+  if (postMatchOnlyFrcCount != initialFrcCount) {
+    std::cerr << "Expected SM6 match-only recipe to preserve Frc count at "
+              << initialFrcCount << ", but saw " << postMatchOnlyFrcCount
+              << ".\n";
+    return 1;
+  }
+
+  std::cout << "Declarative prefilter skipped later steps and SM6 match-only "
+               "rules preserved Frc count at "
+            << postMatchOnlyFrcCount << ".\n";
   std::cout.flush();
   std::cerr.flush();
-  std::_Exit(0);
 }

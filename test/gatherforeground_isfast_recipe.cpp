@@ -19,19 +19,19 @@ static std::string BuildDefaultPatchedOutputPath(const std::string &inputPath) {
 
 int main(int argc, char **argv) {
   if (argc != 2 && argc != 3) {
-    std::cerr << "Usage: gatherforeground_isfast_recipe <input.cso> [output.cso]\n"
-              << "If [output.cso] is omitted, the test writes into "
-              << "artifacts/test-output under the repo root.\n";
+    std::cerr
+        << "Usage: gatherforeground_isfast_recipe <input.cso> [output.cso]\n"
+        << "If [output.cso] is omitted, the test writes into "
+        << "artifacts/test-output under the repo root.\n";
     return 1;
   }
 
   const std::string outputPath =
-      argc == 3 ? std::string(argv[2])
-                : BuildDefaultPatchedOutputPath(argv[1]);
+      argc == 3 ? std::string(argv[2]) : BuildDefaultPatchedOutputPath(argv[1]);
 
   ScopedCoInitialize coinit;
   LoadedDxilShader shader;
-  if (!LoadShaderForMutation(argv[1], shader, true))
+  if (!LoadShaderFromPath(argv[1], shader, true))
     return 1;
 
   llvm::Function *entryFunction = shader.dxilModule->GetEntryFunction();
@@ -48,7 +48,8 @@ int main(int argc, char **argv) {
   const unsigned initialBlueNoiseLoadCount =
       CountBlueNoiseTextureLoads(*entryFunction, *shader.dxilModule);
   if (initialIgnCount == 0 && initialBlueNoiseLoadCount == 0) {
-    std::cerr << "The test shader did not contain any IGN or BlueNoise patterns.\n";
+    std::cerr
+        << "The test shader did not contain any IGN or BlueNoise patterns.\n";
     return 1;
   }
 
@@ -62,16 +63,15 @@ int main(int argc, char **argv) {
 
   CBufferSchema frameIndexSchema =
       CBufferSchemaBuilder<ISFastFrameConstantsCpu>("ISFastFrameConstants")
-          .UInt("FrameIndex",
-                static_cast<unsigned>(offsetof(ISFastFrameConstantsCpu, FrameIndex)))
-          .UInt3("Padding",
-                 static_cast<unsigned>(offsetof(ISFastFrameConstantsCpu, Padding)))
+          .UInt("FrameIndex", static_cast<unsigned>(offsetof(
+                                  ISFastFrameConstantsCpu, FrameIndex)))
+          .UInt3("Padding", static_cast<unsigned>(
+                                offsetof(ISFastFrameConstantsCpu, Padding)))
           .Build();
 
   CBufferDesc frameIndexCBufferDesc;
   frameIndexCBufferDesc.name = "ISFastFrameConstantsCB";
-  frameIndexCBufferDesc.binding.Set(kDxilRecipeAutoBinding,
-                                    0,
+  frameIndexCBufferDesc.binding.Set(kDxilRecipeAutoBinding, 0,
                                     hlsl::DXIL::ResourceClass::CBuffer);
   frameIndexCBufferDesc.sizeInBytes =
       static_cast<unsigned>(sizeof(ISFastFrameConstantsCpu));
@@ -81,21 +81,15 @@ int main(int argc, char **argv) {
   recipe.AddStep(MakeAddTextureStep("fast_noise", noiseTextureDesc))
       .AddStep(MakeAddCBufferStep("frame_constants", frameIndexCBufferDesc))
       .AddStep(MakeApplyComputeNoiseRewriteRulesStep(
-        "replace_compute_noise",
-          "fast_noise",
-        "frame_constants",
-        true))
+          "replace_compute_noise", "fast_noise", "frame_constants", true))
       .AddStep(MakeExpectIgnCountStep(0))
       .AddStep(MakeExpectBlueNoiseCountStep(0))
       .AddStep(MakePruneDeadCodeStep())
       .AddStep(MakeRefreshResourcesStep());
 
   DxilRecipeContext recipeContext;
-  if (!ExecuteDxilRecipe(recipe,
-                         *shader.module,
-                         *shader.dxilModule,
-                         &recipeContext,
-                         true)) {
+  if (!ExecuteDxilRecipe(recipe, *shader.module, *shader.dxilModule,
+                         &recipeContext, true)) {
     std::cerr << "ExecuteDxilRecipe returned false.";
     if (!recipeContext.lastError.empty())
       std::cerr << " " << recipeContext.lastError;
@@ -117,36 +111,39 @@ int main(int argc, char **argv) {
 
   if (shader.dxilModule->GetCBuffers().size() != initialCBufferCount + 1) {
     std::cerr << "Expected cbuffer count to increase from "
-              << initialCBufferCount << " to "
-              << (initialCBufferCount + 1) << ", but saw "
-              << shader.dxilModule->GetCBuffers().size() << ".\n";
+              << initialCBufferCount << " to " << (initialCBufferCount + 1)
+              << ", but saw " << shader.dxilModule->GetCBuffers().size()
+              << ".\n";
     return 1;
   }
 
   if (CountDxOpCalls(*entryFunction, "dx.op.textureLoad.f32") !=
       initialTextureLoadCount + initialIgnCount) {
-    std::cerr << "Expected textureLoad.f32 count to increase only for IGN replacements; BlueNoise rewrites should replace in place.\n";
+    std::cerr << "Expected textureLoad.f32 count to increase only for IGN "
+                 "replacements; BlueNoise rewrites should replace in place.\n";
     return 1;
   }
 
   if (HasTypedHandleDxilOpOverloads(*shader.module)) {
-    std::cerr << "Patched module introduced typed DXIL handle op overloads instead of reusing the shader's existing prototypes.\n";
+    std::cerr << "Patched module introduced typed DXIL handle op overloads "
+                 "instead of reusing the shader's existing prototypes.\n";
     return 1;
   }
 
   const hlsl::DxilResource *addedSrv = nullptr;
   if (!FindSrvByName(*shader.dxilModule, noiseTextureDesc.name, &addedSrv) ||
       addedSrv == nullptr) {
-    std::cerr << "Injected FASTNoiseTexture SRV was not present after recipe execution.\n";
+    std::cerr << "Injected FASTNoiseTexture SRV was not present after recipe "
+                 "execution.\n";
     return 1;
   }
 
   const hlsl::DxilCBuffer *addedCBuffer = nullptr;
-  if (!FindCBufferByName(*shader.dxilModule,
-                         frameIndexCBufferDesc.name,
+  if (!FindCBufferByName(*shader.dxilModule, frameIndexCBufferDesc.name,
                          &addedCBuffer) ||
       addedCBuffer == nullptr) {
-    std::cerr << "Injected ISFastFrameConstantsCB cbuffer was not present after recipe execution.\n";
+    std::cerr << "Injected ISFastFrameConstantsCB cbuffer was not present "
+                 "after recipe execution.\n";
     return 1;
   }
 
@@ -167,21 +164,21 @@ int main(int argc, char **argv) {
   llvm::LLVMContext patchedContext;
   std::unique_ptr<llvm::Module> patchedModule;
   hlsl::DxilModule *patchedDxilModule = nullptr;
-  if (!ReloadPatchedContainer(outputContainer,
-                              patchedContext,
-                              patchedModule,
+  if (!ReloadPatchedContainer(outputContainer, patchedContext, patchedModule,
                               patchedDxilModule)) {
     return 1;
   }
 
   if (patchedDxilModule->GetSRVs().size() != initialSrvCount + 1 ||
       patchedDxilModule->GetCBuffers().size() != initialCBufferCount + 1) {
-    std::cerr << "Reloaded container did not preserve the injected SRV/cbuffer counts.\n";
+    std::cerr << "Reloaded container did not preserve the injected SRV/cbuffer "
+                 "counts.\n";
     return 1;
   }
 
   if (HasTypedHandleDxilOpOverloads(*patchedModule)) {
-    std::cerr << "Patched module introduced typed DXIL handle op overloads instead of reusing the shader's existing prototypes.\n";
+    std::cerr << "Patched module introduced typed DXIL handle op overloads "
+                 "instead of reusing the shader's existing prototypes.\n";
     return 1;
   }
 
@@ -196,13 +193,14 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  if (CountBlueNoiseTextureLoads(*reloadedEntryFunction, *patchedDxilModule) != 0) {
-    std::cerr << "Reloaded container still contains live BlueNoise texture loads.\n";
+  if (CountBlueNoiseTextureLoads(*reloadedEntryFunction, *patchedDxilModule) !=
+      0) {
+    std::cerr
+        << "Reloaded container still contains live BlueNoise texture loads.\n";
     return 1;
   }
 
   std::cout << "Patched shader written to: " << outputPath << "\n";
   std::cout.flush();
   std::cerr.flush();
-  std::_Exit(0);
 }

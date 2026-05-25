@@ -1,0 +1,4 @@
+version: 1
+steps:
+  - kind: refresh_resources
+    mode: MatchAll

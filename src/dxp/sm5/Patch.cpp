@@ -4,10 +4,10 @@
 #include "dxp/sm5/Model.h"
 #include "dxp/sm5/Parse.h"
 #include "dxp/sm5/Serialize.h"
+#include "dxp/sm5/Transforms.h"
 
-#include <cstring>
 #include <cctype>
-#include <optional>
+#include <cstring>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
@@ -15,13 +15,15 @@
 namespace dxp {
 namespace sm5 {
 
+bool ExecuteRecipe(Program &program, const Recipe &recipe,
+                   RecipeContext &context);
+
 namespace {
 
-static uint32_t FloatAsUint(float value) {
-  uint32_t bits = 0;
-  std::memcpy(&bits, &value, sizeof(bits));
-  return bits;
-}
+constexpr uint32_t DXBC_CHUNK_ISGN = 0x4E475349;
+constexpr uint32_t DXBC_CHUNK_ISG1 = 0x31475349;
+constexpr uint32_t DXBC_CHUNK_OSGN = 0x4E47534F;
+constexpr uint32_t DXBC_CHUNK_OSG1 = 0x3147534F;
 
 static PatchResult MakeError(const std::string &message,
                              const RecipeContext *context = nullptr) {
@@ -32,128 +34,6 @@ static PatchResult MakeError(const std::string &message,
     result.RecipeContext = *context;
   }
   return result;
-}
-
-static bool IsOpcode(const Instruction &instruction, OpcodeType opcode) {
-  return static_cast<OpcodeType>(instruction.Opcode) == opcode;
-}
-
-static std::optional<D3D10_SB_4_COMPONENT_NAME> TryGetSingleReferencedComponent(
-    const Operand &operand) {
-  const auto selectionMode = static_cast<D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE>(
-      DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(operand.ComponentMode));
-  if (selectionMode == D3D10_SB_OPERAND_4_COMPONENT_SELECT_1_MODE) {
-    return static_cast<D3D10_SB_4_COMPONENT_NAME>(
-        DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECT_1(operand.ComponentMode));
-  }
-
-  if (selectionMode != D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE) {
-    return std::nullopt;
-  }
-
-  const uint32_t mask = DECODE_D3D10_SB_OPERAND_4_COMPONENT_MASK(operand.ComponentMode);
-  if (mask == D3D10_SB_OPERAND_4_COMPONENT_MASK_X) {
-    return D3D10_SB_4_COMPONENT_X;
-  }
-  if (mask == D3D10_SB_OPERAND_4_COMPONENT_MASK_Y) {
-    return D3D10_SB_4_COMPONENT_Y;
-  }
-  if (mask == D3D10_SB_OPERAND_4_COMPONENT_MASK_Z) {
-    return D3D10_SB_4_COMPONENT_Z;
-  }
-  if (mask == D3D10_SB_OPERAND_4_COMPONENT_MASK_W) {
-    return D3D10_SB_4_COMPONENT_W;
-  }
-
-  return std::nullopt;
-}
-
-static bool SameSingleComponentTempRegister(const Operand &lhs,
-                                            const Operand &rhs) {
-  if (lhs.Type != D3D10_SB_OPERAND_TYPE_TEMP || rhs.Type != D3D10_SB_OPERAND_TYPE_TEMP ||
-      lhs.Indices.empty() || rhs.Indices.empty() || lhs.Indices.front() != rhs.Indices.front()) {
-    return false;
-  }
-
-  const auto lhsComponent = TryGetSingleReferencedComponent(lhs);
-  const auto rhsComponent = TryGetSingleReferencedComponent(rhs);
-  return lhsComponent.has_value() && rhsComponent.has_value() &&
-         lhsComponent.value() == rhsComponent.value();
-}
-
-static uint32_t MakeMaskComponentMode(uint32_t mask) {
-  return ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(
-             D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE) |
-         ENCODE_D3D10_SB_OPERAND_4_COMPONENT_MASK(mask);
-}
-
-static uint32_t MakeSelectComponentMode(D3D10_SB_4_COMPONENT_NAME component) {
-  return ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(
-             D3D10_SB_OPERAND_4_COMPONENT_SELECT_1_MODE) |
-         ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECT_1(component);
-}
-
-static uint32_t MakeSwizzleComponentMode(D3D10_SB_4_COMPONENT_NAME x,
-                                         D3D10_SB_4_COMPONENT_NAME y,
-                                         D3D10_SB_4_COMPONENT_NAME z,
-                                         D3D10_SB_4_COMPONENT_NAME w) {
-  return ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(
-             D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE) |
-         ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE(x, y, z, w);
-}
-
-static Operand MakeTempOperand(uint32_t regIndex,
-                               uint32_t componentMode) {
-  Operand operand;
-  operand.Type = D3D10_SB_OPERAND_TYPE_TEMP;
-  operand.NumComponents = D3D10_SB_OPERAND_4_COMPONENT;
-  operand.ComponentMode = componentMode;
-  operand.Indices = {regIndex};
-  return operand;
-}
-
-static Operand MakeConstantBufferOperand(uint32_t bindPoint,
-                                         uint32_t elementIndex,
-                                         D3D10_SB_4_COMPONENT_NAME component) {
-  Operand operand;
-  operand.Type = D3D10_SB_OPERAND_TYPE_CONSTANT_BUFFER;
-  operand.NumComponents = D3D10_SB_OPERAND_4_COMPONENT;
-  operand.ComponentMode = MakeSelectComponentMode(component);
-  operand.Indices = {bindPoint, elementIndex};
-  return operand;
-}
-
-static Operand MakeSamplerOperand(uint32_t bindPoint) {
-  Operand operand;
-  operand.Type = D3D10_SB_OPERAND_TYPE_SAMPLER;
-  operand.NumComponents = D3D10_SB_OPERAND_0_COMPONENT;
-  operand.ComponentMode = 0;
-  operand.Indices = {bindPoint};
-  return operand;
-}
-
-static Operand MakeResourceOperand(uint32_t bindPoint) {
-  Operand operand;
-  operand.Type = D3D10_SB_OPERAND_TYPE_RESOURCE;
-  operand.NumComponents = D3D10_SB_OPERAND_0_COMPONENT;
-  operand.ComponentMode = 0;
-  operand.Indices = {bindPoint};
-  return operand;
-}
-
-static Operand MakeImmediateFloatOperand(float value) {
-  Operand operand;
-  operand.Type = D3D10_SB_OPERAND_TYPE_IMMEDIATE32;
-  operand.NumComponents = D3D10_SB_OPERAND_1_COMPONENT;
-  operand.ComponentMode = 0;
-  operand.ImmediateValues = {FloatAsUint(value)};
-  return operand;
-}
-
-static Instruction FinalizeInstruction(Instruction instruction) {
-  instruction.RawTokens = EncodeInstruction(instruction);
-  instruction.LengthInDwords = static_cast<uint32_t>(instruction.RawTokens.size());
-  return instruction;
 }
 
 struct SignatureParameter {
@@ -180,14 +60,12 @@ static std::string ReadNullTerminatedString(const std::vector<uint8_t> &bytes,
   return std::string(begin, length);
 }
 
-static void WriteU32(std::vector<uint8_t> &bytes,
-                     size_t offset,
+static void WriteU32(std::vector<uint8_t> &bytes, size_t offset,
                      uint32_t value) {
   std::memcpy(bytes.data() + offset, &value, sizeof(value));
 }
 
-static uint32_t ReadU32(const std::vector<uint8_t> &bytes,
-                        size_t offset) {
+static uint32_t ReadU32(const std::vector<uint8_t> &bytes, size_t offset) {
   uint32_t value = 0;
   std::memcpy(&value, bytes.data() + offset, sizeof(value));
   return value;
@@ -195,8 +73,7 @@ static uint32_t ReadU32(const std::vector<uint8_t> &bytes,
 
 static bool ParseSignatureChunk(const DxbcChunk &chunk,
                                 std::vector<SignatureParameter> &parameters,
-                                uint32_t &headerFlags,
-                                std::string &error) {
+                                uint32_t &headerFlags, std::string &error) {
   parameters.clear();
   headerFlags = 0;
 
@@ -238,9 +115,9 @@ static bool ParseSignatureChunk(const DxbcChunk &chunk,
   return true;
 }
 
-static std::vector<uint8_t> BuildSignatureChunk(
-    const std::vector<SignatureParameter> &parameters,
-    uint32_t headerFlags) {
+static std::vector<uint8_t>
+BuildSignatureChunk(const std::vector<SignatureParameter> &parameters,
+                    uint32_t headerFlags) {
   std::vector<uint8_t> bytes;
   bytes.resize(8 + static_cast<size_t>(parameters.size()) * 24);
 
@@ -267,7 +144,8 @@ static std::vector<uint8_t> BuildSignatureChunk(
     const auto &parameter = parameters[i];
     const size_t base = 8 + i * 24;
 
-    WriteU32(bytes, base + 0, getOrCreateSemanticOffset(parameter.SemanticName));
+    WriteU32(bytes, base + 0,
+             getOrCreateSemanticOffset(parameter.SemanticName));
     WriteU32(bytes, base + 4, parameter.SemanticIndex);
     WriteU32(bytes, base + 8, parameter.SystemValueType);
     WriteU32(bytes, base + 12, parameter.ComponentType);
@@ -282,9 +160,9 @@ static std::vector<uint8_t> BuildSignatureChunk(
   return bytes;
 }
 
-static void InsertSignatureParameterByRegister(
-    std::vector<SignatureParameter> &parameters,
-    SignatureParameter parameter) {
+static void
+InsertSignatureParameterByRegister(std::vector<SignatureParameter> &parameters,
+                                   SignatureParameter parameter) {
   const auto insertIt = std::lower_bound(
       parameters.begin(), parameters.end(), parameter.Register,
       [](const SignatureParameter &lhs, uint32_t registerIndex) {
@@ -293,9 +171,7 @@ static void InsertSignatureParameterByRegister(
   parameters.insert(insertIt, std::move(parameter));
 }
 
-static uint32_t WithMaskAndRw(uint32_t value,
-                              uint8_t mask,
-                              uint8_t rwMask) {
+static uint32_t WithMaskAndRw(uint32_t value, uint8_t mask, uint8_t rwMask) {
   const uint32_t preservedUpper = value & 0xFFFF0000u;
   return preservedUpper | static_cast<uint32_t>(mask) |
          (static_cast<uint32_t>(rwMask) << 8);
@@ -303,16 +179,16 @@ static uint32_t WithMaskAndRw(uint32_t value,
 
 static uint8_t ComponentBit(D3D10_SB_4_COMPONENT_NAME component) {
   switch (component) {
-    case D3D10_SB_4_COMPONENT_X:
-      return 0x1;
-    case D3D10_SB_4_COMPONENT_Y:
-      return 0x2;
-    case D3D10_SB_4_COMPONENT_Z:
-      return 0x4;
-    case D3D10_SB_4_COMPONENT_W:
-      return 0x8;
-    default:
-      return 0;
+  case D3D10_SB_4_COMPONENT_X:
+    return 0x1;
+  case D3D10_SB_4_COMPONENT_Y:
+    return 0x2;
+  case D3D10_SB_4_COMPONENT_Z:
+    return 0x4;
+  case D3D10_SB_4_COMPONENT_W:
+    return 0x8;
+  default:
+    return 0;
   }
 }
 
@@ -325,11 +201,13 @@ static uint8_t ReadComponentMask(const Operand &operand) {
     return 0x1;
   }
 
-  const auto selectionMode = static_cast<D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE>(
-      DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(operand.ComponentMode));
+  const auto selectionMode =
+      static_cast<D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE>(
+          DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(
+              operand.ComponentMode));
   if (selectionMode == D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE) {
-    return static_cast<uint8_t>(DECODE_D3D10_SB_OPERAND_4_COMPONENT_MASK(operand.ComponentMode) &
-                                0x0F);
+    return static_cast<uint8_t>(
+        DECODE_D3D10_SB_OPERAND_4_COMPONENT_MASK(operand.ComponentMode) & 0x0F);
   }
 
   if (selectionMode == D3D10_SB_OPERAND_4_COMPONENT_SELECT_1_MODE) {
@@ -360,11 +238,13 @@ static uint8_t WriteComponentMask(const Operand &operand) {
     return 0x1;
   }
 
-  const auto selectionMode = static_cast<D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE>(
-      DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(operand.ComponentMode));
+  const auto selectionMode =
+      static_cast<D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE>(
+          DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(
+              operand.ComponentMode));
   if (selectionMode == D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE) {
-    return static_cast<uint8_t>(DECODE_D3D10_SB_OPERAND_4_COMPONENT_MASK(operand.ComponentMode) &
-                                0x0F);
+    return static_cast<uint8_t>(
+        DECODE_D3D10_SB_OPERAND_4_COMPONENT_MASK(operand.ComponentMode) & 0x0F);
   }
 
   if (selectionMode == D3D10_SB_OPERAND_4_COMPONENT_SELECT_1_MODE) {
@@ -389,8 +269,8 @@ static uint8_t CollectInputAlwaysReadMask(const Program &program,
     }
 
     for (const auto &operand : instruction.Operands) {
-      if (operand.Type != D3D10_SB_OPERAND_TYPE_INPUT || operand.Indices.empty() ||
-          operand.Indices.front() != registerIndex) {
+      if (operand.Type != D3D10_SB_OPERAND_TYPE_INPUT ||
+          operand.Indices.empty() || operand.Indices.front() != registerIndex) {
         continue;
       }
       mask |= ReadComponentMask(operand);
@@ -428,21 +308,20 @@ static std::vector<uint32_t> CollectDeclaredRegisters(const Program &program,
   std::set<uint32_t> registers;
   for (const auto &instruction : program.Instructions) {
     const auto opcode = static_cast<OpcodeType>(instruction.Opcode);
-    const bool isInputOpcode =
-        opcode == D3D10_SB_OPCODE_DCL_INPUT ||
-        opcode == D3D10_SB_OPCODE_DCL_INPUT_PS ||
-        opcode == D3D10_SB_OPCODE_DCL_INPUT_PS_SIV ||
-        opcode == D3D10_SB_OPCODE_DCL_INPUT_PS_SGV;
-    const bool isOutputOpcode =
-        opcode == D3D10_SB_OPCODE_DCL_OUTPUT ||
-        opcode == D3D10_SB_OPCODE_DCL_OUTPUT_SIV ||
-        opcode == D3D10_SB_OPCODE_DCL_OUTPUT_SGV;
+    const bool isInputOpcode = opcode == D3D10_SB_OPCODE_DCL_INPUT ||
+                               opcode == D3D10_SB_OPCODE_DCL_INPUT_PS ||
+                               opcode == D3D10_SB_OPCODE_DCL_INPUT_PS_SIV ||
+                               opcode == D3D10_SB_OPCODE_DCL_INPUT_PS_SGV;
+    const bool isOutputOpcode = opcode == D3D10_SB_OPCODE_DCL_OUTPUT ||
+                                opcode == D3D10_SB_OPCODE_DCL_OUTPUT_SIV ||
+                                opcode == D3D10_SB_OPCODE_DCL_OUTPUT_SGV;
 
     if ((inputs && !isInputOpcode) || (!inputs && !isOutputOpcode)) {
       continue;
     }
 
-    if (instruction.Operands.empty() || instruction.Operands.front().Indices.empty()) {
+    if (instruction.Operands.empty() ||
+        instruction.Operands.front().Indices.empty()) {
       continue;
     }
 
@@ -452,9 +331,9 @@ static std::vector<uint32_t> CollectDeclaredRegisters(const Program &program,
   return std::vector<uint32_t>(registers.begin(), registers.end());
 }
 
-static std::vector<uint32_t> ComputeAddedRegisters(
-    const std::vector<uint32_t> &before,
-    const std::vector<uint32_t> &after) {
+static std::vector<uint32_t>
+ComputeAddedRegisters(const std::vector<uint32_t> &before,
+                      const std::vector<uint32_t> &after) {
   std::unordered_set<uint32_t> beforeSet(before.begin(), before.end());
   std::vector<uint32_t> added;
   for (uint32_t value : after) {
@@ -480,10 +359,10 @@ static bool HasSemanticName(const SignatureParameter &parameter,
   return lowered == loweredExpected;
 }
 
-static bool ExtendInputSignature(DxbcChunk &chunk,
-                                 const Program &program,
-                                 const std::vector<uint32_t> &addedInputRegisters,
-                                 std::string &error) {
+static bool
+ExtendInputSignature(DxbcChunk &chunk, const Program &program,
+                     const std::vector<uint32_t> &addedInputRegisters,
+                     std::string &error) {
   if (addedInputRegisters.empty()) {
     return true;
   }
@@ -501,7 +380,8 @@ static bool ExtendInputSignature(DxbcChunk &chunk,
 
   const SignatureParameter *templateParameterRef = nullptr;
   for (const auto &parameter : parameters) {
-    if (HasSemanticName(parameter, "TEXCOORD") && parameter.SystemValueType == 0) {
+    if (HasSemanticName(parameter, "TEXCOORD") &&
+        parameter.SystemValueType == 0) {
       templateParameterRef = &parameter;
       break;
     }
@@ -530,11 +410,14 @@ static bool ExtendInputSignature(DxbcChunk &chunk,
     SignatureParameter injected = templateParameter;
     injected.SemanticIndex = ++maxSemanticIndex;
     injected.Register = registerIndex;
-    const uint8_t alwaysRead = CollectInputAlwaysReadMask(program, registerIndex);
-    const uint8_t resolvedAlwaysRead = alwaysRead == 0
-                                           ? static_cast<uint8_t>((templateParameter.MaskAndRw >> 8) & 0x0F)
-                                           : alwaysRead;
-    injected.MaskAndRw = WithMaskAndRw(injected.MaskAndRw, 0x0F, resolvedAlwaysRead);
+    const uint8_t alwaysRead =
+        CollectInputAlwaysReadMask(program, registerIndex);
+    const uint8_t resolvedAlwaysRead =
+        alwaysRead == 0
+            ? static_cast<uint8_t>((templateParameter.MaskAndRw >> 8) & 0x0F)
+            : alwaysRead;
+    injected.MaskAndRw =
+        WithMaskAndRw(injected.MaskAndRw, 0x0F, resolvedAlwaysRead);
     InsertSignatureParameterByRegister(parameters, std::move(injected));
   }
 
@@ -542,10 +425,10 @@ static bool ExtendInputSignature(DxbcChunk &chunk,
   return true;
 }
 
-static bool ExtendOutputSignature(DxbcChunk &chunk,
-                                  const Program &program,
-                                  const std::vector<uint32_t> &addedOutputRegisters,
-                                  std::string &error) {
+static bool
+ExtendOutputSignature(DxbcChunk &chunk, const Program &program,
+                      const std::vector<uint32_t> &addedOutputRegisters,
+                      std::string &error) {
   if (addedOutputRegisters.empty()) {
     return true;
   }
@@ -585,11 +468,14 @@ static bool ExtendOutputSignature(DxbcChunk &chunk,
     injected.SemanticIndex = ++maxSemanticIndex;
     injected.Register = registerIndex;
     const uint8_t writeMask = CollectOutputWriteMask(program, registerIndex);
-    const uint8_t resolvedWriteMask = writeMask == 0
-                                          ? static_cast<uint8_t>(templateParameter.MaskAndRw & 0x0F)
-                                          : writeMask;
-    const uint8_t neverWriteMask = static_cast<uint8_t>(0x0F & ~resolvedWriteMask);
-    injected.MaskAndRw = WithMaskAndRw(injected.MaskAndRw, 0x0F, neverWriteMask);
+    const uint8_t resolvedWriteMask =
+        writeMask == 0
+            ? static_cast<uint8_t>(templateParameter.MaskAndRw & 0x0F)
+            : writeMask;
+    const uint8_t neverWriteMask =
+        static_cast<uint8_t>(0x0F & ~resolvedWriteMask);
+    injected.MaskAndRw =
+        WithMaskAndRw(injected.MaskAndRw, 0x0F, neverWriteMask);
     InsertSignatureParameterByRegister(parameters, std::move(injected));
   }
 
@@ -597,10 +483,8 @@ static bool ExtendOutputSignature(DxbcChunk &chunk,
   return true;
 }
 
-static bool UpdateIoSignatures(Container &container,
-                               const Program &before,
-                               const Program &after,
-                               std::string &error) {
+static bool UpdateIoSignatures(Container &container, const Program &before,
+                               const Program &after, std::string &error) {
   const auto oldInputs = CollectDeclaredRegisters(before, true);
   const auto newInputs = CollectDeclaredRegisters(after, true);
   const auto addedInputs = ComputeAddedRegisters(oldInputs, newInputs);
@@ -648,11 +532,88 @@ static bool UpdateIoSignatures(Container &container,
   return true;
 }
 
+static ProgramOperand ConvertOperand(const Operand &operand) {
+  ProgramOperand converted;
+  converted.Type = static_cast<uint32_t>(operand.Type);
+  converted.NumComponents = static_cast<uint32_t>(operand.NumComponents);
+  converted.ComponentMode = operand.ComponentMode;
+  converted.Modifier = static_cast<uint32_t>(operand.Modifier);
+  converted.Indices = operand.Indices;
+  converted.ImmediateValues = operand.ImmediateValues;
+  if (operand.RelativeOperand) {
+    converted.RelativeOperands.push_back(
+        ConvertOperand(*operand.RelativeOperand));
+  }
+  return converted;
+}
+
+static ProgramInstruction ConvertInstruction(const Instruction &instruction) {
+  ProgramInstruction converted;
+  converted.Opcode = static_cast<uint32_t>(instruction.Opcode);
+  converted.LengthInDwords = instruction.LengthInDwords;
+  converted.RawTokens = instruction.RawTokens;
+  converted.HasInputInterpolationMode =
+      instruction.Controls.HasInputInterpolationMode;
+  converted.InputInterpolationMode =
+      instruction.Controls.InputInterpolationMode;
+  converted.Operands.reserve(instruction.Operands.size());
+  for (const auto &operand : instruction.Operands) {
+    converted.Operands.push_back(ConvertOperand(operand));
+  }
+  return converted;
+}
+
+static void FillInspectionFromProgram(const Program &program,
+                                      ProgramInspection &inspection) {
+  inspection = {};
+  inspection.TempCount = program.TempCount;
+
+  inspection.Instructions.reserve(program.Instructions.size());
+  for (const auto &instruction : program.Instructions) {
+    inspection.Instructions.push_back(ConvertInstruction(instruction));
+  }
+
+  inspection.ResourceBindPoints.reserve(program.Resources.size());
+  for (const auto &resource : program.Resources) {
+    inspection.ResourceBindPoints.push_back(resource.RegisterBindPoint);
+  }
+
+  inspection.CBufferBindPoints.reserve(program.CBuffers.size());
+  for (const auto &cbuffer : program.CBuffers) {
+    inspection.CBufferBindPoints.push_back(cbuffer.RegisterBindPoint);
+  }
+
+  inspection.SamplerBindPoints.reserve(program.Samplers.size());
+  for (const auto &sampler : program.Samplers) {
+    inspection.SamplerBindPoints.push_back(sampler.RegisterBindPoint);
+  }
+}
+
+static bool
+ParseProgramForInspection(const std::vector<uint8_t> &inputContainer,
+                          Program &program, std::string *error) {
+  Container container;
+  if (!ParseDxbcContainer(inputContainer, container)) {
+    if (error != nullptr) {
+      *error = "failed to parse DXBC container";
+    }
+    return false;
+  }
+
+  if (!ParseShaderChunk(container, program)) {
+    if (error != nullptr) {
+      *error = "failed to parse shader chunk";
+    }
+    return false;
+  }
+
+  return true;
+}
+
 } // namespace
 
-PatchResult PatchContainerInMemory(const std::vector<uint8_t> &inputContainer,
-                                   const Recipe &recipe,
-                                   const RecipeContext &context) {
+PatchResult PatchContainer(const std::vector<uint8_t> &inputContainer,
+                           const Recipe &recipe, const RecipeContext &context) {
   PatchResult result;
   result.RecipeContext = context;
 
@@ -673,23 +634,43 @@ PatchResult PatchContainerInMemory(const std::vector<uint8_t> &inputContainer,
     return MakeError(error, &result.RecipeContext);
   }
 
+  const bool shouldRefreshResources =
+      result.RecipeContext.ResourceBindingsChanged &&
+      !result.RecipeContext.ResourcesRefreshed;
+  if (shouldRefreshResources) {
+    RebuildProgramMetadata(program);
+    result.RecipeContext.ResourcesRefreshed = true;
+  }
+
+  if (!result.RecipeContext.ModuleVerified) {
+    std::vector<uint8_t> verifiedShaderBytes;
+    if (!RebuildShaderChunk(program, verifiedShaderBytes)) {
+      return MakeError("failed to verify SM5 shader chunk",
+                       &result.RecipeContext);
+    }
+    result.RecipeContext.ModuleVerified = true;
+  }
+
   std::vector<uint8_t> shaderBytes;
   if (!RebuildShaderChunk(program, shaderBytes))
     return MakeError("failed to serialize shader chunk", &result.RecipeContext);
 
   DxbcChunk *shaderChunk = container.GetShaderChunk();
   if (shaderChunk == nullptr)
-    return MakeError("shader chunk missing from container", &result.RecipeContext);
+    return MakeError("shader chunk missing from container",
+                     &result.RecipeContext);
   shaderChunk->Data = std::move(shaderBytes);
 
   std::string signatureError;
-  if (!UpdateIoSignatures(container, originalProgram, program, signatureError)) {
+  if (!UpdateIoSignatures(container, originalProgram, program,
+                          signatureError)) {
     return MakeError("failed to update signature chunks: " + signatureError,
                      &result.RecipeContext);
   }
 
   if (!SerializeDxbcContainer(container, result.OutputBytes))
-    return MakeError("failed to serialize DXBC container", &result.RecipeContext);
+    return MakeError("failed to serialize DXBC container",
+                     &result.RecipeContext);
   if (!RecomputeDxbcHash(result.OutputBytes))
     return MakeError("failed to recompute DXBC hash", &result.RecipeContext);
 
@@ -697,14 +678,70 @@ PatchResult PatchContainerInMemory(const std::vector<uint8_t> &inputContainer,
   return result;
 }
 
-PatchResult PatchContainerInMemory(const Recipe &recipe,
-                                   const uint8_t *inputData,
-                                   size_t inputSize,
-                                   const RecipeContext &context) {
+PatchResult PatchContainer(const Recipe &recipe, const uint8_t *inputData,
+                           size_t inputSize, const RecipeContext &context) {
   if (inputData == nullptr || inputSize == 0)
     return MakeError("invalid input data");
-  return PatchContainerInMemory(std::vector<uint8_t>(inputData, inputData + inputSize),
-                                recipe, context);
+  return PatchContainer(std::vector<uint8_t>(inputData, inputData + inputSize),
+                        recipe, context);
+}
+
+bool ExtractProgramOpcodes(const std::vector<uint8_t> &inputContainer,
+                           std::vector<uint32_t> &opcodes, std::string *error) {
+  opcodes.clear();
+
+  Program program;
+  if (!ParseProgramForInspection(inputContainer, program, error)) {
+    return false;
+  }
+
+  opcodes.reserve(program.Instructions.size());
+  for (const auto &instruction : program.Instructions) {
+    opcodes.push_back(static_cast<uint32_t>(instruction.Opcode));
+  }
+
+  return true;
+}
+
+bool ExtractProgramOpcodes(const uint8_t *inputData, size_t inputSize,
+                           std::vector<uint32_t> &opcodes, std::string *error) {
+  if (inputData == nullptr || inputSize == 0) {
+    if (error != nullptr) {
+      *error = "invalid input data";
+    }
+    opcodes.clear();
+    return false;
+  }
+
+  return ExtractProgramOpcodes(
+      std::vector<uint8_t>(inputData, inputData + inputSize), opcodes, error);
+}
+
+bool InspectProgram(const std::vector<uint8_t> &inputContainer,
+                    ProgramInspection &inspection, std::string *error) {
+  inspection = {};
+
+  Program program;
+  if (!ParseProgramForInspection(inputContainer, program, error)) {
+    return false;
+  }
+
+  FillInspectionFromProgram(program, inspection);
+  return true;
+}
+
+bool InspectProgram(const uint8_t *inputData, size_t inputSize,
+                    ProgramInspection &inspection, std::string *error) {
+  if (inputData == nullptr || inputSize == 0) {
+    if (error != nullptr) {
+      *error = "invalid input data";
+    }
+    inspection = {};
+    return false;
+  }
+
+  return InspectProgram(std::vector<uint8_t>(inputData, inputData + inputSize),
+                        inspection, error);
 }
 
 } // namespace sm5

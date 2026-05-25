@@ -1,8 +1,8 @@
 #include "TestSupport.h"
 
 #include <cstddef>
-#include <cstdlib>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <vector>
 
@@ -37,7 +37,8 @@ static RewriteMetrics CaptureMetrics(hlsl::DxilModule &dxilModule) {
 
   metrics.srvCount = dxilModule.GetSRVs().size();
   metrics.cbufferCount = dxilModule.GetCBuffers().size();
-  metrics.textureLoadCount = CountDxOpCalls(*entryFunction, "dx.op.textureLoad.f32");
+  metrics.textureLoadCount =
+      CountDxOpCalls(*entryFunction, "dx.op.textureLoad.f32");
   metrics.createHandleCount =
       CountDxOpCalls(*entryFunction, "dx.op.createHandleFromBinding");
   metrics.annotateHandleCount =
@@ -45,7 +46,8 @@ static RewriteMetrics CaptureMetrics(hlsl::DxilModule &dxilModule) {
   metrics.cbufferLoadCount =
       CountDxOpCalls(*entryFunction, "dx.op.cbufferLoadLegacy.i32");
   metrics.ignCount = CountIgnNoiseChains(*entryFunction);
-  metrics.blueNoiseCount = CountBlueNoiseTextureLoads(*entryFunction, dxilModule);
+  metrics.blueNoiseCount =
+      CountBlueNoiseTextureLoads(*entryFunction, dxilModule);
   return metrics;
 }
 
@@ -61,16 +63,15 @@ static bool ConfigureNoiseResources(LoadedDxilShader &shader,
 
   frameIndexSchema =
       CBufferSchemaBuilder<ISFastFrameConstantsCpu>("ISFastFrameConstants")
-          .UInt("FrameIndex",
-                static_cast<unsigned>(offsetof(ISFastFrameConstantsCpu, FrameIndex)))
-          .UInt3("Padding",
-                 static_cast<unsigned>(offsetof(ISFastFrameConstantsCpu, Padding)))
+          .UInt("FrameIndex", static_cast<unsigned>(offsetof(
+                                  ISFastFrameConstantsCpu, FrameIndex)))
+          .UInt3("Padding", static_cast<unsigned>(
+                                offsetof(ISFastFrameConstantsCpu, Padding)))
           .Build();
 
-    frameIndexCBufferDesc.name = "ISFastFrameConstantsCB";
-    frameIndexCBufferDesc.binding.Set(
-      FindNextAvailableBinding(shader.dxilModule->GetCBuffers(), 0, 1),
-      0,
+  frameIndexCBufferDesc.name = "ISFastFrameConstantsCB";
+  frameIndexCBufferDesc.binding.Set(
+      FindNextAvailableBinding(shader.dxilModule->GetCBuffers(), 0, 1), 0,
       hlsl::DXIL::ResourceClass::CBuffer);
   frameIndexCBufferDesc.sizeInBytes =
       static_cast<unsigned>(sizeof(ISFastFrameConstantsCpu));
@@ -97,7 +98,8 @@ static bool VerifyRunState(const RewriteMetrics &initialMetrics,
   result.metrics = CaptureMetrics(*shader.dxilModule);
 
   if (HasTypedHandleDxilOpOverloads(*shader.module)) {
-    std::cerr << "Patched module introduced typed DXIL handle op overloads instead of reusing the shader's existing prototypes.\n";
+    std::cerr << "Patched module introduced typed DXIL handle op overloads "
+                 "instead of reusing the shader's existing prototypes.\n";
     return false;
   }
 
@@ -125,20 +127,21 @@ static bool VerifyRunState(const RewriteMetrics &initialMetrics,
   const hlsl::DxilResource *addedSrv = nullptr;
   if (!FindSrvByName(*shader.dxilModule, noiseTextureDesc.name, &addedSrv) ||
       addedSrv == nullptr) {
-    std::cerr << "Injected FASTNoiseTexture SRV was not present after mutation.\n";
+    std::cerr
+        << "Injected FASTNoiseTexture SRV was not present after mutation.\n";
     return false;
   }
 
   const hlsl::DxilCBuffer *addedCBuffer = nullptr;
-  if (!FindCBufferByName(*shader.dxilModule,
-                         frameIndexCBufferDesc.name,
+  if (!FindCBufferByName(*shader.dxilModule, frameIndexCBufferDesc.name,
                          &addedCBuffer) ||
       addedCBuffer == nullptr) {
-    std::cerr << "Injected ISFastFrameConstantsCB cbuffer was not present after mutation.\n";
+    std::cerr << "Injected ISFastFrameConstantsCB cbuffer was not present "
+                 "after mutation.\n";
     return false;
   }
 
-  RefreshDxilAfterResourceMutation(*shader.dxilModule);
+  RefreshDxilModule(*shader.dxilModule);
   if (!VerifyModuleOrReport(*shader.module))
     return false;
 
@@ -152,8 +155,7 @@ static bool VerifyRunState(const RewriteMetrics &initialMetrics,
   return true;
 }
 
-static bool RunRewrite(const std::string &inputPath,
-                       bool useRuleEngine,
+static bool RunRewrite(const std::string &inputPath, bool useRuleEngine,
                        RewriteRunResult &result) {
   ScopedCoInitialize *coinit = new ScopedCoInitialize();
   if (!coinit->IsInitialized()) {
@@ -162,52 +164,43 @@ static bool RunRewrite(const std::string &inputPath,
   }
 
   LoadedDxilShader *shader = new LoadedDxilShader();
-  if (!LoadShaderForMutation(inputPath, *shader, true))
+  if (!LoadShaderFromPath(inputPath, *shader, true))
     return false;
 
   RewriteMetrics initialMetrics = CaptureMetrics(*shader->dxilModule);
   if (initialMetrics.ignCount == 0 && initialMetrics.blueNoiseCount == 0) {
-    std::cerr << "The test shader did not contain any IGN or BlueNoise patterns.\n";
+    std::cerr
+        << "The test shader did not contain any IGN or BlueNoise patterns.\n";
     return false;
   }
 
   TextureResourceDesc noiseTextureDesc;
   CBufferSchema frameIndexSchema;
   CBufferDesc frameIndexCBufferDesc;
-  if (!ConfigureNoiseResources(*shader,
-                               noiseTextureDesc,
-                               frameIndexSchema,
+  if (!ConfigureNoiseResources(*shader, noiseTextureDesc, frameIndexSchema,
                                frameIndexCBufferDesc)) {
     return false;
   }
 
-  const bool replaceSucceeded = useRuleEngine
-              ? ApplyComputeNoiseRewriteUsingRules(
-                                          *shader->module,
-                                          *shader->dxilModule,
-                                          noiseTextureDesc,
-                                          frameIndexCBufferDesc)
-                                    : ReplaceIgnNoiseInComputeShaderWithTextureLoad(
-                                          *shader->module,
-                                          *shader->dxilModule,
-                                          noiseTextureDesc,
-                                          frameIndexCBufferDesc);
+  const bool replaceSucceeded =
+      useRuleEngine ? ApplyComputeNoiseRewriteUsingRules(
+                          *shader->module, *shader->dxilModule,
+                          noiseTextureDesc, frameIndexCBufferDesc)
+                    : ReplaceIgnNoiseInComputeShaderWithTextureLoad(
+                          *shader->module, *shader->dxilModule,
+                          noiseTextureDesc, frameIndexCBufferDesc);
   if (!replaceSucceeded) {
     std::cerr << (useRuleEngine ? "Rule-based" : "Procedural")
               << " IGN rewrite returned false.\n";
     return false;
   }
 
-  return VerifyRunState(initialMetrics,
-                        *shader,
-                        noiseTextureDesc,
-                        frameIndexCBufferDesc,
-                        result);
+  return VerifyRunState(initialMetrics, *shader, noiseTextureDesc,
+                        frameIndexCBufferDesc, result);
 }
 
 static bool MetricsMatch(const RewriteMetrics &lhs, const RewriteMetrics &rhs) {
-  return lhs.srvCount == rhs.srvCount &&
-         lhs.cbufferCount == rhs.cbufferCount &&
+  return lhs.srvCount == rhs.srvCount && lhs.cbufferCount == rhs.cbufferCount &&
          lhs.textureLoadCount == rhs.textureLoadCount &&
          lhs.createHandleCount == rhs.createHandleCount &&
          lhs.annotateHandleCount == rhs.annotateHandleCount &&
@@ -233,7 +226,8 @@ int main(int argc, char **argv) {
     return 1;
 
   if (!MetricsMatch(proceduralResult.metrics, ruleResult.metrics)) {
-    std::cerr << "Procedural and rule-based rewrites produced different DXIL metrics.\n";
+    std::cerr << "Procedural and rule-based rewrites produced different DXIL "
+                 "metrics.\n";
     return 1;
   }
 
@@ -241,5 +235,4 @@ int main(int argc, char **argv) {
             << "\n";
   std::cout.flush();
   std::cerr.flush();
-  std::_Exit(0);
 }

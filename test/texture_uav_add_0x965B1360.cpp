@@ -4,8 +4,8 @@
 
 namespace {
 
-static const hlsl::DxilResource *FindUavByName(const hlsl::DxilModule &dxilModule,
-                                               const std::string &name) {
+static const hlsl::DxilResource *
+FindUavByName(const hlsl::DxilModule &dxilModule, const std::string &name) {
   for (const auto &uav : dxilModule.GetUAVs()) {
     if (uav != nullptr && uav->GetGlobalName() == name)
       return uav.get();
@@ -24,7 +24,7 @@ int main(int argc, char **argv) {
 
   ScopedCoInitialize coinit;
   LoadedDxilShader shader;
-  if (!LoadShaderForMutation(argv[1], shader, false))
+  if (!LoadShaderFromPath(argv[1], shader, false))
     return 1;
 
   const size_t initialUavCount = shader.dxilModule->GetUAVs().size();
@@ -33,8 +33,8 @@ int main(int argc, char **argv) {
       TextureResourceBuilder(MakeUniqueGlobalName(*shader.module, "MyRwTex"))
           .RWTexture2D()
           .Float4()
-          .Register(FindNextAvailableBinding(shader.dxilModule->GetUAVs(), 0, 0),
-                    0)
+          .Register(
+              FindNextAvailableBinding(shader.dxilModule->GetUAVs(), 0, 0), 0)
           .Build();
 
   if (!AddTextureUAV(*shader.module, *shader.dxilModule, textureDesc)) {
@@ -64,7 +64,8 @@ int main(int argc, char **argv) {
   if (addedUavElementType == nullptr || !addedUavElementType->isStructTy() ||
       addedUavElementType->getStructName() !=
           "class.RWTexture2D<vector<float, 4> >") {
-    std::cerr << "Added UAV did not use the canonical RWTexture2D<float4> type.\n";
+    std::cerr
+        << "Added UAV did not use the canonical RWTexture2D<float4> type.\n";
     return 1;
   }
 
@@ -82,7 +83,7 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  RefreshDxilAfterResourceMutation(*shader.dxilModule);
+  RefreshDxilModule(*shader.dxilModule);
   if (!VerifyModuleOrReport(*shader.module))
     return 1;
 
@@ -97,9 +98,7 @@ int main(int argc, char **argv) {
   llvm::LLVMContext patchedContext;
   std::unique_ptr<llvm::Module> patchedModule;
   hlsl::DxilModule *patchedDxilModule = nullptr;
-  if (!ReloadPatchedContainer(outputContainer,
-                              patchedContext,
-                              patchedModule,
+  if (!ReloadPatchedContainer(outputContainer, patchedContext, patchedModule,
                               patchedDxilModule)) {
     return 1;
   }
@@ -123,7 +122,8 @@ int main(int argc, char **argv) {
       reloadedUav->GetSpaceID() != textureDesc.binding.GetSpace() ||
       reloadedUav->GetKind() != hlsl::DXIL::ResourceKind::Texture2D ||
       !reloadedUav->IsRW()) {
-    std::cerr << "Reloaded UAV metadata did not match the injected RWTexture2D UAV.\n";
+    std::cerr << "Reloaded UAV metadata did not match the injected RWTexture2D "
+                 "UAV.\n";
     return 1;
   }
 
@@ -136,7 +136,8 @@ int main(int argc, char **argv) {
       !reloadedUavElementType->isStructTy() ||
       reloadedUavElementType->getStructName() !=
           "class.RWTexture2D<vector<float, 4> >") {
-    std::cerr << "Reloaded UAV did not preserve the canonical RWTexture2D<float4> type.\n";
+    std::cerr << "Reloaded UAV did not preserve the canonical "
+                 "RWTexture2D<float4> type.\n";
     return 1;
   }
 
@@ -148,10 +149,10 @@ int main(int argc, char **argv) {
   patchedModule.reset();
   shader.module.reset();
 
-  std::cout << "Added UAV '" << addedUavName << "' at u"
-            << addedUavBindPoint << ", space" << addedUavSpace
+  std::cout << "Added UAV '" << addedUavName << "' at u" << addedUavBindPoint
+            << ", space" << addedUavSpace
             << " and reloaded it successfully from the patched container"
-            << " (initial UAVs=" << initialUavCount << ", final UAVs="
-            << finalUavCount << ")\n";
+            << " (initial UAVs=" << initialUavCount
+            << ", final UAVs=" << finalUavCount << ")\n";
   return 0;
 }

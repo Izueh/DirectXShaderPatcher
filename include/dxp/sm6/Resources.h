@@ -16,8 +16,10 @@
 #include "dxc/DXIL/DxilResourceBinding.h"
 #include "dxc/DXIL/DxilSampler.h"
 
+/// @brief Sentinel bind point value that requests automatic binding selection.
 static constexpr unsigned kDxilRecipeAutoBinding = static_cast<unsigned>(-1);
 
+/// @brief Describes a DXIL resource binding range.
 struct ResourceBindingDesc {
   static ResourceBindingDesc SRV(unsigned bindPoint = 0, unsigned space = 0) {
     return ResourceBindingDesc(hlsl::DXIL::ResourceClass::SRV, bindPoint,
@@ -131,6 +133,7 @@ struct ResourceBindingDesc {
   hlsl::DxilResourceBinding dxilBinding = {};
 };
 
+/// @brief Describes a constant buffer resource.
 struct CBufferDesc {
   std::string name;
   ResourceBindingDesc binding =
@@ -139,6 +142,7 @@ struct CBufferDesc {
   const struct CBufferSchema *schema = nullptr;
 };
 
+/// @brief Describes one field within a constant buffer schema.
 struct CBufferFieldDesc {
   std::string name;
   hlsl::CompType::Kind compType = hlsl::CompType::getU32().GetKind();
@@ -146,12 +150,14 @@ struct CBufferFieldDesc {
   unsigned offset = 0;
 };
 
+/// @brief Describes the layout of a constant buffer payload.
 struct CBufferSchema {
   std::string typeName;
   unsigned sizeInBytes = 0;
   std::vector<CBufferFieldDesc> fields;
 };
 
+/// @brief Builds a constant buffer schema from a standard-layout C++ type.
 template <typename TStruct> class CBufferSchemaBuilder {
 public:
   explicit CBufferSchemaBuilder(std::string typeName) {
@@ -222,6 +228,7 @@ private:
   CBufferSchema schema_;
 };
 
+/// @brief Describes a texture SRV or UAV resource.
 struct TextureResourceDesc {
   std::string name;
   ResourceBindingDesc binding =
@@ -232,6 +239,35 @@ struct TextureResourceDesc {
   bool isReadWrite = false;
 };
 
+/// @brief Builds a constant buffer description.
+class CBufferDescBuilder {
+public:
+  explicit CBufferDescBuilder(std::string name) {
+    desc_.name = std::move(name);
+  }
+
+  CBufferDescBuilder &Binding(const ResourceBindingDesc &binding) {
+    desc_.binding = binding;
+    return *this;
+  }
+
+  CBufferDescBuilder &SizeInBytes(unsigned size) {
+    desc_.sizeInBytes = size;
+    return *this;
+  }
+
+  CBufferDescBuilder &Schema(const CBufferSchema *schema) {
+    desc_.schema = schema;
+    return *this;
+  }
+
+  CBufferDesc Build() const { return desc_; }
+
+private:
+  CBufferDesc desc_;
+};
+
+/// @brief Builds a texture resource description.
 class TextureResourceBuilder {
 public:
   explicit TextureResourceBuilder(std::string name) {
@@ -316,15 +352,18 @@ private:
   TextureResourceDesc desc_;
 };
 
+/// @brief Describes a sampler resource.
 struct SamplerDesc {
   std::string name;
   ResourceBindingDesc binding =
       ResourceBindingDesc(hlsl::DXIL::ResourceClass::Sampler);
 };
 
+/// @brief Generates a unique global name within a module.
 std::string MakeUniqueGlobalName(const llvm::Module &module,
                                  const std::string &baseName);
 
+/// @brief Finds the next available binding slot for a resource collection.
 template <typename TResource>
 unsigned FindNextAvailableBinding(
     const std::vector<std::unique_ptr<TResource>> &resources, unsigned space,
@@ -347,13 +386,22 @@ unsigned FindNextAvailableBinding(
   }
 }
 
+/// @brief Adds a constant buffer resource to a DXIL module.
 bool AddCBuffer(llvm::Module &module, hlsl::DxilModule &dxilModule,
                 const CBufferDesc &desc);
+
+/// @brief Adds a texture SRV resource to a DXIL module.
 bool AddTextureSRV(llvm::Module &module, hlsl::DxilModule &dxilModule,
                    const TextureResourceDesc &desc);
+
+/// @brief Adds a texture UAV resource to a DXIL module.
 bool AddTextureUAV(llvm::Module &module, hlsl::DxilModule &dxilModule,
                    const TextureResourceDesc &desc);
+
+/// @brief Adds a Texture2D SRV resource to a DXIL module.
 bool AddTexture2DSRV(llvm::Module &module, hlsl::DxilModule &dxilModule,
                      const TextureResourceDesc &desc);
+
+/// @brief Adds a sampler resource to a DXIL module.
 bool AddSampler(llvm::Module &module, hlsl::DxilModule &dxilModule,
                 const SamplerDesc &desc);

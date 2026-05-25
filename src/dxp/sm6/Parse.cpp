@@ -1,6 +1,5 @@
-#include "../../../include/dxp/sm6/Patch.h"
+#include "../../../include/dxp/sm6/RecipeParse.h"
 
-#include "../../../include/dxp/sm6/Recipe.h"
 #include "../../../include/dxp/sm6/Resources.h"
 #include "../../../include/dxp/sm6/Transforms.h"
 
@@ -23,7 +22,6 @@
 #include "dxc/DXIL/DxilConstants.h"
 #include "dxc/DXIL/DxilOperations.h"
 
-// NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace)
 namespace {
 
 template <typename TValue> struct RecipeParseEntry {
@@ -176,6 +174,7 @@ static bool TryResolveParsedRecipeResourceRef(
 static bool ParseRecipeRewriteMode(const std::string &text,
                                    DxilRewriteMode &mode, std::string &error) {
   static const RecipeParseEntry<DxilRewriteMode> kRewriteModeEntries[] = {
+      {"None", DxilRewriteMode::None},
       {"Replace", DxilRewriteMode::Replace},
       {"ReplaceRange", DxilRewriteMode::ReplaceRange},
   };
@@ -191,9 +190,9 @@ static bool ParseRecipeRuleApplicationMode(const std::string &text,
                                            std::string &error) {
   static const RecipeParseEntry<DxilRecipeRuleApplicationMode>
       kRuleApplicationModeEntries[] = {
-      {"First", DxilRecipeRuleApplicationMode::First},
-      {"Last", DxilRecipeRuleApplicationMode::Last},
-      {"MatchAll", DxilRecipeRuleApplicationMode::MatchAll},
+          {"First", DxilRecipeRuleApplicationMode::First},
+          {"Last", DxilRecipeRuleApplicationMode::Last},
+          {"MatchAll", DxilRecipeRuleApplicationMode::MatchAll},
       };
   if (ParseRecipeValueByTable(text, mode, kRuleApplicationModeEntries))
     return true;
@@ -468,7 +467,6 @@ struct YamlRecipeDocumentModel {
 };
 
 } // namespace
-// NOLINTEND(llvm-prefer-static-over-anonymous-namespace)
 
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeFieldModel)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeTextureModel)
@@ -594,7 +592,7 @@ template <> struct MappingTraits<YamlRecipeEmitModel> {
 template <> struct MappingTraits<YamlRecipeMatchModel> {
   static void mapping(IO &io, YamlRecipeMatchModel &match) {
     io.mapRequired("opcode", match.opcode);
-    io.mapRequired("replace", match.replace);
+    io.mapOptional("replace", match.replace);
     io.mapOptional("capture", match.capture);
     io.mapOptional("mode", match.mode, std::string("Replace"));
     io.mapOptional("prune_dead", match.prune_dead, true);
@@ -659,7 +657,6 @@ template <> struct MappingTraits<YamlRecipeDocumentModel> {
 } // namespace yaml
 } // namespace llvm
 
-// NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace)
 namespace {
 
 static bool
@@ -984,7 +981,8 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
       return false;
     }
 
-    if (!parsedPrefilters.emplace(prefilterModel.id, std::move(pattern)).second) {
+    if (!parsedPrefilters.emplace(prefilterModel.id, std::move(pattern))
+             .second) {
       result.error = sourceName.str() + ": duplicate prefilter id '" +
                      prefilterModel.id + "'";
       return false;
@@ -1180,11 +1178,37 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
     }
 
     rule.emittedSequence.replacementValueName = ruleModel.replace_with;
-    if (rule.replacementCaptureName.empty() ==
-        rule.emittedSequence.replacementValueName.empty()) {
+    const bool hasReplacementCapture = !rule.replacementCaptureName.empty();
+    const bool hasReplacementValue =
+        !rule.emittedSequence.replacementValueName.empty();
+    const bool isMatchOnlyMode = rule.mode == DxilRewriteMode::None;
+    if (hasReplacementCapture && hasReplacementValue) {
       result.error =
           sourceName.str() + ": rewrite rule '" + ruleModel.id +
           "' must provide exactly one of replace_with or replace_with_capture";
+      return false;
+    }
+
+    if (isMatchOnlyMode) {
+      if (!rule.replaceCaptureName.empty() || !ruleModel.emit.empty() ||
+          hasReplacementCapture || hasReplacementValue ||
+          !rule.pruneCaptureNames.empty()) {
+        result.error =
+            sourceName.str() + ": rewrite rule '" + ruleModel.id +
+            "' with mode None must not define replace, emit, replace_with, "
+            "replace_with_capture, or prune_captures";
+        return false;
+      }
+    } else if (!hasReplacementCapture && !hasReplacementValue &&
+               ruleModel.emit.empty()) {
+      result.error = sourceName.str() + ": rewrite rule '" + ruleModel.id +
+                     "' without rewrite payload must use mode None";
+      return false;
+    } else if (!hasReplacementCapture && !hasReplacementValue &&
+               !ruleModel.emit.empty()) {
+      result.error = sourceName.str() + ": rewrite rule '" + ruleModel.id +
+                     "' with emit values must provide replace_with or "
+                     "replace_with_capture";
       return false;
     }
 
@@ -1237,11 +1261,11 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
         return false;
       }
 
-        DxilRecipeRuleApplicationMode applicationMode =
+      DxilRecipeRuleApplicationMode applicationMode =
           DxilRecipeRuleApplicationMode::First;
-    const std::string modeText =
+      const std::string modeText =
           stepModel.mode.empty() ? "First" : stepModel.mode;
-    if (!ParseRecipeRuleApplicationMode(modeText, applicationMode,
+      if (!ParseRecipeRuleApplicationMode(modeText, applicationMode,
                                           parseError)) {
         result.error = sourceName.str() + ": invalid apply_rule mode for '" +
                        stepModel.rule + "': " + parseError;
@@ -1255,8 +1279,8 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
           stepName, {it->second}, applicationMode, stepModel.required));
     } else if (loweredKind == "apply_rules") {
       if (stepModel.rules.empty()) {
-        result.error = sourceName.str() +
-                       ": apply_rules requires a non-empty rules list";
+        result.error =
+            sourceName.str() + ": apply_rules requires a non-empty rules list";
         return false;
       }
 
@@ -1265,27 +1289,27 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
       for (const std::string &ruleId : stepModel.rules) {
         auto it = parsedRewriteRules.find(ruleId);
         if (it == parsedRewriteRules.end()) {
-          result.error = sourceName.str() + ": unknown rewrite rule '" +
-                         ruleId + "'";
+          result.error =
+              sourceName.str() + ": unknown rewrite rule '" + ruleId + "'";
           return false;
         }
         rules.push_back(it->second);
       }
 
-        DxilRecipeRuleApplicationMode applicationMode =
+      DxilRecipeRuleApplicationMode applicationMode =
           DxilRecipeRuleApplicationMode::MatchAll;
       const std::string modeText =
           stepModel.mode.empty() ? "MatchAll" : stepModel.mode;
       if (!ParseRecipeRuleApplicationMode(modeText, applicationMode,
                                           parseError)) {
-        result.error = sourceName.str() + ": invalid apply_rules mode: " +
-                       parseError;
+        result.error =
+            sourceName.str() + ": invalid apply_rules mode: " + parseError;
         return false;
       }
 
       if (applicationMode != DxilRecipeRuleApplicationMode::MatchAll) {
-        result.error = sourceName.str() +
-                       ": apply_rules only supports MatchAll mode";
+        result.error =
+            sourceName.str() + ": apply_rules only supports MatchAll mode";
         return false;
       }
 
@@ -1297,8 +1321,9 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
       const bool hasPattern = !stepModel.pattern.empty();
       const bool hasPatterns = !stepModel.patterns.empty();
       if (hasPattern == hasPatterns) {
-        result.error = sourceName.str() +
-                       ": prefilter requires exactly one of pattern or patterns";
+        result.error =
+            sourceName.str() +
+            ": prefilter requires exactly one of pattern or patterns";
         return false;
       }
 
@@ -1326,8 +1351,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
 
       const std::string stepName =
           stepModel.name.empty()
-              ? (hasPattern ? ("prefilter:" + stepModel.pattern)
-                            : "prefilter")
+              ? (hasPattern ? ("prefilter:" + stepModel.pattern) : "prefilter")
               : stepModel.name;
       result.recipe.AddStep(MakePrefilterStep(stepName, std::move(patterns)));
     } else if (loweredKind == "refresh_resources") {
@@ -1345,7 +1369,6 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
 }
 
 } // namespace
-// NOLINTEND(llvm-prefer-static-over-anonymous-namespace)
 
 bool ParseDxilRecipeText(llvm::StringRef recipeText,
                          DxilRecipeParseResult &result,

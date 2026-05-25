@@ -10,60 +10,60 @@
 #include "llvm/IR/Module.h"
 
 #include "Recipe.h"
+#include "RecipeParse.h"
 
-struct DxilLoadedShaderState {
-  std::vector<uint8_t> inputBytes;
-  llvm::LLVMContext context;
-  std::unique_ptr<llvm::LLVMContext> reflectionContext;
-  std::unique_ptr<llvm::Module> module;
-  hlsl::DxilModule *dxilModule = nullptr;
+/// @brief Loads a DXIL container from an in-memory buffer.
+/// @param containerData Pointer to the container bytes.
+/// @param containerSize Size of the container in bytes.
+/// @param shader Receives the loaded shader state.
+/// @param restoreReflection Whether original reflection metadata should be
+/// restored.
+/// @return `true` on success.
+bool LoadDxilContainer(const void *containerData, size_t containerSize,
+                       DxilLoadedShaderState &shader,
+                       bool restoreReflection = true);
 
-  ~DxilLoadedShaderState();
-};
+/// @brief Loads a DXIL container from a byte vector.
+/// @param containerBytes Container bytes to load.
+/// @param shader Receives the loaded shader state.
+/// @param restoreReflection Whether original reflection metadata should be
+/// restored.
+/// @return `true` on success.
+bool LoadDxilContainer(const std::vector<uint8_t> &containerBytes,
+                       DxilLoadedShaderState &shader,
+                       bool restoreReflection = true);
 
-struct DxilContainerPatchOptions {
-  bool restoreReflection = true;
-  DxilRecipeExecutionOptions recipeExecutionOptions;
-};
-
-struct DxilRecipeParseResult {
-  DxilRecipe recipe;
-  DxilContainerPatchOptions patchOptions;
-  std::string error;
-};
-
-bool LoadDxilContainerForMutation(const void *containerData,
-                                  size_t containerSize,
-                                  DxilLoadedShaderState &shader,
-                                  bool restoreReflection = true);
-bool LoadDxilContainerForMutation(const std::vector<uint8_t> &containerBytes,
-                                  DxilLoadedShaderState &shader,
-                                  bool restoreReflection = true);
+/// @brief Rebuilds LLVM module state from container bytes.
 bool ReloadDxilContainerFromMemory(const std::vector<uint8_t> &containerBytes,
                                    llvm::LLVMContext &context,
                                    std::unique_ptr<llvm::Module> &module,
                                    hlsl::DxilModule *&dxilModule);
-bool PatchDxilContainerInMemory(const DxilRecipe &recipe, const void *inputData,
-                                size_t inputSize,
-                                std::vector<uint8_t> &outputContainer,
-                                const DxilContainerPatchOptions &options = {},
-                                DxilRecipeContext *outContext = nullptr);
-bool PatchDxilContainerInMemory(const DxilRecipe &recipe,
-                                const std::vector<uint8_t> &inputContainer,
-                                std::vector<uint8_t> &outputContainer,
-                                const DxilContainerPatchOptions &options = {},
-                                DxilRecipeContext *outContext = nullptr);
-bool ParseDxilRecipeText(llvm::StringRef recipeText,
-                         DxilRecipeParseResult &result,
-                         llvm::StringRef sourceName = "recipe");
-bool ParseDxilRecipeFile(const std::string &recipePath,
-                         DxilRecipeParseResult &result);
-void RefreshDxilAfterResourceMutation(hlsl::DxilModule &dxilModule,
-                                      bool traceEnabled = false);
+
+/// @brief Applies a DXIL recipe to an in-memory container buffer.
+bool PatchDxilContainer(const DxilRecipe &recipe, const void *inputData,
+                        size_t inputSize, std::vector<uint8_t> &outputContainer,
+                        const DxilContainerPatchOptions &options = {},
+                        DxilRecipeContext *outContext = nullptr);
+
+/// @brief Applies a DXIL recipe to a container byte vector.
+bool PatchDxilContainer(const DxilRecipe &recipe,
+                        const std::vector<uint8_t> &inputContainer,
+                        std::vector<uint8_t> &outputContainer,
+                        const DxilContainerPatchOptions &options = {},
+                        DxilRecipeContext *outContext = nullptr);
+
+/// @brief Refreshes derived DXIL module state after IR mutation.
+void RefreshDxilModule(hlsl::DxilModule &dxilModule, bool traceEnabled = false);
+
+/// @brief Serializes an LLVM module to bitcode.
 std::vector<uint8_t> SerializeModuleToBitcode(llvm::Module &module);
+
+/// @brief Rebuilds a patched container from DXIL module state and bitcode.
 bool SerializePatchedContainer(hlsl::DxilModule &dxilModule,
                                const std::vector<uint8_t> &moduleBitcode,
                                std::vector<uint8_t> &outputContainer);
+
+/// @brief Restores resource-reflection metadata from the original container.
 void RestoreOriginalResourceReflection(const std::vector<uint8_t> &inputBytes,
                                        hlsl::DxilModule &targetDxilModule,
                                        llvm::LLVMContext &reflectionContext);

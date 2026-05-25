@@ -1,6 +1,5 @@
 #include "TestSupport.h"
-#include "dxp/sm5/Container.h"
-#include "dxp/sm5/Parse.h"
+#include "dxp/sm5/Patch.h"
 #include "dxp/sm5/RecipeParse.h"
 
 #include <iostream>
@@ -8,15 +7,15 @@
 
 namespace {
 
-static bool HasSamplerDecl(const dxp::sm5::Program &program,
-                           uint32_t bindPoint,
-                           uint32_t mode) {
+static bool HasSamplerDecl(const dxp::sm5::ProgramInspection &program,
+                           uint32_t bindPoint, uint32_t mode) {
   for (const auto &instruction : program.Instructions) {
-    if (static_cast<dxp::sm5::OpcodeType>(instruction.Opcode) != D3D10_SB_OPCODE_DCL_SAMPLER) {
+    if (instruction.Opcode != D3D10_SB_OPCODE_DCL_SAMPLER) {
       continue;
     }
 
-    if (instruction.Operands.empty() || instruction.Operands.front().Indices.empty()) {
+    if (instruction.Operands.empty() ||
+        instruction.Operands.front().Indices.empty()) {
       continue;
     }
 
@@ -45,56 +44,53 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  dxp::sm5::Container inputContainer;
-  if (!dxp::sm5::ParseDxbcContainer(inputBytes, inputContainer)) {
-    std::cerr << "Failed to parse input DXBC container.\n";
+  dxp::sm5::ProgramInspection inputProgram;
+  std::string inspectError;
+  if (!dxp::sm5::InspectProgram(inputBytes, inputProgram, &inspectError)) {
+    std::cerr << "Failed to inspect input SM5 program: " << inspectError
+              << "\n";
     return 1;
   }
 
-  dxp::sm5::Program inputProgram;
-  if (!dxp::sm5::ParseShaderChunk(inputContainer, inputProgram)) {
-    std::cerr << "Failed to parse input SM5 program.\n";
-    return 1;
-  }
-
-  const size_t initialSamplerCount = inputProgram.Samplers.size();
+  const size_t initialSamplerCount = inputProgram.SamplerBindPoints.size();
 
   const char *recipeText = R"YAML(version: 1
-sampler_decls:
-  - bind_point: 11
-    mode: comparison
 steps:
+  - kind: add_sampler
+    name: add_s11
+    bind_point: 11
+    sampler_mode: comparison
+
   - name: noop
     required: false
     rules: []
 )YAML";
 
   dxp::sm5::RecipeParseResult parseResult;
-  if (!dxp::sm5::ParseRecipeText(recipeText, parseResult, "inline-sm5-sampler-decl-test")) {
-    std::cerr << "Failed to parse inline SM5 sampler recipe: " << parseResult.Error << "\n";
+  if (!dxp::sm5::ParseRecipeText(recipeText, parseResult,
+                                 "inline-sm5-sampler-decl-test")) {
+    std::cerr << "Failed to parse inline SM5 sampler recipe: "
+              << parseResult.Error << "\n";
     return 1;
   }
 
-  const auto patchResult = dxp::sm5::PatchContainerInMemory(inputBytes, parseResult.Recipe);
+  const auto patchResult =
+      dxp::sm5::PatchContainer(inputBytes, parseResult.Recipe);
   if (!patchResult.Success) {
     std::cerr << "Failed to patch SM5 shader with sampler declaration recipe: "
               << patchResult.Error << "\n";
     return 1;
   }
 
-  dxp::sm5::Container patchedContainer;
-  if (!dxp::sm5::ParseDxbcContainer(patchResult.OutputBytes, patchedContainer)) {
-    std::cerr << "Failed to parse patched DXBC container.\n";
+  dxp::sm5::ProgramInspection patchedProgram;
+  if (!dxp::sm5::InspectProgram(patchResult.OutputBytes, patchedProgram,
+                                &inspectError)) {
+    std::cerr << "Failed to inspect patched SM5 program: " << inspectError
+              << "\n";
     return 1;
   }
 
-  dxp::sm5::Program patchedProgram;
-  if (!dxp::sm5::ParseShaderChunk(patchedContainer, patchedProgram)) {
-    std::cerr << "Failed to parse patched SM5 program.\n";
-    return 1;
-  }
-
-  if (patchedProgram.Samplers.size() != initialSamplerCount + 1) {
+  if (patchedProgram.SamplerBindPoints.size() != initialSamplerCount + 1) {
     std::cerr << "Expected one additional sampler declaration.\n";
     return 1;
   }

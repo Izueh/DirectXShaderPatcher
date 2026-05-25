@@ -24,7 +24,8 @@ static uint32_t DecodeInstructionLength(uint32_t token0) {
 }
 
 static ProgramType DecodeProgramType(uint32_t versionToken) {
-  return static_cast<ProgramType>(DECODE_D3D10_SB_TOKENIZED_PROGRAM_TYPE(versionToken));
+  return static_cast<ProgramType>(
+      DECODE_D3D10_SB_TOKENIZED_PROGRAM_TYPE(versionToken));
 }
 
 static uint32_t DecodeMajorVersion(uint32_t versionToken) {
@@ -60,12 +61,16 @@ static OpcodeControls ParseOpcodeControls(const uint8_t *data,
                                           uint32_t instructionLength,
                                           uint32_t token0) {
   OpcodeControls controls;
-  const auto opcode = static_cast<OpcodeType>(DECODE_D3D10_SB_OPCODE_TYPE(token0));
-  controls.Saturate = DECODE_IS_D3D10_SB_INSTRUCTION_SATURATE_ENABLED(token0) != 0;
-  controls.HasTestBoolean = (token0 & D3D10_SB_INSTRUCTION_TEST_BOOLEAN_MASK) != 0;
+  const auto opcode =
+      static_cast<OpcodeType>(DECODE_D3D10_SB_OPCODE_TYPE(token0));
+  controls.Saturate =
+      DECODE_IS_D3D10_SB_INSTRUCTION_SATURATE_ENABLED(token0) != 0;
+  controls.HasTestBoolean =
+      (token0 & D3D10_SB_INSTRUCTION_TEST_BOOLEAN_MASK) != 0;
   controls.TestBoolean = DECODE_D3D10_SB_INSTRUCTION_TEST_BOOLEAN(token0);
   controls.PreciseValues = DECODE_D3D11_SB_INSTRUCTION_PRECISE_VALUES(token0);
-  controls.ResinfoReturnType = DECODE_D3D10_SB_RESINFO_INSTRUCTION_RETURN_TYPE(token0);
+  controls.ResinfoReturnType =
+      DECODE_D3D10_SB_RESINFO_INSTRUCTION_RETURN_TYPE(token0);
   controls.SyncFlags = DECODE_D3D11_SB_SYNC_FLAGS(token0);
   if (opcode == D3D10_SB_OPCODE_DCL_INPUT_PS ||
       opcode == D3D10_SB_OPCODE_DCL_INPUT_PS_SIV) {
@@ -82,8 +87,8 @@ static OpcodeControls ParseOpcodeControls(const uint8_t *data,
   const uint32_t end = instructionStart + instructionLength;
   while (cursor < end) {
     const uint32_t extToken = ReadDword(data, cursor * 4);
-    controls.ExtendedOpCodes.emplace_back(
-        static_cast<ExtendedOpcodeType>(DECODE_D3D10_SB_EXTENDED_OPCODE_TYPE(extToken)));
+    controls.ExtendedOpCodes.emplace_back(static_cast<ExtendedOpcodeType>(
+        DECODE_D3D10_SB_EXTENDED_OPCODE_TYPE(extToken)));
     ++cursor;
     if (!DECODE_IS_D3D10_SB_OPCODE_EXTENDED(extToken)) {
       break;
@@ -93,10 +98,8 @@ static OpcodeControls ParseOpcodeControls(const uint8_t *data,
   return controls;
 }
 
-static Operand ParseOperand(const uint8_t *data,
-                            uint32_t totalDwords,
-                            uint32_t instructionEnd,
-                            uint32_t &cursor) {
+static Operand ParseOperand(const uint8_t *data, uint32_t totalDwords,
+                            uint32_t instructionEnd, uint32_t &cursor) {
   Operand operand;
   if (cursor >= totalDwords || cursor >= instructionEnd) {
     return operand;
@@ -113,11 +116,14 @@ static Operand ParseOperand(const uint8_t *data,
   if (IsOperandExtended(token0) && cursor < instructionEnd) {
     uint32_t extToken = ReadDword(data, cursor * 4);
     operand.RawTokens.push_back(extToken);
-    if (DECODE_D3D10_SB_EXTENDED_OPERAND_TYPE(extToken) == D3D10_SB_EXTENDED_OPERAND_MODIFIER) {
-      operand.Modifier = static_cast<OperandModifier>(DECODE_D3D10_SB_OPERAND_MODIFIER(extToken));
+    if (DECODE_D3D10_SB_EXTENDED_OPERAND_TYPE(extToken) ==
+        D3D10_SB_EXTENDED_OPERAND_MODIFIER) {
+      operand.Modifier = static_cast<OperandModifier>(
+          DECODE_D3D10_SB_OPERAND_MODIFIER(extToken));
     }
     ++cursor;
-    while (DECODE_IS_D3D10_SB_OPERAND_DOUBLE_EXTENDED(extToken) && cursor < instructionEnd) {
+    while (DECODE_IS_D3D10_SB_OPERAND_DOUBLE_EXTENDED(extToken) &&
+           cursor < instructionEnd) {
       extToken = ReadDword(data, cursor * 4);
       operand.RawTokens.push_back(extToken);
       ++cursor;
@@ -125,7 +131,8 @@ static Operand ParseOperand(const uint8_t *data,
   }
 
   const uint32_t indexDim = DECODE_D3D10_SB_OPERAND_INDEX_DIMENSION(token0);
-  for (uint32_t dim = 0; dim < indexDim && dim < 3 && cursor < instructionEnd; ++dim) {
+  for (uint32_t dim = 0; dim < indexDim && dim < 3 && cursor < instructionEnd;
+       ++dim) {
     const auto indexRep = static_cast<D3D10_SB_OPERAND_INDEX_REPRESENTATION>(
         DECODE_D3D10_SB_OPERAND_INDEX_REPRESENTATION(
             static_cast<D3D10_SB_OPERAND_INDEX_DIMENSION>(dim), token0));
@@ -138,7 +145,8 @@ static Operand ParseOperand(const uint8_t *data,
       continue;
     }
 
-    if (indexRep == D3D10_SB_OPERAND_INDEX_IMMEDIATE64 && (cursor + 1) < instructionEnd) {
+    if (indexRep == D3D10_SB_OPERAND_INDEX_IMMEDIATE64 &&
+        (cursor + 1) < instructionEnd) {
       const uint32_t lo = ReadDword(data, cursor * 4);
       const uint32_t hi = ReadDword(data, (cursor + 1) * 4);
       operand.Indices.push_back(lo);
@@ -152,7 +160,8 @@ static Operand ParseOperand(const uint8_t *data,
     if (indexRep == D3D10_SB_OPERAND_INDEX_RELATIVE ||
         indexRep == D3D10_SB_OPERAND_INDEX_IMMEDIATE32_PLUS_RELATIVE ||
         indexRep == D3D10_SB_OPERAND_INDEX_IMMEDIATE64_PLUS_RELATIVE) {
-      if (indexRep == D3D10_SB_OPERAND_INDEX_IMMEDIATE32_PLUS_RELATIVE && cursor < instructionEnd) {
+      if (indexRep == D3D10_SB_OPERAND_INDEX_IMMEDIATE32_PLUS_RELATIVE &&
+          cursor < instructionEnd) {
         const uint32_t imm = ReadDword(data, cursor * 4);
         operand.Indices.push_back(imm);
         operand.RawTokens.push_back(imm);
@@ -216,7 +225,8 @@ static uint32_t CountExtendedOpcodeTokens(const uint8_t *data,
   return count;
 }
 
-static void UpdateDeclarationOverlay(Program &program, const Instruction &instruction) {
+static void UpdateDeclarationOverlay(Program &program,
+                                     const Instruction &instruction) {
   const auto opcode = static_cast<OpcodeType>(instruction.Opcode);
 
   if (opcode == D3D10_SB_OPCODE_DCL_TEMPS && !instruction.Operands.empty()) {
@@ -238,7 +248,8 @@ static void UpdateDeclarationOverlay(Program &program, const Instruction &instru
     program.Resources.push_back(decl);
   }
 
-  if (opcode == D3D10_SB_OPCODE_DCL_CONSTANT_BUFFER && !instruction.Operands.empty()) {
+  if (opcode == D3D10_SB_OPCODE_DCL_CONSTANT_BUFFER &&
+      !instruction.Operands.empty()) {
     CBufferDecl decl;
     const auto &op = instruction.Operands.front();
     if (!op.Indices.empty()) {
@@ -256,7 +267,8 @@ static void UpdateDeclarationOverlay(Program &program, const Instruction &instru
     program.Samplers.push_back(decl);
   }
 
-  if (opcode == D3D11_SB_OPCODE_DCL_THREAD_GROUP && instruction.Operands.size() >= 3) {
+  if (opcode == D3D11_SB_OPCODE_DCL_THREAD_GROUP &&
+      instruction.Operands.size() >= 3) {
     ThreadGroupDecl decl;
     if (!instruction.Operands[0].ImmediateValues.empty()) {
       decl.GroupSizeX = instruction.Operands[0].ImmediateValues[0];
@@ -277,7 +289,10 @@ static void UpdateDeclarationOverlay(Program &program, const Instruction &instru
 
 } // namespace
 
-std::pair<const uint8_t *, uint32_t> GetShaderBytecode(const Container &container) {
+static bool ParseProgram(const uint8_t *data, uint32_t size, Program &program);
+
+static std::pair<const uint8_t *, uint32_t>
+GetShaderBytecode(const Container &container) {
   const DxbcChunk *chunk = container.GetShaderChunk();
   if (chunk == nullptr || chunk->Data.empty()) {
     return {nullptr, 0};
@@ -293,7 +308,7 @@ bool ParseShaderChunk(const Container &container, Program &program) {
   return ParseProgram(bytecode, byteCount, program);
 }
 
-bool ParseProgram(const uint8_t *data, uint32_t size, Program &program) {
+static bool ParseProgram(const uint8_t *data, uint32_t size, Program &program) {
   if (data == nullptr || size < 8) {
     return false;
   }
@@ -326,11 +341,13 @@ bool ParseProgram(const uint8_t *data, uint32_t size, Program &program) {
     instruction.LengthInDwords = length;
     instruction.SourceOffset = instructionStart;
     instruction.SourceLength = length;
-    instruction.Controls = ParseOpcodeControls(data, instructionStart, length, token0);
+    instruction.Controls =
+        ParseOpcodeControls(data, instructionStart, length, token0);
 
     instruction.RawTokens.reserve(length);
     for (uint32_t i = 0; i < length; ++i) {
-      instruction.RawTokens.push_back(ReadDword(data, (instructionStart + i) * 4));
+      instruction.RawTokens.push_back(
+          ReadDword(data, (instructionStart + i) * 4));
     }
 
     if (opcode == D3D10_SB_OPCODE_CUSTOMDATA) {
@@ -367,7 +384,8 @@ bool ParseProgram(const uint8_t *data, uint32_t size, Program &program) {
     const uint32_t instructionEnd = instructionStart + length;
     while (operandCursor < instructionEnd) {
       const uint32_t before = operandCursor;
-      Operand operand = ParseOperand(data, totalDwords, instructionEnd, operandCursor);
+      Operand operand =
+          ParseOperand(data, totalDwords, instructionEnd, operandCursor);
       if (operand.SourceLength == 0 || operandCursor <= before) {
         break;
       }

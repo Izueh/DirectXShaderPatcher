@@ -1,7 +1,5 @@
 #include "TestSupport.h"
-#include "dxp/sm5/Container.h"
 #include "dxp/sm5/Patch.h"
-#include "dxp/sm5/Parse.h"
 #include "dxp/sm5/RecipeParse.h"
 
 #include <iostream>
@@ -19,15 +17,11 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  dxp::sm5::Container inputContainer;
-  if (!dxp::sm5::ParseDxbcContainer(inputBytes, inputContainer)) {
-    std::cerr << "Failed to parse input DXBC container.\n";
-    return 1;
-  }
-
-  dxp::sm5::Program inputProgram;
-  if (!dxp::sm5::ParseShaderChunk(inputContainer, inputProgram)) {
-    std::cerr << "Failed to parse input SM5 program.\n";
+  dxp::sm5::ProgramInspection inputProgram;
+  std::string inspectError;
+  if (!dxp::sm5::InspectProgram(inputBytes, inputProgram, &inspectError)) {
+    std::cerr << "Failed to inspect input SM5 program: " << inspectError
+              << "\n";
     return 1;
   }
 
@@ -49,22 +43,19 @@ steps:
     return 1;
   }
 
-  const auto patchResult = dxp::sm5::PatchContainerInMemory(inputBytes, parseResult.Recipe);
+  const auto patchResult =
+      dxp::sm5::PatchContainer(inputBytes, parseResult.Recipe);
   if (!patchResult.Success) {
     std::cerr << "Failed to patch SM5 shader with reserved temp recipe: "
               << patchResult.Error << "\n";
     return 1;
   }
 
-  dxp::sm5::Container patchedContainer;
-  if (!dxp::sm5::ParseDxbcContainer(patchResult.OutputBytes, patchedContainer)) {
-    std::cerr << "Failed to parse patched DXBC container.\n";
-    return 1;
-  }
-
-  dxp::sm5::Program patchedProgram;
-  if (!dxp::sm5::ParseShaderChunk(patchedContainer, patchedProgram)) {
-    std::cerr << "Failed to parse patched SM5 program.\n";
+  dxp::sm5::ProgramInspection patchedProgram;
+  if (!dxp::sm5::InspectProgram(patchResult.OutputBytes, patchedProgram,
+                                &inspectError)) {
+    std::cerr << "Failed to inspect patched SM5 program: " << inspectError
+              << "\n";
     return 1;
   }
 

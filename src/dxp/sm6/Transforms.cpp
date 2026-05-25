@@ -36,12 +36,15 @@
 
 using llvm::Module;
 
-// NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace)
 namespace {
 
 static void TraceMessage(bool traceEnabled, const char *message) {
   if (traceEnabled)
     std::cerr << "[trace] " << message << "\n";
+}
+
+static bool IsMutatingRewriteMode(DxilRewriteMode mode) {
+  return mode != DxilRewriteMode::None;
 }
 
 static llvm::Type *GetDxilScalarType(llvm::LLVMContext &context,
@@ -353,7 +356,6 @@ TryResolveResourceFromHandle(llvm::Value *value, hlsl::DxilModule &dxilModule,
   return resource != nullptr;
 }
 
-// NOLINTNEXTLINE(misc-no-recursion)
 static bool MatchDxilOperandPattern(
     llvm::Value *value, const DxilOperandPattern &pattern,
     std::unordered_map<std::string, llvm::Value *> &captures,
@@ -514,10 +516,10 @@ static bool IsPrunableDxilInstruction(const llvm::Instruction &instruction) {
   return !instruction.mayHaveSideEffects();
 }
 
-static void CollectPrunableOperands( // NOLINT(misc-no-recursion)
-    llvm::Instruction *instruction,
-    std::unordered_set<llvm::Instruction *> &visited,
-    std::vector<llvm::WeakTrackingVH> &postOrder) {
+static void
+CollectPrunableOperands(llvm::Instruction *instruction,
+                        std::unordered_set<llvm::Instruction *> &visited,
+                        std::vector<llvm::WeakTrackingVH> &postOrder) {
   if (instruction == nullptr || !visited.insert(instruction).second)
     return;
 
@@ -616,7 +618,6 @@ AppendUniqueInstruction(std::vector<llvm::Instruction *> &instructions,
   if (instruction == nullptr)
     return;
 
-  // NOLINTNEXTLINE(llvm-use-ranges)
   if (std::find(instructions.begin(), instructions.end(), instruction) ==
       instructions.end()) {
     instructions.push_back(instruction);
@@ -867,8 +868,6 @@ static bool BuildDeclarativeSequenceRewriteResult(
         if (arg == nullptr)
           return false;
 
-        // ResolveEmitOperandValue returns a mutable Value* used in mutable LLVM
-        // APIs. NOLINTNEXTLINE(misc-const-correctness)
         llvm::Value *argValue = ResolveEmitOperandValue(
             emitOperands[emitOperandIndex++], arg->getType(), builder, module,
             dxilModule, match, &temporaryValues);
@@ -1058,6 +1057,11 @@ static bool BuildDeclarativeRewriteResult(const DxilRewriteRule &rule,
   result = DxilRewriteResult{};
   result.success = true;
 
+  if (!rule.emittedCall.enabled && rule.replacementCaptureName.empty()) {
+    result.handledReplacement = true;
+    return true;
+  }
+
   if (rule.emittedCall.enabled) {
     if (replacementTarget == nullptr)
       return false;
@@ -1099,7 +1103,7 @@ static bool BuildDeclarativeRewriteResult(const DxilRewriteRule &rule,
       if (arg == nullptr)
         return false;
       llvm::Type *argType = arg->getType();
-      llvm::Value *argValue = nullptr; // NOLINT(misc-const-correctness)
+      llvm::Value *argValue = nullptr;
       switch (operand.kind) {
       case DxilRewriteEmitOperandKind::Capture:
         argValue = match.GetCapture(operand.captureName);
@@ -1242,7 +1246,6 @@ static bool SupportsTextureSampleInjection(const TextureResourceDesc &desc) {
 }
 
 } // namespace
-// NOLINTEND(llvm-prefer-static-over-anonymous-namespace)
 
 bool FindDxilCallMatch(llvm::Function &function, const DxilCallPattern &pattern,
                        DxilMatchResult &result, hlsl::DxilModule *dxilModule) {
@@ -1325,7 +1328,8 @@ bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
                                    llvm::Module &module,
                                    hlsl::DxilModule &dxilModule,
                                    const std::vector<DxilRewriteRule> &rules,
-                                   unsigned *appliedRuleCount) {
+                                   unsigned *appliedRuleCount,
+                                   unsigned *mutatedRuleCount) {
   struct ReplacementWork {
     const DxilRewriteRule *rule = nullptr;
     llvm::WeakTrackingVH replacementTarget;
@@ -1337,15 +1341,16 @@ bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
     llvm::WeakTrackingVH rangeStart;
     llvm::WeakTrackingVH rangeEnd;
     llvm::BasicBlock *scratchBlock = nullptr;
+    bool mutating = false;
   };
 
   unsigned appliedCount = 0;
+  unsigned mutationCount = 0;
   std::vector<llvm::Instruction *> allPruneCandidates;
   std::vector<ReplacementWork> replacements;
 
-  // Phase 1: collect matches for all rules from the original IR before any
-  // declarative replacement mutates the function.
   for (const DxilRewriteRule &rule : rules) {
+    const bool ruleMutating = IsMutatingRewriteMode(rule.mode);
     std::vector<DxilMatchResult> matches;
     CollectDxilCallMatches(function, rule.pattern, matches, &dxilModule);
 
@@ -1366,6 +1371,15 @@ bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
         continue;
       if (rule.predicate && !rule.predicate(effectiveMatch))
         continue;
+
+      if (!ruleMutating) {
+        ReplacementWork work;
+        work.rule = &rule;
+        work.mode = rule.mode;
+        work.mutating = false;
+        replacements.push_back(std::move(work));
+        continue;
+      }
 
       llvm::Instruction *replaceInstruction =
           ResolveMatchInstruction(effectiveMatch, rule.replaceCaptureName);
@@ -1395,9 +1409,6 @@ bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
                                                  ? replaceInstruction
                                                  : effectiveMatch.rootCall;
 
-      // Build replacements in a scratch basic block to avoid mutating
-      // the real IR during collection. Keep the block detached so later rule
-      // matching still sees the original function snapshot.
       llvm::BasicBlock *scratchBlock =
           llvm::BasicBlock::Create(function.getContext(), "scratch");
       llvm::IRBuilder<> builder(scratchBlock);
@@ -1419,6 +1430,7 @@ bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
       work.replacementTarget = replacementTarget;
       work.anchorInstruction = anchorInstruction;
       work.mode = rule.mode;
+      work.mutating = ruleMutating;
       work.handledReplacement = rewriteResult.handledReplacement;
       work.replacementValue = rewriteResult.replacementValue;
       work.rangeStart = rangeStartInstruction;
@@ -1430,9 +1442,12 @@ bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
     }
   }
 
-  // Phase 2: materialize all collected replacements into the function, then
-  // redirect uses and collect prune candidates.
   for (const ReplacementWork &work : replacements) {
+    if (!work.mutating) {
+      ++appliedCount;
+      continue;
+    }
+
     llvm::Instruction *anchorInstruction =
         llvm::dyn_cast_or_null<llvm::Instruction>(
             static_cast<llvm::Value *>(work.anchorInstruction));
@@ -1457,8 +1472,9 @@ bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
     llvm::Instruction *replacementTarget =
         llvm::dyn_cast_or_null<llvm::Instruction>(
             static_cast<llvm::Value *>(work.replacementTarget));
-    if (work.mode == DxilRewriteMode::Replace ||
-        work.mode == DxilRewriteMode::ReplaceRange) {
+
+    if (work.mutating && (work.mode == DxilRewriteMode::Replace ||
+                          work.mode == DxilRewriteMode::ReplaceRange)) {
       if (replacementTarget == nullptr)
         continue;
       if (!work.handledReplacement && work.replacementValue != nullptr)
@@ -1466,7 +1482,7 @@ bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
       AppendUniqueInstruction(allPruneCandidates, replacementTarget);
     }
 
-    if (work.mode == DxilRewriteMode::ReplaceRange) {
+    if (work.mutating && work.mode == DxilRewriteMode::ReplaceRange) {
       llvm::Instruction *rangeStart = llvm::dyn_cast_or_null<llvm::Instruction>(
           static_cast<llvm::Value *>(work.rangeStart));
       llvm::Instruction *rangeEnd = llvm::dyn_cast_or_null<llvm::Instruction>(
@@ -1485,7 +1501,7 @@ bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
         AppendUniqueInstruction(allPruneCandidates, instruction);
     }
 
-    if (work.rule->pruneDeadInstructions) {
+    if (work.mutating && work.rule->pruneDeadInstructions) {
       for (const llvm::WeakTrackingVH &rootHandle : work.pruneRoots) {
         llvm::Instruction *root = llvm::dyn_cast_or_null<llvm::Instruction>(
             static_cast<llvm::Value *>(rootHandle));
@@ -1494,15 +1510,13 @@ bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
     }
 
     ++appliedCount;
+    if (work.mutating)
+      ++mutationCount;
   }
 
   if (!allPruneCandidates.empty())
     PruneCandidateInstructions(allPruneCandidates);
 
-  // Refresh OP cache once after all pruning completes.
-  // Pruning may have deleted DXIL op function call instructions,
-  // leaving stale pointers in the cache that cause crashes during
-  // module destruction.
   {
     hlsl::OP *op = dxilModule.GetOP();
     if (op)
@@ -1511,6 +1525,8 @@ bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
 
   if (appliedRuleCount != nullptr)
     *appliedRuleCount = appliedCount;
+  if (mutatedRuleCount != nullptr)
+    *mutatedRuleCount = mutationCount;
 
   return true;
 }
@@ -1518,10 +1534,13 @@ bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
 bool ApplyDxilRewriteRules(llvm::Function &function, llvm::Module &module,
                            hlsl::DxilModule &dxilModule,
                            const std::vector<DxilRewriteRule> &rules,
-                           unsigned *appliedRuleCount) {
+                           unsigned *appliedRuleCount,
+                           unsigned *mutatedRuleCount) {
   unsigned appliedCount = 0;
+  unsigned mutationCount = 0;
 
   for (const DxilRewriteRule &rule : rules) {
+    const bool ruleMutating = IsMutatingRewriteMode(rule.mode);
     while (true) {
       std::vector<DxilMatchResult> matches;
       CollectDxilCallMatches(function, rule.pattern, matches, &dxilModule);
@@ -1545,6 +1564,12 @@ bool ApplyDxilRewriteRules(llvm::Function &function, llvm::Module &module,
 
         if (rule.predicate && !rule.predicate(effectiveMatch))
           continue;
+
+        if (!ruleMutating) {
+          ++appliedCount;
+          appliedRule = true;
+          break;
+        }
 
         llvm::Instruction *replaceInstruction =
             ResolveMatchInstruction(effectiveMatch, rule.replaceCaptureName);
@@ -1599,8 +1624,8 @@ bool ApplyDxilRewriteRules(llvm::Function &function, llvm::Module &module,
         std::vector<llvm::Instruction *> pruneCandidates =
             std::move(rewriteResult.pruneRoots);
 
-        if (rule.mode == DxilRewriteMode::Replace ||
-            rule.mode == DxilRewriteMode::ReplaceRange) {
+        if (ruleMutating && (rule.mode == DxilRewriteMode::Replace ||
+                             rule.mode == DxilRewriteMode::ReplaceRange)) {
           if (replacementTarget == nullptr)
             return false;
 
@@ -1614,7 +1639,7 @@ bool ApplyDxilRewriteRules(llvm::Function &function, llvm::Module &module,
           AppendUniqueInstruction(pruneCandidates, replacementTarget);
         }
 
-        if (rule.mode == DxilRewriteMode::ReplaceRange) {
+        if (ruleMutating && rule.mode == DxilRewriteMode::ReplaceRange) {
           llvm::Instruction *rangeStart =
               rangeStartInstruction != nullptr
                   ? rangeStartInstruction
@@ -1631,10 +1656,12 @@ bool ApplyDxilRewriteRules(llvm::Function &function, llvm::Module &module,
             AppendUniqueInstruction(pruneCandidates, instruction);
         }
 
-        if (rule.pruneDeadInstructions)
+        if (ruleMutating && rule.pruneDeadInstructions)
           PruneCandidateInstructions(pruneCandidates);
 
         ++appliedCount;
+        if (ruleMutating)
+          ++mutationCount;
         appliedRule = true;
         break;
       }
@@ -1646,6 +1673,8 @@ bool ApplyDxilRewriteRules(llvm::Function &function, llvm::Module &module,
 
   if (appliedRuleCount != nullptr)
     *appliedRuleCount = appliedCount;
+  if (mutatedRuleCount != nullptr)
+    *mutatedRuleCount = mutationCount;
 
   return true;
 }
@@ -1653,11 +1682,14 @@ bool ApplyDxilRewriteRules(llvm::Function &function, llvm::Module &module,
 bool ApplyDxilRewriteRulesOnce(llvm::Function &function, llvm::Module &module,
                                hlsl::DxilModule &dxilModule,
                                const std::vector<DxilRewriteRule> &rules,
-                               bool useLastMatch, unsigned *appliedRuleCount) {
+                               bool useLastMatch, unsigned *appliedRuleCount,
+                               unsigned *mutatedRuleCount) {
   unsigned appliedCount = 0;
+  unsigned mutationCount = 0;
 
   auto applyMatch = [&](const DxilRewriteRule &rule,
                         const DxilMatchResult &match) -> bool {
+    const bool ruleMutating = IsMutatingRewriteMode(rule.mode);
     DxilMatchResult effectiveMatch = match;
     for (const DxilCallPattern &bindingPattern : rule.bindingPatterns) {
       DxilMatchResult bindingMatch;
@@ -1671,6 +1703,11 @@ bool ApplyDxilRewriteRulesOnce(llvm::Function &function, llvm::Module &module,
 
     if (rule.predicate && !rule.predicate(effectiveMatch))
       return true;
+
+    if (!ruleMutating) {
+      ++appliedCount;
+      return true;
+    }
 
     llvm::Instruction *replaceInstruction =
         ResolveMatchInstruction(effectiveMatch, rule.replaceCaptureName);
@@ -1725,8 +1762,8 @@ bool ApplyDxilRewriteRulesOnce(llvm::Function &function, llvm::Module &module,
     std::vector<llvm::Instruction *> pruneCandidates =
         std::move(rewriteResult.pruneRoots);
 
-    if (rule.mode == DxilRewriteMode::Replace ||
-        rule.mode == DxilRewriteMode::ReplaceRange) {
+    if (ruleMutating && (rule.mode == DxilRewriteMode::Replace ||
+                         rule.mode == DxilRewriteMode::ReplaceRange)) {
       if (replacementTarget == nullptr)
         return false;
 
@@ -1739,7 +1776,7 @@ bool ApplyDxilRewriteRulesOnce(llvm::Function &function, llvm::Module &module,
       AppendUniqueInstruction(pruneCandidates, replacementTarget);
     }
 
-    if (rule.mode == DxilRewriteMode::ReplaceRange) {
+    if (ruleMutating && rule.mode == DxilRewriteMode::ReplaceRange) {
       llvm::Instruction *rangeStart =
           rangeStartInstruction != nullptr
               ? rangeStartInstruction
@@ -1756,10 +1793,12 @@ bool ApplyDxilRewriteRulesOnce(llvm::Function &function, llvm::Module &module,
         AppendUniqueInstruction(pruneCandidates, instruction);
     }
 
-    if (rule.pruneDeadInstructions)
+    if (ruleMutating && rule.pruneDeadInstructions)
       PruneCandidateInstructions(pruneCandidates);
 
     ++appliedCount;
+    if (ruleMutating)
+      ++mutationCount;
     return true;
   };
 
@@ -1767,37 +1806,28 @@ bool ApplyDxilRewriteRulesOnce(llvm::Function &function, llvm::Module &module,
     for (const DxilRewriteRule &rule : rules) {
       std::vector<DxilMatchResult> matches;
       CollectDxilCallMatches(function, rule.pattern, matches, &dxilModule);
-      for (const DxilMatchResult &match : matches) {
-        const unsigned beforeApplyCount = appliedCount;
-        if (!applyMatch(rule, match))
-          return false;
-        if (appliedCount != beforeApplyCount) {
-          if (appliedRuleCount != nullptr)
-            *appliedRuleCount = appliedCount;
-          return true;
-        }
-      }
+      if (matches.empty())
+        continue;
+
+      if (!applyMatch(rule, matches.front()))
+        return false;
     }
   } else {
-    for (auto ruleIt = rules.rbegin(); ruleIt != rules.rend(); ++ruleIt) {
+    for (const DxilRewriteRule &rule : rules) {
       std::vector<DxilMatchResult> matches;
-      CollectDxilCallMatches(function, ruleIt->pattern, matches, &dxilModule);
-      for (auto matchIt = matches.rbegin(); matchIt != matches.rend();
-           ++matchIt) {
-        const unsigned beforeApplyCount = appliedCount;
-        if (!applyMatch(*ruleIt, *matchIt))
-          return false;
-        if (appliedCount != beforeApplyCount) {
-          if (appliedRuleCount != nullptr)
-            *appliedRuleCount = appliedCount;
-          return true;
-        }
-      }
+      CollectDxilCallMatches(function, rule.pattern, matches, &dxilModule);
+      if (matches.empty())
+        continue;
+
+      if (!applyMatch(rule, matches.back()))
+        return false;
     }
   }
 
   if (appliedRuleCount != nullptr)
     *appliedRuleCount = appliedCount;
+  if (mutatedRuleCount != nullptr)
+    *mutatedRuleCount = mutationCount;
 
   return true;
 }
@@ -1948,8 +1978,7 @@ bool InjectTextureSampleIntoEntryPoint(Module &module,
       llvm::ConstantFP::get(llvm::Type::getFloatTy(module.getContext()), 0.25f);
   llvm::Value *const sampleContributions[] = {newSampleRed, newSampleGreen,
                                               newSampleBlue};
-  // storeBuilder and later operand rewrites require mutable call instructions.
-  // NOLINTNEXTLINE(misc-const-correctness)
+
   llvm::CallInst *stores[] = {redStore, greenStore, blueStore};
   for (unsigned channelIndex = 0; channelIndex < 3; ++channelIndex) {
     llvm::IRBuilder<> storeBuilder(stores[channelIndex]);

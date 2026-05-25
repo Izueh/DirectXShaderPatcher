@@ -1,22 +1,29 @@
 ﻿version: 1
 prefilters: []
-cbuffer_decls:
-  - handle: frame_constants
+steps:
+  - kind: add_cbuffer
+    name: add_frame_constants
+    handle: frame_constants
     auto_bind: true
     elements: 1
     access_pattern: immediateIndexed
-texture_decls:
-  - handle: ign_blue_noise
+
+  - kind: add_texture
+    name: add_ign_blue_noise
+    handle: ign_blue_noise
     auto_bind: true
     dimension: Texture2DArray
-sampler_decls:
-  - handle: ign_sampler
+
+  - kind: add_sampler
+    name: add_ign_sampler
+    handle: ign_sampler
     auto_bind: true
-    mode: default
-steps:
+    sampler_mode: default
+
   - name: objective
     rules:
       - match:
+          rewrite_mode: ReplaceRange
           sequence:
             - opcode: dp2
               capture: ign_dp2

@@ -10,7 +10,7 @@ int main(int argc, char **argv) {
 
   ScopedCoInitialize coinit;
   LoadedDxilShader shader;
-  if (!LoadShaderForMutation(argv[1], shader, false))
+  if (!LoadShaderFromPath(argv[1], shader, false))
     return 1;
 
   const size_t initialSrvCount = shader.dxilModule->GetSRVs().size();
@@ -19,7 +19,8 @@ int main(int argc, char **argv) {
       TextureResourceBuilder(MakeUniqueGlobalName(*shader.module, "MyTexArray"))
           .Texture2DArray()
           .Float4()
-          .Register(FindNextAvailableBinding(shader.dxilModule->GetSRVs(), 0, 0), 0)
+          .Register(
+              FindNextAvailableBinding(shader.dxilModule->GetSRVs(), 0, 0), 0)
           .Build();
 
   if (!AddTextureSRV(*shader.module, *shader.dxilModule, textureDesc)) {
@@ -49,7 +50,8 @@ int main(int argc, char **argv) {
   if (addedSrvElementType == nullptr || !addedSrvElementType->isStructTy() ||
       addedSrvElementType->getStructName() !=
           "class.Texture2DArray<vector<float, 4> >") {
-    std::cerr << "Added SRV did not use the canonical Texture2DArray<float4> type.\n";
+    std::cerr
+        << "Added SRV did not use the canonical Texture2DArray<float4> type.\n";
     return 1;
   }
 
@@ -57,18 +59,18 @@ int main(int argc, char **argv) {
       addedSrv.GetLowerBound() != textureDesc.binding.GetBindPoint()) {
     std::cerr << "Added SRV binding did not match requested t"
               << textureDesc.binding.GetBindPoint() << ", space"
-              << textureDesc.binding.GetSpace()
-              << ".\n";
+              << textureDesc.binding.GetSpace() << ".\n";
     return 1;
   }
 
   if (addedSrv.GetKind() != hlsl::DXIL::ResourceKind::Texture2DArray ||
       addedSrv.IsRW()) {
-    std::cerr << "Added SRV did not retain expected Texture2DArray SRV shape.\n";
+    std::cerr
+        << "Added SRV did not retain expected Texture2DArray SRV shape.\n";
     return 1;
   }
 
-  RefreshDxilAfterResourceMutation(*shader.dxilModule);
+  RefreshDxilModule(*shader.dxilModule);
   if (!VerifyModuleOrReport(*shader.module))
     return 1;
 
@@ -83,9 +85,7 @@ int main(int argc, char **argv) {
   llvm::LLVMContext patchedContext;
   std::unique_ptr<llvm::Module> patchedModule;
   hlsl::DxilModule *patchedDxilModule = nullptr;
-  if (!ReloadPatchedContainer(outputContainer,
-                              patchedContext,
-                              patchedModule,
+  if (!ReloadPatchedContainer(outputContainer, patchedContext, patchedModule,
                               patchedDxilModule)) {
     return 1;
   }
@@ -105,11 +105,12 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-    if (reloadedSrv->GetLowerBound() != textureDesc.binding.GetBindPoint() ||
+  if (reloadedSrv->GetLowerBound() != textureDesc.binding.GetBindPoint() ||
       reloadedSrv->GetSpaceID() != textureDesc.binding.GetSpace() ||
       reloadedSrv->GetKind() != hlsl::DXIL::ResourceKind::Texture2DArray ||
       reloadedSrv->IsRW()) {
-    std::cerr << "Reloaded SRV metadata did not match the injected Texture2DArray SRV.\n";
+    std::cerr << "Reloaded SRV metadata did not match the injected "
+                 "Texture2DArray SRV.\n";
     return 1;
   }
 
@@ -122,7 +123,8 @@ int main(int argc, char **argv) {
       !reloadedSrvElementType->isStructTy() ||
       reloadedSrvElementType->getStructName() !=
           "class.Texture2DArray<vector<float, 4> >") {
-    std::cerr << "Reloaded SRV did not preserve the canonical Texture2DArray<float4> type.\n";
+    std::cerr << "Reloaded SRV did not preserve the canonical "
+                 "Texture2DArray<float4> type.\n";
     return 1;
   }
 
@@ -134,10 +136,10 @@ int main(int argc, char **argv) {
   patchedModule.reset();
   shader.module.reset();
 
-  std::cout << "Added SRV '" << addedSrvName << "' at t"
-            << addedSrvBindPoint << ", space" << addedSrvSpace
+  std::cout << "Added SRV '" << addedSrvName << "' at t" << addedSrvBindPoint
+            << ", space" << addedSrvSpace
             << " and reloaded it successfully from the patched container"
-            << " (initial SRVs=" << initialSrvCount << ", final SRVs="
-            << finalSrvCount << ")\n";
+            << " (initial SRVs=" << initialSrvCount
+            << ", final SRVs=" << finalSrvCount << ")\n";
   return 0;
 }

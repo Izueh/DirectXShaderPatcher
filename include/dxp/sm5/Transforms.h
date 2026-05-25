@@ -1,0 +1,153 @@
+#pragma once
+
+#include "Model.h"
+
+#include <cstdint>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+namespace dxp::sm5 {
+
+/// @brief Describes how a declarative rule matches one operand.
+struct OperandMatch {
+  OperandType MatchType;
+  bool HasTypeMatch;
+
+  std::vector<int32_t> MatchIndices;
+  bool HasIndexMatch;
+
+  uint32_t MatchComponentMode;
+  bool HasComponentMatch;
+
+  uint32_t MatchNumComponents;
+  bool HasNumComponentsMatch;
+
+  OperandModifier MatchModifier;
+  bool HasModifierMatch;
+
+  std::vector<uint32_t> MatchImmediates;
+  bool HasImmediateMatch;
+
+  bool MatchRelativeAddressing;
+  bool HasRelativeMatch;
+
+  /// @brief Capture name assigned when this operand matches.
+  std::string CaptureName;
+
+  /// @brief Name of a previously captured operand to compare against.
+  std::string MatchAgainstCapture;
+
+  OperandMatch();
+};
+
+/// @brief Describes how a declarative rule matches one instruction.
+struct InstructionMatch {
+  dxp::sm5::Opcode Opcode;
+  bool HasOpcode;
+
+  bool MatchSaturate;
+  bool HasSaturateMatch;
+  bool SaturateValue;
+
+  uint32_t MatchTestBoolean;
+  bool HasTestBooleanMatch;
+
+  uint32_t MatchInputInterpolationMode;
+  bool HasInputInterpolationModeMatch;
+
+  /// @brief Operand patterns that must match the instruction operands.
+  std::vector<OperandMatch> OperandPatterns;
+
+  /// @brief Capture name assigned when this instruction matches.
+  std::string CaptureName;
+
+  /// @brief Name of a previously captured instruction to compare against.
+  std::string MatchAgainstCapture;
+
+  InstructionMatch();
+};
+
+/// @brief Stores one successful pattern match and its captures.
+struct MatchResult {
+  uint32_t InstructionIndex;
+  const dxp::sm5::Instruction *Instruction;
+  uint32_t RangeStartIndex;
+  uint32_t RangeEndIndex;
+  std::unordered_map<std::string, const dxp::sm5::Operand *> CapturedOperands;
+  std::unordered_map<std::string, const dxp::sm5::Instruction *>
+      CapturedInstructions;
+  std::unordered_map<std::string, uint32_t> CapturedInstructionIndices;
+
+  /// @brief Looks up a captured operand by name.
+  /// @param name Capture name to resolve.
+  /// @return The captured operand, or `nullptr` when absent.
+  const dxp::sm5::Operand *GetCapturedOperand(const std::string &name) const;
+
+  /// @brief Looks up a captured instruction by name.
+  /// @param name Capture name to resolve.
+  /// @return The captured instruction, or `nullptr` when absent.
+  const dxp::sm5::Instruction *
+  GetCapturedInstruction(const std::string &name) const;
+
+  /// @brief Looks up a captured instruction index by name.
+  /// @param name Capture name to resolve.
+  /// @return Pointer to the captured index, or `nullptr` when absent.
+  const uint32_t *GetCapturedInstructionIndex(const std::string &name) const;
+};
+
+/// @brief Collects all instructions that match a pattern.
+/// @param program Program to scan.
+/// @param pattern Pattern to match.
+/// @return All match results, including captures.
+std::vector<MatchResult> CollectMatches(const Program &program,
+                                        const InstructionMatch &pattern);
+
+/// @brief Collects contiguous instruction ranges matching a sequence.
+/// @param program Program to scan.
+/// @param patterns Sequence of patterns to match.
+/// @return All sequence matches, including captures.
+std::vector<MatchResult>
+CollectSequenceMatches(const Program &program,
+                       const std::vector<InstructionMatch> &patterns);
+
+/// @brief Enumerates rewrite operations for instruction stream mutation.
+enum class RewriteActionType {
+  ReplaceOne,
+  ReplaceRange,
+  InsertBefore,
+  InsertAfter,
+  RemoveRange,
+};
+
+/// @brief Describes one rewrite operation to apply to a program.
+struct RewriteAction {
+  RewriteActionType Type;
+
+  uint32_t ReplaceIndex;
+
+  uint32_t RangeStart;
+  uint32_t RangeEnd;
+
+  uint32_t InsertPosition;
+
+  uint32_t RemoveStart;
+  uint32_t RemoveEnd;
+
+  std::vector<Instruction> NewInstructions;
+
+  RewriteAction();
+};
+
+/// @brief Applies rewrite actions to a decoded program.
+/// @param program Program to mutate.
+/// @param actions Actions to apply in order.
+/// @return `true` on success, or `false` when the action set is invalid.
+bool ApplyRewriteActions(Program &program,
+                         const std::vector<RewriteAction> &actions);
+
+/// @brief Rebuilds derived declaration metadata from the instruction stream.
+/// @param program Program whose metadata should be refreshed.
+void RebuildProgramMetadata(Program &program);
+
+} // namespace dxp::sm5

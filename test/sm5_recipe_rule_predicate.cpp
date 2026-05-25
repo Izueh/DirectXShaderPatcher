@@ -1,7 +1,5 @@
 #include "TestSupport.h"
-#include "dxp/sm5/Container.h"
 #include "dxp/sm5/Patch.h"
-#include "dxp/sm5/Parse.h"
 #include "dxp/sm5/Recipe.h"
 
 #include <iostream>
@@ -11,11 +9,10 @@
 
 namespace {
 
-static int FindTargetInstruction(const dxp::sm5::Program &program) {
+static int FindTargetInstruction(const dxp::sm5::ProgramInspection &program) {
   for (size_t index = 0; index < program.Instructions.size(); ++index) {
     const auto &instruction = program.Instructions[index];
-    if (static_cast<dxp::sm5::OpcodeType>(instruction.Opcode) ==
-            D3D10_SB_OPCODE_MUL &&
+    if (instruction.Opcode == D3D10_SB_OPCODE_MUL &&
         instruction.Operands.size() >= 2) {
       return static_cast<int>(index);
     }
@@ -49,11 +46,11 @@ static dxp::sm5::RecipeRule MakeMovFromMulRule() {
   emitMov.Opcode = "mov";
 
   dxp::sm5::RecipeOperandPattern emitDst;
-  emitDst.FromCapture = "dst";
+  emitDst.Capture = "dst";
   emitMov.Operands.push_back(emitDst);
 
   dxp::sm5::RecipeOperandPattern emitSrc;
-  emitSrc.FromCapture = "src";
+  emitSrc.Capture = "src";
   emitMov.Operands.push_back(emitSrc);
 
   rule.Emit.push_back(emitMov);
@@ -74,15 +71,11 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  dxp::sm5::Container inputContainer;
-  if (!dxp::sm5::ParseDxbcContainer(inputBytes, inputContainer)) {
-    std::cerr << "Failed to parse input DXBC container.\n";
-    return 1;
-  }
-
-  dxp::sm5::Program inputProgram;
-  if (!dxp::sm5::ParseShaderChunk(inputContainer, inputProgram)) {
-    std::cerr << "Failed to parse input SM5 program.\n";
+  dxp::sm5::ProgramInspection inputProgram;
+  std::string inspectError;
+  if (!dxp::sm5::InspectProgram(inputBytes, inputProgram, &inspectError)) {
+    std::cerr << "Failed to inspect input SM5 program: " << inspectError
+              << "\n";
     return 1;
   }
 
@@ -94,45 +87,42 @@ int main(int argc, char **argv) {
 
   {
     dxp::sm5::RecipeRule skipRule = MakeMovFromMulRule();
-    skipRule.Predicate = [](dxp::sm5::RecipeContext &, const dxp::sm5::MatchResult &) {
-      return false;
-    };
+    skipRule.Predicate = [](dxp::sm5::RecipeContext &) { return false; };
 
     dxp::sm5::Recipe skipRecipe;
     skipRecipe.AddStep(dxp::sm5::MakeRewriteRulesStep(
         "skip_by_predicate", {skipRule},
         dxp::sm5::RecipeRuleApplicationMode::First, true));
 
-    const auto skipResult = dxp::sm5::PatchContainerInMemory(inputBytes, skipRecipe);
+    const auto skipResult = dxp::sm5::PatchContainer(inputBytes, skipRecipe);
     if (!skipResult.Success) {
-      std::cerr << "Expected predicate=false recipe to succeed, but patch failed: "
-                << skipResult.Error << "\n";
+      std::cerr
+          << "Expected predicate=false recipe to succeed, but patch failed: "
+          << skipResult.Error << "\n";
       return 1;
     }
 
-    dxp::sm5::Container patchedContainer;
-    if (!dxp::sm5::ParseDxbcContainer(skipResult.OutputBytes, patchedContainer)) {
-      std::cerr << "Failed to parse predicate-skip patched DXBC container.\n";
-      return 1;
-    }
-
-    dxp::sm5::Program patchedProgram;
-    if (!dxp::sm5::ParseShaderChunk(patchedContainer, patchedProgram)) {
-      std::cerr << "Failed to parse predicate-skip patched SM5 program.\n";
+    dxp::sm5::ProgramInspection patchedProgram;
+    if (!dxp::sm5::InspectProgram(skipResult.OutputBytes, patchedProgram,
+                                  &inspectError)) {
+      std::cerr << "Failed to inspect predicate-skip patched SM5 program: "
+                << inspectError << "\n";
       return 1;
     }
 
     const auto &instruction =
-        patchedProgram.Instructions[static_cast<size_t>(targetInstructionIndex)];
-    if (static_cast<dxp::sm5::OpcodeType>(instruction.Opcode) != D3D10_SB_OPCODE_MUL) {
-      std::cerr << "Expected predicate=false to skip rewrite and keep MUL opcode.\n";
+        patchedProgram
+            .Instructions[static_cast<size_t>(targetInstructionIndex)];
+    if (instruction.Opcode != D3D10_SB_OPCODE_MUL) {
+      std::cerr
+          << "Expected predicate=false to skip rewrite and keep MUL opcode.\n";
       return 1;
     }
   }
 
   {
     dxp::sm5::RecipeRule requiredErrorRule = MakeMovFromMulRule();
-    requiredErrorRule.Predicate = [](dxp::sm5::RecipeContext &, const dxp::sm5::MatchResult &) -> bool {
+    requiredErrorRule.Predicate = [](dxp::sm5::RecipeContext &) -> bool {
       throw std::runtime_error("predicate failed");
     };
 
@@ -142,17 +132,17 @@ int main(int argc, char **argv) {
         dxp::sm5::RecipeRuleApplicationMode::First, true));
 
     const auto requiredErrorResult =
-        dxp::sm5::PatchContainerInMemory(inputBytes, requiredErrorRecipe);
+        dxp::sm5::PatchContainer(inputBytes, requiredErrorRecipe);
     if (requiredErrorResult.Success) {
-      std::cerr << "Expected required-step predicate exception to fail patching.\n";
+      std::cerr
+          << "Expected required-step predicate exception to fail patching.\n";
       return 1;
     }
-
   }
 
   {
     dxp::sm5::RecipeRule optionalErrorRule = MakeMovFromMulRule();
-    optionalErrorRule.Predicate = [](dxp::sm5::RecipeContext &, const dxp::sm5::MatchResult &) -> bool {
+    optionalErrorRule.Predicate = [](dxp::sm5::RecipeContext &) -> bool {
       throw std::runtime_error("optional predicate failed");
     };
 
@@ -162,20 +152,23 @@ int main(int argc, char **argv) {
         dxp::sm5::RecipeRuleApplicationMode::First, false));
 
     const auto optionalErrorResult =
-        dxp::sm5::PatchContainerInMemory(inputBytes, optionalErrorRecipe);
+        dxp::sm5::PatchContainer(inputBytes, optionalErrorRecipe);
     if (!optionalErrorResult.Success) {
-      std::cerr << "Expected optional-step predicate exception to continue, but patch failed: "
+      std::cerr << "Expected optional-step predicate exception to continue, "
+                   "but patch failed: "
                 << optionalErrorResult.Error << "\n";
       return 1;
     }
 
     if (!HasDiagnosticContaining(optionalErrorResult.RecipeContext,
                                  "SM5 rule predicate threw exception")) {
-      std::cerr << "Expected optional-step predicate exception diagnostic to be recorded.\n";
+      std::cerr << "Expected optional-step predicate exception diagnostic to "
+                   "be recorded.\n";
       return 1;
     }
   }
 
-  std::cout << "SM5 rule predicates skip matches on false and fail only required steps on predicate exceptions.\n";
+  std::cout << "SM5 rule predicates skip matches on false and fail only "
+               "required steps on predicate exceptions.\n";
   return 0;
 }

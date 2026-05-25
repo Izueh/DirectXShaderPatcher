@@ -5,7 +5,8 @@
 
 int main(int argc, char **argv) {
   if (argc != 3) {
-    std::cerr << "Usage: declarative_ign_nested_recipe_0x56C468C3 <input.cso> <recipe.yml>\n";
+    std::cerr << "Usage: declarative_ign_nested_recipe_0x56C468C3 <input.cso> "
+                 "<recipe.yml>\n";
     return 1;
   }
 
@@ -18,7 +19,7 @@ int main(int argc, char **argv) {
   }
 
   LoadedDxilShader shader;
-  if (!LoadShaderForMutation(argv[1], shader, false))
+  if (!LoadShaderFromPath(argv[1], shader, false))
     return 1;
 
   llvm::Function *entryFunction = shader.dxilModule->GetEntryFunction();
@@ -41,12 +42,9 @@ int main(int argc, char **argv) {
 
   DxilRecipeContext recipeContext;
   std::vector<uint8_t> outputContainer;
-  if (!PatchDxilContainerInMemory(parseResult.recipe,
-                                  inputShader,
-                                  outputContainer,
-                                  parseResult.patchOptions,
-                                  &recipeContext)) {
-    std::cerr << "PatchDxilContainerInMemory failed.";
+  if (!PatchDxilContainer(parseResult.recipe, inputShader, outputContainer,
+                          parseResult.patchOptions, &recipeContext)) {
+    std::cerr << "PatchDxilContainer failed.";
     if (!recipeContext.lastError.empty())
       std::cerr << " " << recipeContext.lastError;
     std::cerr << "\n";
@@ -54,16 +52,15 @@ int main(int argc, char **argv) {
   }
 
   if (recipeContext.totalRuleMatches == 0) {
-    std::cerr << "Expected nested IGN declarative recipe to apply at least one rule.\n";
+    std::cerr << "Expected nested IGN declarative recipe to apply at least one "
+                 "rule.\n";
     return 1;
   }
 
   llvm::LLVMContext patchedContext;
   std::unique_ptr<llvm::Module> patchedModule;
   hlsl::DxilModule *patchedDxilModule = nullptr;
-  if (!ReloadPatchedContainer(outputContainer,
-                              patchedContext,
-                              patchedModule,
+  if (!ReloadPatchedContainer(outputContainer, patchedContext, patchedModule,
                               patchedDxilModule)) {
     return 1;
   }
@@ -76,7 +73,8 @@ int main(int argc, char **argv) {
 
   const unsigned finalIgnCount = CountIgnNoiseChains(*patchedEntryFunction);
   if (finalIgnCount >= initialIgnCount) {
-    std::cerr << "Expected nested IGN declarative rewrite to reduce IGN chain count from "
+    std::cerr << "Expected nested IGN declarative rewrite to reduce IGN chain "
+                 "count from "
               << initialIgnCount << ", but saw " << finalIgnCount << ".\n";
     return 1;
   }
@@ -85,5 +83,4 @@ int main(int argc, char **argv) {
             << initialIgnCount << " to " << finalIgnCount << ".\n";
   std::cout.flush();
   std::cerr.flush();
-  std::_Exit(0);
 }

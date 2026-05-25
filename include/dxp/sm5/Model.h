@@ -10,18 +10,25 @@
 namespace dxp {
 namespace sm5 {
 
+/// @brief Alias for the operand kind enum used by SM5 bytecode.
 using OperandType = D3D10_SB_OPERAND_TYPE;
+/// @brief Alias for the operand modifier enum used by SM5 bytecode.
 using OperandModifier = D3D10_SB_OPERAND_MODIFIER;
+/// @brief Alias for the opcode enum used by SM5 bytecode.
 using OpcodeType = D3D10_SB_OPCODE_TYPE;
+/// @brief Alias for the extended opcode enum used by SM5 bytecode.
 using ExtendedOpcodeType = D3D10_SB_EXTENDED_OPCODE_TYPE;
+/// @brief Alias for the shader program type enum used by SM5 bytecode.
 using ProgramType = D3D10_SB_TOKENIZED_PROGRAM_TYPE;
 
+/// @brief Wraps an SM5 opcode value with typed conversions.
 struct Opcode {
   OpcodeType Value = D3D10_SB_OPCODE_ADD;
 
   Opcode() = default;
   explicit Opcode(OpcodeType v) : Value(v) {}
-  explicit Opcode(uint32_t v) : Value(static_cast<OpcodeType>(v & D3D10_SB_OPCODE_TYPE_MASK)) {}
+  explicit Opcode(uint32_t v)
+      : Value(static_cast<OpcodeType>(v & D3D10_SB_OPCODE_TYPE_MASK)) {}
 
   explicit operator OpcodeType() const { return Value; }
   explicit operator uint32_t() const { return static_cast<uint32_t>(Value); }
@@ -33,21 +40,28 @@ struct Opcode {
   static Opcode CustomData() { return Opcode{D3D10_SB_OPCODE_CUSTOMDATA}; }
 };
 
+/// @brief Wraps an SM5 extended opcode value with typed conversions.
 struct ExtendedOpcode {
   ExtendedOpcodeType Value = D3D10_SB_EXTENDED_OPCODE_EMPTY;
 
   ExtendedOpcode() = default;
   explicit ExtendedOpcode(ExtendedOpcodeType v) : Value(v) {}
   explicit ExtendedOpcode(uint32_t v)
-      : Value(static_cast<ExtendedOpcodeType>(v & D3D10_SB_EXTENDED_OPCODE_TYPE_MASK)) {}
+      : Value(static_cast<ExtendedOpcodeType>(
+            v & D3D10_SB_EXTENDED_OPCODE_TYPE_MASK)) {}
 
   explicit operator ExtendedOpcodeType() const { return Value; }
   explicit operator uint32_t() const { return static_cast<uint32_t>(Value); }
 
-  bool operator==(const ExtendedOpcode &rhs) const { return Value == rhs.Value; }
-  bool operator!=(const ExtendedOpcode &rhs) const { return Value != rhs.Value; }
+  bool operator==(const ExtendedOpcode &rhs) const {
+    return Value == rhs.Value;
+  }
+  bool operator!=(const ExtendedOpcode &rhs) const {
+    return Value != rhs.Value;
+  }
 };
 
+/// @brief Stores optional opcode control bits decoded from an instruction.
 struct OpcodeControls {
   bool Saturate = false;
   bool HasTestBoolean = false;
@@ -60,6 +74,7 @@ struct OpcodeControls {
   std::vector<ExtendedOpcode> ExtendedOpCodes;
 };
 
+/// @brief Represents one decoded operand from the instruction stream.
 struct Operand {
   OperandType Type = D3D10_SB_OPERAND_TYPE_TEMP;
   uint32_t NumComponents = D3D10_SB_OPERAND_4_COMPONENT;
@@ -77,6 +92,7 @@ struct Operand {
   std::string ScratchName;
 };
 
+/// @brief Represents one decoded instruction from the instruction stream.
 struct Instruction {
   dxp::sm5::Opcode Opcode = dxp::sm5::Opcode::Unknown();
   OpcodeControls Controls;
@@ -89,6 +105,7 @@ struct Instruction {
   std::string Name;
 };
 
+/// @brief Describes a declared shader resource binding.
 struct ResourceDecl {
   uint32_t RegisterBindPoint = 0;
   uint32_t RegisterSpace = 0;
@@ -100,6 +117,7 @@ struct ResourceDecl {
   std::string CaptureName;
 };
 
+/// @brief Describes a declared sampler binding.
 struct SamplerDecl {
   uint32_t RegisterBindPoint = 0;
   uint32_t RegisterSpace = 0;
@@ -108,6 +126,7 @@ struct SamplerDecl {
   std::string CaptureName;
 };
 
+/// @brief Describes a declared constant buffer binding.
 struct CBufferDecl {
   uint32_t RegisterBindPoint = 0;
   uint32_t RegisterSpace = 0;
@@ -117,16 +136,19 @@ struct CBufferDecl {
   std::string CaptureName;
 };
 
+/// @brief Describes a compute shader thread-group declaration.
 struct ThreadGroupDecl {
   uint32_t GroupSizeX = 1;
   uint32_t GroupSizeY = 1;
   uint32_t GroupSizeZ = 1;
 };
 
+/// @brief Stores decoded global shader flags.
 struct GlobalFlags {
   uint32_t Flags = 0;
 };
 
+/// @brief Owns the decoded representation of an SM5 program.
 struct Program {
   ProgramType ProgramType = D3D10_SB_PIXEL_SHADER;
   uint32_t MajorVersion = 0;
@@ -144,14 +166,17 @@ struct Program {
   uint32_t TempCount = 0;
   uint32_t TempSize = 0;
   std::vector<uint32_t> IndexableTemps;
-
-  uint32_t GetInstructionCount() const;
-  const ResourceDecl *FindResource(uint32_t bindPoint) const;
-  const CBufferDecl *FindCBuffer(uint32_t bindPoint) const;
-  const SamplerDecl *FindSampler(uint32_t bindPoint) const;
 };
 
+/// @brief Returns a human-readable name for an opcode.
+/// @param opcode Opcode to format.
+/// @return A static opcode name string.
 const char *GetOpcodeName(Opcode opcode);
+
+/// @brief Parses an opcode name into its typed representation.
+/// @param name Opcode name to parse.
+/// @param opcode Receives the parsed opcode on success.
+/// @return `true` when the name maps to a known opcode.
 bool ParseOpcode(const std::string &name, Opcode &opcode);
 
 } // namespace sm5

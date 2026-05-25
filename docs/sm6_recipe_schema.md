@@ -1,0 +1,229 @@
+# SM6 YAML Recipe Schema
+
+DXIL recipes use schema version `1`.
+
+## Top-Level Shape
+
+```yaml
+version: 1
+options:
+  restore_reflection: true
+resources:
+  textures: []
+  texture_uavs: []
+  cbuffers: []
+  samplers: []
+prefilters: []
+rewrite_rules: []
+steps: []
+```
+
+Notes:
+
+- Execution order is defined only by `steps`.
+- `resources`, `prefilters`, and `rewrite_rules` declare named objects that steps reference later.
+- `options.restore_reflection` defaults to `true`.
+- Final resource refresh runs automatically after resource-binding mutations unless the recipe already performs an explicit `refresh_resources` step.
+- Final LLVM verification and DXC container validation run automatically at the end of patching.
+
+## Resources
+
+Resource collections:
+
+- `textures`
+- `texture_uavs`
+- `cbuffers`
+- `samplers`
+
+Resource shapes:
+
+- Texture: `id`, `name`, `kind`, `element`, `width`, optional `binding`
+- CBuffer: `id`, `name`, `type`, `size`, `fields`, optional `binding`
+- CBuffer field: `name`, `type`, `width`, `offset`
+- Sampler: `id`, `name`, optional `binding`
+
+`binding` is optional on every resource and defaults to:
+
+```yaml
+binding:
+  bind: auto
+  space: 0
+```
+
+Example:
+
+```yaml
+resources:
+  textures:
+    - id: <texture_id>
+      name: <texture_name>
+      kind: <resource_kind>
+      element: <component_type>
+      width: <vector_width>
+      binding:
+        bind: <bind_or_auto>
+        space: <space>
+  cbuffers:
+    - id: <cbuffer_id>
+      name: <cbuffer_name>
+      type: <cbuffer_type>
+      size: <size_in_bytes>
+      binding:
+        bind: <bind_or_auto>
+        space: <space>
+      fields:
+        - name: <field_name>
+          type: <field_type>
+          width: <field_width>
+          offset: <byte_offset>
+  samplers:
+    - id: <sampler_id>
+      name: <sampler_name>
+```
+
+## Prefilters
+
+Prefilters are named probe patterns used for fast shader triage before the mutating steps run.
+
+Shape:
+
+- Required: `id`, `opcode`
+- Optional: `name`, `capture`, `operands`
+
+Example:
+
+```yaml
+prefilters:
+  - id: <prefilter_id>
+    opcode: <opcode>
+    capture: <capture_name>
+    operands:
+      - index: <operand_index>
+        kind: <operand_kind>
+        opcode: <nested_opcode>
+```
+
+## Rewrite Rules
+
+Rule shape:
+
+- Rule required: `id`, `match`
+- Rule optional: `name`, `bindings`, `emit`, `replace_with`, `replace_with_capture`
+- Match required: `opcode`
+- Match optional: `capture`, `replace`, `mode`, `prune_dead`, `prune_captures`, `operands`
+
+Supported rewrite modes:
+
+- `None`
+- `Replace`
+- `ReplaceRange`
+
+Rule payload constraints:
+
+- A rule with `mode: None` must not define `replace`, `emit`, `replace_with`, `replace_with_capture`, or `prune_captures`.
+- A non-`None` rule with no rewrite payload must use `mode: None`.
+- A rule with `emit` values must provide exactly one of `replace_with` or `replace_with_capture`.
+
+Example:
+
+```yaml
+rewrite_rules:
+  - id: <rule_id>
+    name: <rule_name>
+    match:
+      opcode: <opcode>
+      capture: <capture_name>
+      replace: <replace_capture>
+      mode: Replace
+      prune_dead: <bool>
+      prune_captures: []
+      operands: []
+    bindings: []
+    emit: []
+    replace_with: <emitted_value_id>
+```
+
+## Operands And Emits
+
+Match operand shape:
+
+- Required: `index`, `kind`
+- Optional: `capture`, `value`, `opcode`, `resource_class`, `resource_kind`, `resource_name`, `resource_name_like`, `bind`, `space`, `operands`
+
+Supported operand kinds:
+
+- `any`
+- `constant_int`
+- `instruction`
+- `dxop`
+- `resource_handle`
+
+Emit operand kinds:
+
+- `capture`
+- `temporary`
+- `constant_int`
+- `resource`
+- `undef`
+
+Supported emit kinds:
+
+- `create_handle`
+- `annotate_handle`
+- `call`
+- `extract`
+- `binop`
+- `cast`
+
+Notes:
+
+- `resource_name_like` uses LLVM regex syntax and invalid patterns are rejected while parsing.
+- `resource_handle` operands may additionally constrain `resource_class`, `resource_kind`, `resource_name`, `resource_name_like`, `bind`, and `space`.
+- Auxiliary `bindings` currently support only `kind: dxop`.
+
+## Steps
+
+Supported step kinds:
+
+- `add_texture`
+- `add_texture_uav`
+- `add_cbuffer`
+- `add_sampler`
+- `prefilter`
+- `apply_rule`
+- `apply_rules`
+- `refresh_resources`
+- `prune_dead_code`
+
+Step semantics:
+
+- Resource steps (`add_texture`, `add_texture_uav`, `add_cbuffer`, `add_sampler`) use `id` to reference an entry under `resources`.
+- `apply_rule` uses `rule`, defaults `mode` to `First`, and accepts `First`, `Last`, or `MatchAll`.
+- `apply_rules` uses `rules`, defaults `mode` to `MatchAll`, and only supports `MatchAll`.
+- `prefilter` requires exactly one of `pattern` or `patterns`.
+- `required` defaults to `true` on `apply_rule` and `apply_rules`.
+- `refresh_resources` and `prune_dead_code` take no extra fields.
+
+Example:
+
+```yaml
+steps:
+  - kind: prefilter
+    patterns:
+      - <prefilter_id_a>
+      - <prefilter_id_b>
+  - kind: add_texture
+    id: <resource_id>
+  - kind: apply_rule
+    rule: <rule_id>
+    mode: MatchAll
+    required: false
+  - kind: apply_rules
+    rules:
+      - <rule_id_a>
+      - <rule_id_b>
+    mode: MatchAll
+    required: false
+```
+
+For simple identity-style matcher probes, prefer `mode: First` or `mode: Last` on `apply_rule` so the step selects one stable match instead of depending on whole-pass side effects.

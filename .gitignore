@@ -1,5 +1,9 @@
 .vs/
+.idea/
+.cache/
+out/
 build/
+cmake-build-*/
 x64/
 DXIL Assembler/x64/
 Testing/

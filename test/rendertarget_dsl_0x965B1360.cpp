@@ -27,7 +27,7 @@ int main(int argc, char **argv) {
 
   ScopedCoInitialize coinit;
   LoadedDxilShader shader;
-  if (!LoadShaderForMutation(argv[1], shader, false))
+  if (!LoadShaderFromPath(argv[1], shader, false))
     return 1;
 
   llvm::Function *entryFunction = shader.dxilModule->GetEntryFunction();
@@ -39,27 +39,23 @@ int main(int argc, char **argv) {
   llvm::CallInst *redStore = nullptr;
   llvm::CallInst *greenStore = nullptr;
   llvm::CallInst *blueStore = nullptr;
-  if (!ExpectSingleRenderTargetStore(*entryFunction,
-                                     RenderTarget(0).R(),
-                                     "redStore",
-                                     redStore) ||
-      !ExpectSingleRenderTargetStore(*entryFunction,
-                                     RenderTarget(0).G(),
-                                     "greenStore",
-                                     greenStore) ||
-      !ExpectSingleRenderTargetStore(*entryFunction,
-                                     RenderTarget(0).B(),
-                                     "blueStore",
-                                     blueStore)) {
+  if (!ExpectSingleRenderTargetStore(*entryFunction, RenderTarget(0).R(),
+                                     "redStore", redStore) ||
+      !ExpectSingleRenderTargetStore(*entryFunction, RenderTarget(0).G(),
+                                     "greenStore", greenStore) ||
+      !ExpectSingleRenderTargetStore(*entryFunction, RenderTarget(0).B(),
+                                     "blueStore", blueStore)) {
     return 1;
   }
 
   if (redStore == greenStore || redStore == blueStore ||
       greenStore == blueStore) {
-    std::cerr << "Render-target DSL matched the same store for multiple channels.\n";
+    std::cerr
+        << "Render-target DSL matched the same store for multiple channels.\n";
     return 1;
   }
 
-  std::cout << "Matched render target stores for SV_Target0 RGB via DSL helpers.\n";
+  std::cout
+      << "Matched render target stores for SV_Target0 RGB via DSL helpers.\n";
   return 0;
 }

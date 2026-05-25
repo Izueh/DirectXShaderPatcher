@@ -8,18 +8,23 @@
 
 #include "Transforms.h"
 
+/// @brief Controls which DXIL match is rewritten when a rule matches more than
+/// once.
 enum class DxilRecipeRuleApplicationMode {
   First,
   Last,
   MatchAll,
 };
 
+/// @brief Supplies optional inputs and initial state for DXIL recipe
+/// execution.
 struct DxilRecipeExecutionOptions {
   bool traceEnabled = false;
   std::unordered_map<std::string, std::any> inputs;
   std::unordered_map<std::string, std::any> initialState;
 };
 
+/// @brief Reports the result of executing one DXIL recipe step.
 struct DxilRecipeStepResult {
   bool success = true;
   bool changed = false;
@@ -31,6 +36,7 @@ struct DxilRecipeStepResult {
   bool moduleVerified = false;
 };
 
+/// @brief Carries mutable state across DXIL recipe execution.
 struct DxilRecipeContext {
   llvm::Module *module = nullptr;
   hlsl::DxilModule *dxilModule = nullptr;
@@ -91,21 +97,28 @@ struct DxilRecipeContext {
   }
 };
 
+/// @brief Callable signature for custom DXIL recipe steps.
 using DxilRecipeStepExecutor =
     std::function<DxilRecipeStepResult(DxilRecipeContext &)>;
 
+/// @brief Creates a successful DXIL step result.
 DxilRecipeStepResult MakeRecipeStepSuccess(bool changed = false,
                                            unsigned matchCount = 0,
                                            bool invalidatedAnalyses = false,
                                            bool stopRecipe = false);
+
+/// @brief Creates a failed DXIL step result and records the message in
+/// context.
 DxilRecipeStepResult MakeRecipeStepFailure(DxilRecipeContext &context,
                                            std::string message);
 
+/// @brief Represents one executable DXIL recipe step.
 struct DxilRecipeStep {
   std::string name;
   DxilRecipeStepExecutor execute;
 };
 
+/// @brief Owns the ordered sequence of DXIL recipe steps.
 class DxilRecipe {
 public:
   DxilRecipe &AddStep(DxilRecipeStep step) {
@@ -119,24 +132,45 @@ private:
   std::vector<DxilRecipeStep> steps_;
 };
 
+/// @brief Wraps a custom executor as a named DXIL recipe step.
 DxilRecipeStep MakeCustomRecipeStep(std::string name,
                                     DxilRecipeStepExecutor execute);
+
+/// @brief Creates a step that adds a texture resource.
 DxilRecipeStep MakeAddTextureStep(std::string id, TextureResourceDesc desc);
+
+/// @brief Creates a step that adds a texture UAV resource.
 DxilRecipeStep MakeAddTextureUAVStep(std::string id, TextureResourceDesc desc);
+
+/// @brief Creates a step that adds a constant buffer resource.
 DxilRecipeStep MakeAddCBufferStep(std::string id, CBufferDesc desc);
+
+/// @brief Creates a step that adds a sampler resource.
 DxilRecipeStep MakeAddSamplerStep(std::string id, SamplerDesc desc);
+
+/// @brief Creates a step that applies DXIL rewrite rules.
 DxilRecipeStep MakeApplyRewriteRulesStep(
     std::string name, std::vector<DxilRewriteRule> rules,
     DxilRecipeRuleApplicationMode mode = DxilRecipeRuleApplicationMode::First,
     bool required = true);
+
+/// @brief Creates a step that asserts one or more patterns are present.
 DxilRecipeStep MakePrefilterStep(std::string name,
-                 std::vector<DxilCallPattern> patterns);
+                                 std::vector<DxilCallPattern> patterns);
+
+/// @brief Creates a step that refreshes resource metadata.
 DxilRecipeStep MakeRefreshResourcesStep(std::string name = "refresh_resources");
+
+/// @brief Creates a step that prunes dead code.
 DxilRecipeStep MakePruneDeadCodeStep(std::string name = "prune_dead_code");
+
+/// @brief Executes a DXIL recipe with a simple trace toggle.
 bool ExecuteDxilRecipe(const DxilRecipe &recipe, llvm::Module &module,
                        hlsl::DxilModule &dxilModule,
                        DxilRecipeContext *outContext = nullptr,
                        bool traceEnabled = false);
+
+/// @brief Executes a DXIL recipe with explicit execution options.
 bool ExecuteDxilRecipe(const DxilRecipe &recipe, llvm::Module &module,
                        hlsl::DxilModule &dxilModule,
                        const DxilRecipeExecutionOptions &options,

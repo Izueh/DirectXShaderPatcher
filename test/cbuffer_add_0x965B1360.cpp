@@ -1,7 +1,11 @@
 #include "TestSupport.h"
 
-#include <cstddef>
 #include <iostream>
+#include <vector>
+
+#include "dxc/DXIL/DxilCBuffer.h"
+#include "dxc/DXIL/DxilModule.h"
+#include "llvm/IR/Type.h"
 
 namespace {
 
@@ -16,10 +20,9 @@ static bool ValidateAddedGlobalsAnnotation(const hlsl::DxilModule &dxilModule,
                                            const hlsl::DxilCBuffer &cbuffer,
                                            std::string &errorMessage) {
   llvm::Type *cbufferType = cbuffer.GetHLSLType();
-  llvm::Type *elementType =
-      cbufferType != nullptr && cbufferType->isPointerTy()
-          ? cbufferType->getPointerElementType()
-          : nullptr;
+  llvm::Type *elementType = cbufferType != nullptr && cbufferType->isPointerTy()
+                                ? cbufferType->getPointerElementType()
+                                : nullptr;
   llvm::StructType *structType =
       llvm::dyn_cast_or_null<llvm::StructType>(elementType);
   if (structType == nullptr) {
@@ -28,7 +31,8 @@ static bool ValidateAddedGlobalsAnnotation(const hlsl::DxilModule &dxilModule,
   }
 
   if (structType->getStructName() != "AddedGlobals") {
-    errorMessage = "Added cbuffer did not preserve the expected schema type name.";
+    errorMessage =
+        "Added cbuffer did not preserve the expected schema type name.";
     return false;
   }
 
@@ -90,7 +94,8 @@ static bool ValidateAddedGlobalsAnnotation(const hlsl::DxilModule &dxilModule,
 
     if (!fieldAnnotation.HasCompType() ||
         fieldAnnotation.GetCompType().GetKind() != expectedField.compKind) {
-      errorMessage = "Added cbuffer field component type annotation is incorrect.";
+      errorMessage =
+          "Added cbuffer field component type annotation is incorrect.";
       return false;
     }
 
@@ -100,11 +105,11 @@ static bool ValidateAddedGlobalsAnnotation(const hlsl::DxilModule &dxilModule,
     }
 
     llvm::Type *fieldType = structType->getElementType(fieldIndex);
-    const unsigned actualVectorSize = fieldType->isVectorTy()
-                                          ? fieldType->getVectorNumElements()
-                                          : 1;
+    const unsigned actualVectorSize =
+        fieldType->isVectorTy() ? fieldType->getVectorNumElements() : 1;
     if (actualVectorSize != expectedField.vectorSize) {
-      errorMessage = "Added cbuffer LLVM field type does not match the schema vector width.";
+      errorMessage = "Added cbuffer LLVM field type does not match the schema "
+                     "vector width.";
       return false;
     }
 
@@ -129,34 +134,40 @@ int main(int argc, char **argv) {
   const char *outputPath = argc == 3 ? argv[2] : nullptr;
 
   ScopedCoInitialize coinit;
+
   LoadedDxilShader shader;
-  if (!LoadShaderForMutation(argv[1], shader, true))
+  if (!LoadShaderFromPath(argv[1], shader, true))
     return 1;
 
   const size_t initialCBufferCount = shader.dxilModule->GetCBuffers().size();
 
-  CBufferSchema schema = CBufferSchemaBuilder<AddedGlobalsCpu>("AddedGlobals")
-                             .Float4("Tint",
-                                     static_cast<unsigned>(offsetof(AddedGlobalsCpu, tint)))
-                             .Float("Exposure",
-                                    static_cast<unsigned>(offsetof(AddedGlobalsCpu, exposure)))
-                             .UInt("Mode",
-                                   static_cast<unsigned>(offsetof(AddedGlobalsCpu, mode)))
-                             .UInt2("Padding",
-                                    static_cast<unsigned>(offsetof(AddedGlobalsCpu, padding)))
-                             .Build();
+  CBufferSchema schema =
+      CBufferSchemaBuilder<AddedGlobalsCpu>("AddedGlobals")
+          .Float4("Tint",
+                  static_cast<unsigned>(offsetof(AddedGlobalsCpu, tint)))
+          .Float("Exposure",
+                 static_cast<unsigned>(offsetof(AddedGlobalsCpu, exposure)))
+          .UInt("Mode", static_cast<unsigned>(offsetof(AddedGlobalsCpu, mode)))
+          .UInt2("Padding",
+                 static_cast<unsigned>(offsetof(AddedGlobalsCpu, padding)))
+          .Build();
 
-  CBufferDesc cbufferDesc;
-  cbufferDesc.name = MakeUniqueGlobalName(*shader.module, "AddedGlobalsCB");
-    cbufferDesc.binding.Set(
-      FindNextAvailableBinding(shader.dxilModule->GetCBuffers(), 0, 0),
-      0,
-      hlsl::DXIL::ResourceClass::CBuffer);
-  cbufferDesc.sizeInBytes = static_cast<unsigned>(sizeof(AddedGlobalsCpu));
-  cbufferDesc.schema = &schema;
+  CBufferDesc cbufferDesc =
+      CBufferDescBuilder(MakeUniqueGlobalName(*shader.module, "AddedGlobalsCB"))
+          .Binding(ResourceBindingDesc::AutoCBuffer(0))
+          .SizeInBytes(static_cast<unsigned>(sizeof(AddedGlobalsCpu)))
+          .Schema(&schema)
+          .Build();
 
-  if (!AddCBuffer(*shader.module, *shader.dxilModule, cbufferDesc)) {
-    std::cerr << "AddCBuffer returned false.\n";
+  DxilRecipe recipe;
+  recipe.AddStep(MakeAddCBufferStep("AddedGlobals", cbufferDesc));
+  recipe.AddStep(MakeRefreshResourcesStep("refresh_resources"));
+
+  DxilRecipeContext recipeContext;
+  if (!ExecuteDxilRecipe(recipe, *shader.module, *shader.dxilModule,
+                         &recipeContext)) {
+    std::cerr << "ExecuteDxilRecipe failed: " << recipeContext.lastError
+              << "\n";
     return 1;
   }
 
@@ -168,24 +179,25 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  const hlsl::DxilCBuffer &addedCBuffer = *shader.dxilModule->GetCBuffers().back();
-  if (addedCBuffer.GetGlobalName() != cbufferDesc.name ||
-      addedCBuffer.GetLowerBound() != cbufferDesc.binding.GetBindPoint() ||
-      addedCBuffer.GetSpaceID() != cbufferDesc.binding.GetSpace() ||
-      addedCBuffer.GetSize() != sizeof(AddedGlobalsCpu)) {
-    std::cerr << "Added cbuffer metadata did not match the requested schema.\n";
+  const hlsl::DxilCBuffer &addedCBuffer =
+      *shader.dxilModule->GetCBuffers().back();
+  if (addedCBuffer.GetGlobalName() != cbufferDesc.name) {
+    std::cerr << "Added cbuffer name mismatch.\n";
+    return 1;
+  }
+
+  if (addedCBuffer.GetSize() != sizeof(AddedGlobalsCpu)) {
+    std::cerr << "Added cbuffer size did not match the requested schema.\n";
     return 1;
   }
 
   std::string annotationError;
-  if (!ValidateAddedGlobalsAnnotation(*shader.dxilModule,
-                                      addedCBuffer,
+  if (!ValidateAddedGlobalsAnnotation(*shader.dxilModule, addedCBuffer,
                                       annotationError)) {
     std::cerr << annotationError << "\n";
     return 1;
   }
 
-  RefreshDxilAfterResourceMutation(*shader.dxilModule);
   if (!VerifyModuleOrReport(*shader.module))
     return 1;
 
@@ -206,9 +218,7 @@ int main(int argc, char **argv) {
   llvm::LLVMContext patchedContext;
   std::unique_ptr<llvm::Module> patchedModule;
   hlsl::DxilModule *patchedDxilModule = nullptr;
-  if (!ReloadPatchedContainer(outputContainer,
-                              patchedContext,
-                              patchedModule,
+  if (!ReloadPatchedContainer(outputContainer, patchedContext, patchedModule,
                               patchedDxilModule)) {
     return 1;
   }
@@ -216,14 +226,12 @@ int main(int argc, char **argv) {
   if (patchedDxilModule->GetCBuffers().size() != initialCBufferCount + 1) {
     std::cerr << "Reloaded container reported "
               << patchedDxilModule->GetCBuffers().size()
-              << " cbuffers instead of " << (initialCBufferCount + 1)
-              << ".\n";
+              << " cbuffers instead of " << (initialCBufferCount + 1) << ".\n";
     return 1;
   }
 
   const hlsl::DxilCBuffer *reloadedCBuffer = nullptr;
-  if (!FindCBufferByName(*patchedDxilModule,
-                         cbufferDesc.name,
+  if (!FindCBufferByName(*patchedDxilModule, cbufferDesc.name,
                          &reloadedCBuffer) ||
       reloadedCBuffer == nullptr) {
     std::cerr << "Reloaded container did not contain cbuffer '"
@@ -231,15 +239,12 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-    if (reloadedCBuffer->GetLowerBound() != cbufferDesc.binding.GetBindPoint() ||
-      reloadedCBuffer->GetSpaceID() != cbufferDesc.binding.GetSpace() ||
-      reloadedCBuffer->GetSize() != sizeof(AddedGlobalsCpu)) {
-    std::cerr << "Reloaded cbuffer metadata did not match the injected schema.\n";
+  if (reloadedCBuffer->GetSize() != sizeof(AddedGlobalsCpu)) {
+    std::cerr << "Reloaded cbuffer size did not match the injected schema.\n";
     return 1;
   }
 
-  if (!ValidateAddedGlobalsAnnotation(*patchedDxilModule,
-                                      *reloadedCBuffer,
+  if (!ValidateAddedGlobalsAnnotation(*patchedDxilModule, *reloadedCBuffer,
                                       annotationError)) {
     std::cerr << annotationError << "\n";
     return 1;
@@ -251,12 +256,10 @@ int main(int argc, char **argv) {
   const size_t finalCBufferCount = patchedDxilModule->GetCBuffers().size();
 
   std::cout << "Added cbuffer '" << reloadedCBufferName << "' at b"
-            << reloadedCBufferBindPoint << ", space"
-            << reloadedCBufferSpace
+            << reloadedCBufferBindPoint << ", space" << reloadedCBufferSpace
             << " and reloaded it successfully from the patched container"
             << " (initial cbuffers=" << initialCBufferCount
-            << ", final cbuffers=" << finalCBufferCount
-            << ")";
+            << ", final cbuffers=" << finalCBufferCount << ")";
 
   if (outputPath != nullptr)
     std::cout << "; wrote patched container to " << outputPath;

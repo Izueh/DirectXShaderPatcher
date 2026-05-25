@@ -1,10 +1,7 @@
 #include "TestSupport.h"
-#include "dxp/sm5/Container.h"
 #include "dxp/sm5/Patch.h"
-#include "dxp/sm5/Parse.h"
 #include "dxp/sm5/RecipeParse.h"
 
-#include <algorithm>
 #include <cstring>
 #include <filesystem>
 #include <iostream>
@@ -18,46 +15,46 @@ static uint32_t FloatAsUint(float value) {
   return bits;
 }
 
-static int CountOpcode(const dxp::sm5::Program &program,
-                       dxp::sm5::OpcodeType opcode) {
+static int CountOpcode(const dxp::sm5::ProgramInspection &program,
+                       uint32_t opcode) {
   int count = 0;
   for (const auto &instruction : program.Instructions) {
-    if (static_cast<dxp::sm5::OpcodeType>(instruction.Opcode) == opcode) {
+    if (instruction.Opcode == opcode) {
       ++count;
     }
   }
   return count;
 }
 
-static bool IsIndexedDeclOpcode(dxp::sm5::OpcodeType opcode) {
+static bool IsIndexedDeclOpcode(uint32_t opcode) {
   return opcode == D3D10_SB_OPCODE_DCL_INPUT ||
          opcode == D3D10_SB_OPCODE_DCL_INPUT_PS ||
          opcode == D3D10_SB_OPCODE_DCL_INPUT_PS_SGV ||
          opcode == D3D10_SB_OPCODE_DCL_INPUT_PS_SIV;
 }
 
-static int CountInputPsWithInterpolationMode(const dxp::sm5::Program &program,
-                                             uint32_t interpolationMode) {
+static int
+CountInputPsWithInterpolationMode(const dxp::sm5::ProgramInspection &program,
+                                  uint32_t interpolationMode) {
   int count = 0;
   for (const auto &instruction : program.Instructions) {
-    if (static_cast<dxp::sm5::OpcodeType>(instruction.Opcode) !=
-        D3D10_SB_OPCODE_DCL_INPUT_PS) {
+    if (instruction.Opcode != D3D10_SB_OPCODE_DCL_INPUT_PS) {
       continue;
     }
-    if (!instruction.Controls.HasInputInterpolationMode) {
+    if (!instruction.HasInputInterpolationMode) {
       continue;
     }
-    if (instruction.Controls.InputInterpolationMode == interpolationMode) {
+    if (instruction.InputInterpolationMode == interpolationMode) {
       ++count;
     }
   }
   return count;
 }
 
-static int CountInputDeclOpcodes(const dxp::sm5::Program &program) {
+static int CountInputDeclOpcodes(const dxp::sm5::ProgramInspection &program) {
   int count = 0;
   for (const auto &instruction : program.Instructions) {
-    const auto opcode = static_cast<dxp::sm5::OpcodeType>(instruction.Opcode);
+    const auto opcode = instruction.Opcode;
     if (IsIndexedDeclOpcode(opcode)) {
       ++count;
     }
@@ -65,31 +62,29 @@ static int CountInputDeclOpcodes(const dxp::sm5::Program &program) {
   return count;
 }
 
-static bool IsReg(const dxp::sm5::Operand &operand,
-                  dxp::sm5::OperandType type,
+static bool IsReg(const dxp::sm5::ProgramOperand &operand, uint32_t type,
                   uint32_t index) {
   return operand.Type == type && !operand.Indices.empty() &&
          operand.Indices.front() == index;
 }
 
-static bool HasInjectedBlockBeforeRet(const dxp::sm5::Program &program,
-                                      uint32_t inputX,
-                                      uint32_t inputY,
-                                      uint32_t outputX) {
+static bool
+HasInjectedBlockBeforeRet(const dxp::sm5::ProgramInspection &program,
+                          uint32_t inputX, uint32_t inputY, uint32_t outputX) {
   if (program.Instructions.size() < 5) {
     return false;
   }
 
   for (size_t i = 4; i < program.Instructions.size(); ++i) {
-    const auto retOp = static_cast<dxp::sm5::OpcodeType>(program.Instructions[i].Opcode);
+    const auto retOp = program.Instructions[i].Opcode;
     if (retOp != D3D10_SB_OPCODE_RET) {
       continue;
     }
 
-    const auto div0Op = static_cast<dxp::sm5::OpcodeType>(program.Instructions[i - 4].Opcode);
-    const auto div1Op = static_cast<dxp::sm5::OpcodeType>(program.Instructions[i - 3].Opcode);
-    const auto addOp = static_cast<dxp::sm5::OpcodeType>(program.Instructions[i - 2].Opcode);
-    const auto mulOp = static_cast<dxp::sm5::OpcodeType>(program.Instructions[i - 1].Opcode);
+    const auto div0Op = program.Instructions[i - 4].Opcode;
+    const auto div1Op = program.Instructions[i - 3].Opcode;
+    const auto addOp = program.Instructions[i - 2].Opcode;
+    const auto mulOp = program.Instructions[i - 1].Opcode;
     if (div0Op != D3D10_SB_OPCODE_DIV || div1Op != D3D10_SB_OPCODE_DIV ||
         addOp != D3D10_SB_OPCODE_ADD || mulOp != D3D10_SB_OPCODE_MUL) {
       continue;
@@ -114,7 +109,8 @@ static bool HasInjectedBlockBeforeRet(const dxp::sm5::Program &program,
       continue;
     }
 
-    if (div0.Operands[0].Type != D3D10_SB_OPERAND_TYPE_TEMP || div0.Operands[0].Indices.empty()) {
+    if (div0.Operands[0].Type != D3D10_SB_OPERAND_TYPE_TEMP ||
+        div0.Operands[0].Indices.empty()) {
       continue;
     }
 
@@ -160,61 +156,59 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  dxp::sm5::Container inputContainer;
-  if (!dxp::sm5::ParseDxbcContainer(inputBytes, inputContainer)) {
-    std::cerr << "Failed to parse input DXBC container.\n";
-    return 1;
-  }
-
-  dxp::sm5::Program inputProgram;
-  if (!dxp::sm5::ParseShaderChunk(inputContainer, inputProgram)) {
-    std::cerr << "Failed to parse input SM5 program.\n";
+  dxp::sm5::ProgramInspection inputProgram;
+  std::string inspectError;
+  if (!dxp::sm5::InspectProgram(inputBytes, inputProgram, &inspectError)) {
+    std::cerr << "Failed to inspect input SM5 program: " << inspectError
+              << "\n";
     return 1;
   }
 
   const int initialInputDecls = CountInputDeclOpcodes(inputProgram);
-  const int initialInputPsDecls = CountOpcode(inputProgram, D3D10_SB_OPCODE_DCL_INPUT_PS);
-  const int initialOutputDecls = CountOpcode(inputProgram, D3D10_SB_OPCODE_DCL_OUTPUT);
+  const int initialInputPsDecls =
+      CountOpcode(inputProgram, D3D10_SB_OPCODE_DCL_INPUT_PS);
+  const int initialOutputDecls =
+      CountOpcode(inputProgram, D3D10_SB_OPCODE_DCL_OUTPUT);
   const uint32_t initialTempCount = inputProgram.TempCount;
 
   dxp::sm5::RecipeParseResult parseResult;
   const std::filesystem::path recipePath =
-      RepoRootPath() / "recipes" / "physically_based_standard_screen_uv.recipe.yml";
+      RepoRootPath() / "recipes" /
+      "physically_based_standard_screen_uv.recipe.yml";
   if (!dxp::sm5::ParseRecipeFile(recipePath.string(), parseResult)) {
-    std::cerr << "Failed to parse SM5 recipe file: " << parseResult.Error << "\n";
+    std::cerr << "Failed to parse SM5 recipe file: " << parseResult.Error
+              << "\n";
     return 1;
   }
 
-  const auto patchResult = dxp::sm5::PatchContainerInMemory(inputBytes, parseResult.Recipe);
+  const auto patchResult =
+      dxp::sm5::PatchContainer(inputBytes, parseResult.Recipe);
   if (!patchResult.Success) {
     std::cerr << "Failed to patch SM5 shader: " << patchResult.Error << "\n";
     return 1;
   }
 
-  dxp::sm5::Container patchedContainer;
-  if (!dxp::sm5::ParseDxbcContainer(patchResult.OutputBytes, patchedContainer)) {
-    std::cerr << "Failed to parse patched DXBC container.\n";
-    return 1;
-  }
-
-  dxp::sm5::Program patchedProgram;
-  if (!dxp::sm5::ParseShaderChunk(patchedContainer, patchedProgram)) {
-    std::cerr << "Failed to parse patched SM5 program.\n";
+  dxp::sm5::ProgramInspection patchedProgram;
+  if (!dxp::sm5::InspectProgram(patchResult.OutputBytes, patchedProgram,
+                                &inspectError)) {
+    std::cerr << "Failed to inspect patched SM5 program: " << inspectError
+              << "\n";
     return 1;
   }
 
   const int patchedInputDecls = CountInputDeclOpcodes(patchedProgram);
-  const int patchedInputPsDecls = CountOpcode(patchedProgram, D3D10_SB_OPCODE_DCL_INPUT_PS);
-  const int patchedLinearInputPsDecls =
-      CountInputPsWithInterpolationMode(patchedProgram, D3D10_SB_INTERPOLATION_LINEAR);
-  const int patchedOutputDecls = CountOpcode(patchedProgram, D3D10_SB_OPCODE_DCL_OUTPUT);
+  const int patchedInputPsDecls =
+      CountOpcode(patchedProgram, D3D10_SB_OPCODE_DCL_INPUT_PS);
+  const int patchedLinearInputPsDecls = CountInputPsWithInterpolationMode(
+      patchedProgram, D3D10_SB_INTERPOLATION_LINEAR);
+  const int patchedOutputDecls =
+      CountOpcode(patchedProgram, D3D10_SB_OPCODE_DCL_OUTPUT);
 
   if (patchedInputDecls < initialInputDecls + 2) {
     std::cerr << "Expected two additional input declarations (initial_total="
               << initialInputDecls << ", patched_total=" << patchedInputDecls
               << ", initial_dcl_input_ps=" << initialInputPsDecls
-              << ", patched_dcl_input_ps=" << patchedInputPsDecls
-              << ").\n";
+              << ", patched_dcl_input_ps=" << patchedInputPsDecls << ").\n";
     return 1;
   }
 
@@ -226,7 +220,8 @@ int main(int argc, char **argv) {
   }
 
   if (patchedLinearInputPsDecls < initialInputPsDecls + 2) {
-    std::cerr << "Expected injected dcl_input_ps declarations to use explicit linear interpolation mode.\n";
+    std::cerr << "Expected injected dcl_input_ps declarations to use explicit "
+                 "linear interpolation mode.\n";
     return 1;
   }
 
@@ -238,16 +233,16 @@ int main(int argc, char **argv) {
   constexpr uint32_t kInjectedInputX = 13;
   constexpr uint32_t kInjectedInputY = 14;
   constexpr uint32_t kInjectedOutputX = 1;
-  if (!HasInjectedBlockBeforeRet(patchedProgram,
-                                 kInjectedInputX,
-                                 kInjectedInputY,
-                                 kInjectedOutputX)) {
-    std::cerr << "Failed to locate the injected div/div/add/mul block before ret.\n";
+  if (!HasInjectedBlockBeforeRet(patchedProgram, kInjectedInputX,
+                                 kInjectedInputY, kInjectedOutputX)) {
+    std::cerr
+        << "Failed to locate the injected div/div/add/mul block before ret.\n";
     return 1;
   }
 
-  std::cout << "SM5 declarative recipe inserted IO declarations and screen-UV block with "
-            << "v" << kInjectedInputX << ", v" << kInjectedInputY
-            << ", and o" << kInjectedOutputX << ".\n";
+  std::cout << "SM5 declarative recipe inserted IO declarations and screen-UV "
+               "block with "
+            << "v" << kInjectedInputX << ", v" << kInjectedInputY << ", and o"
+            << kInjectedOutputX << ".\n";
   return 0;
 }

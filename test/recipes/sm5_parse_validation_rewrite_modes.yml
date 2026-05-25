@@ -1,0 +1,24 @@
+version: 1
+steps:
+  - kind: apply_rules
+    name: before_after_probe
+    rules:
+      - match:
+          opcode: mul
+          capture: anchor
+          rewrite_mode: Before
+        emit:
+          - opcode: mov
+            operands:
+              - { type: temp, indices: [0] }
+              - { type: temp, indices: [0] }
+      - match:
+          opcode: mul
+          capture: anchor
+          rewrite_mode: After
+        replace: anchor
+        emit:
+          - opcode: mov
+            operands:
+              - { type: temp, indices: [0] }
+              - { type: temp, indices: [0] }

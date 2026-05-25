@@ -5,7 +5,8 @@
 
 int main(int argc, char **argv) {
   if (argc != 3 && argc != 4) {
-    std::cerr << "Usage: declarative_blue_noise_emit_recipe_0x56C468C3 <input.cso> <recipe.yml> [output.cso]\n";
+    std::cerr << "Usage: declarative_blue_noise_emit_recipe_0x56C468C3 "
+                 "<input.cso> <recipe.yml> [output.cso]\n";
     return 1;
   }
 
@@ -18,7 +19,7 @@ int main(int argc, char **argv) {
   }
 
   LoadedDxilShader shader;
-  if (!LoadShaderForMutation(argv[1], shader, true))
+  if (!LoadShaderFromPath(argv[1], shader, true))
     return 1;
 
   llvm::Function *entryFunction = shader.dxilModule->GetEntryFunction();
@@ -34,7 +35,8 @@ int main(int argc, char **argv) {
   const unsigned initialTextureLoadCount =
       CountDxOpCalls(*entryFunction, "dx.op.textureLoad.f32");
   if (initialBlueNoiseCount == 0) {
-    std::cerr << "Expected test shader to contain at least one BlueNoise texture load.\n";
+    std::cerr << "Expected test shader to contain at least one BlueNoise "
+                 "texture load.\n";
     return 1;
   }
 
@@ -46,12 +48,9 @@ int main(int argc, char **argv) {
 
   DxilRecipeContext recipeContext;
   std::vector<uint8_t> outputContainer;
-  if (!PatchDxilContainerInMemory(parseResult.recipe,
-                                  inputShader,
-                                  outputContainer,
-                                  parseResult.patchOptions,
-                                  &recipeContext)) {
-    std::cerr << "PatchDxilContainerInMemory failed.";
+  if (!PatchDxilContainer(parseResult.recipe, inputShader, outputContainer,
+                          parseResult.patchOptions, &recipeContext)) {
+    std::cerr << "PatchDxilContainer failed.";
     if (!recipeContext.lastError.empty())
       std::cerr << " " << recipeContext.lastError;
     std::cerr << "\n";
@@ -59,7 +58,8 @@ int main(int argc, char **argv) {
   }
 
   if (recipeContext.totalRuleMatches == 0) {
-    std::cerr << "Expected declarative BlueNoise recipe to apply at least one rule.\n";
+    std::cerr << "Expected declarative BlueNoise recipe to apply at least one "
+                 "rule.\n";
     return 1;
   }
 
@@ -72,9 +72,7 @@ int main(int argc, char **argv) {
   llvm::LLVMContext patchedContext;
   std::unique_ptr<llvm::Module> patchedModule;
   hlsl::DxilModule *patchedDxilModule = nullptr;
-  if (!ReloadPatchedContainer(outputContainer,
-                              patchedContext,
-                              patchedModule,
+  if (!ReloadPatchedContainer(outputContainer, patchedContext, patchedModule,
                               patchedDxilModule)) {
     return 1;
   }
@@ -86,7 +84,8 @@ int main(int argc, char **argv) {
   }
 
   if (HasTypedHandleDxilOpOverloads(*patchedModule)) {
-    std::cerr << "Patched module introduced typed DXIL handle op overloads instead of reusing the shader's existing prototypes.\n";
+    std::cerr << "Patched module introduced typed DXIL handle op overloads "
+                 "instead of reusing the shader's existing prototypes.\n";
     return 1;
   }
 
@@ -95,14 +94,17 @@ int main(int argc, char **argv) {
   const unsigned finalTextureLoadCount =
       CountDxOpCalls(*patchedEntryFunction, "dx.op.textureLoad.f32");
   if (finalBlueNoiseCount != 0) {
-    std::cerr << "Expected declarative BlueNoise recipe to remove all BlueNoise loads, but saw "
+    std::cerr << "Expected declarative BlueNoise recipe to remove all "
+                 "BlueNoise loads, but saw "
               << finalBlueNoiseCount << ".\n";
     return 1;
   }
 
   if (finalTextureLoadCount != initialTextureLoadCount) {
-    std::cerr << "Expected declarative BlueNoise rewrite to replace texture loads in place; count changed from "
-              << initialTextureLoadCount << " to " << finalTextureLoadCount << ".\n";
+    std::cerr << "Expected declarative BlueNoise rewrite to replace texture "
+                 "loads in place; count changed from "
+              << initialTextureLoadCount << " to " << finalTextureLoadCount
+              << ".\n";
     return 1;
   }
 
@@ -114,15 +116,16 @@ int main(int argc, char **argv) {
   }
 
   if (patchedDxilModule->GetCBuffers().size() != initialCBufferCount + 1) {
-    std::cerr << "Expected cbuffer count to increase from " << initialCBufferCount
-              << " to " << (initialCBufferCount + 1) << ", but saw "
-              << patchedDxilModule->GetCBuffers().size() << ".\n";
+    std::cerr << "Expected cbuffer count to increase from "
+              << initialCBufferCount << " to " << (initialCBufferCount + 1)
+              << ", but saw " << patchedDxilModule->GetCBuffers().size()
+              << ".\n";
     return 1;
   }
 
   std::cout << "Declarative BlueNoise rewrite removed " << initialBlueNoiseCount
-            << " BlueNoise texture loads without changing total textureLoad.f32 count.\n";
+            << " BlueNoise texture loads without changing total "
+               "textureLoad.f32 count.\n";
   std::cout.flush();
   std::cerr.flush();
-  std::_Exit(0);
 }

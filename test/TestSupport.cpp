@@ -1,55 +1,55 @@
-﻿#include "TestSupport.h"
+#include "TestSupport.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
+#include <string>
+#include <system_error>
+#include <utility>
+#include <vector>
 
-#include "llvm/Bitcode/ReaderWriter.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/Support/MemoryBuffer.h"
+#include <combaseapi.h>
+#include <objbase.h>
 
+#include "dxc/DXIL/DxilCBuffer.h"
+#include "dxc/DXIL/DxilModule.h"
+#include "dxc/DXIL/DxilResource.h"
 #include "dxc/DxilContainer/DxilContainer.h"
 #include "dxc/DxilContainer/DxilContainerReader.h"
+#include "dxp/sm6/Patch.h"
+#include "dxp/sm6/Recipe.h"
+#include "dxp/sm6/Resources.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Bitcode/ReaderWriter.h"
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/Verifier.h"
+#include "llvm/Support/Casting.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/raw_ostream.h"
 
 unsigned CountIgnNoiseChains(llvm::Function &function);
 unsigned CountBlueNoiseTextureLoads(llvm::Function &function,
-                  hlsl::DxilModule &dxilModule);
+                                    hlsl::DxilModule &dxilModule);
 bool ReplaceIgnNoiseInComputeShaderWithTextureLoad(
-  llvm::Module &module,
-  hlsl::DxilModule &dxilModule,
-  const TextureResourceDesc &textureDesc,
-  const CBufferDesc &frameIndexCBufferDesc,
-  bool traceEnabled);
+    llvm::Module &module, hlsl::DxilModule &dxilModule,
+    const TextureResourceDesc &textureDesc,
+    const CBufferDesc &frameIndexCBufferDesc, bool traceEnabled);
 bool ReplaceIgnNoiseInComputeShaderWithTextureLoadUsingRules(
-  llvm::Module &module,
-  hlsl::DxilModule &dxilModule,
-  const TextureResourceDesc &textureDesc,
-  const CBufferDesc &frameIndexCBufferDesc,
-  bool traceEnabled);
+    llvm::Module &module, hlsl::DxilModule &dxilModule,
+    const TextureResourceDesc &textureDesc,
+    const CBufferDesc &frameIndexCBufferDesc, bool traceEnabled);
 
 namespace {
 
-static void ReleaseDxilStateForModule(std::unique_ptr<llvm::Module> &module,
-                                      hlsl::DxilModule *&dxilModule) {
-  if (!module) {
-    dxilModule = nullptr;
-    return;
-  }
-
-  if (module->HasDxilModule()) {
-    module->pfnRemoveGlobal = nullptr;
-    module->pfnResetDxilModule = nullptr;
-    module->SetDxilModule(nullptr);
-  }
-
-  dxilModule = nullptr;
-  module.reset();
-}
-
-static bool ExtractProgramBitcodeFromContainerPart(
-    const std::vector<uint8_t> &container,
-    hlsl::DxilFourCC partKind,
-    DxilProgramBitcode &out) {
+static bool
+ExtractProgramBitcodeFromContainerPart(const std::vector<uint8_t> &container,
+                                       hlsl::DxilFourCC partKind,
+                                       DxilProgramBitcode &out) {
   hlsl::DxilContainerReader reader;
   if (FAILED(reader.Load(container.data(), container.size()))) {
     std::cerr << "Failed to parse DXIL container header.\n";
@@ -86,11 +86,18 @@ static bool ExtractProgramBitcodeFromContainerPart(
 } // namespace
 
 LoadedDxilShader::~LoadedDxilShader() {
-  ReleaseDxilStateForModule(module, dxilModule);
+  if (module && module->HasDxilModule()) {
+    module->pfnRemoveGlobal = nullptr;
+    module->pfnResetDxilModule = nullptr;
+    module->SetDxilModule(nullptr);
+  }
+
+  dxilModule = nullptr;
+  module.reset();
 }
 
 ScopedCoInitialize::ScopedCoInitialize() {
-  HRESULT result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+  const HRESULT result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
   initialized_ = SUCCEEDED(result);
 }
 
@@ -105,7 +112,7 @@ bool ReadFile(const std::string &path, std::vector<uint8_t> &data) {
     return false;
 
   file.seekg(0, std::ios::end);
-  std::streamoff size = file.tellg();
+  const std::streamoff size = file.tellg();
   if (size < 0)
     return false;
   file.seekg(0, std::ios::beg);
@@ -144,7 +151,7 @@ std::filesystem::path RepoRootPath() {
 
 std::string DefaultArtifactOutputPath(const std::string &inputPath,
                                       const std::string &suffix) {
-  std::filesystem::path inputFile(inputPath);
+  const std::filesystem::path inputFile(inputPath);
   const std::filesystem::path stem = inputFile.stem();
   return (RepoRootPath() / "artifacts" / "test-output" /
           (stem.string() + suffix))
@@ -153,8 +160,7 @@ std::string DefaultArtifactOutputPath(const std::string &inputPath,
 
 bool ExtractDxilProgramBitcode(const std::vector<uint8_t> &containerBytes,
                                DxilProgramBitcode &outBitcode) {
-  if (!ExtractProgramBitcodeFromContainerPart(containerBytes,
-                                              hlsl::DFCC_DXIL,
+  if (!ExtractProgramBitcodeFromContainerPart(containerBytes, hlsl::DFCC_DXIL,
                                               outBitcode)) {
     std::cerr << "DXIL part not found in container.\n";
     return false;
@@ -163,10 +169,9 @@ bool ExtractDxilProgramBitcode(const std::vector<uint8_t> &containerBytes,
   return true;
 }
 
-std::unique_ptr<llvm::Module>
-ParseDxilBitcode(const uint8_t *ptr,
-                 uint32_t size,
-                 llvm::LLVMContext &context) {
+std::unique_ptr<llvm::Module> ParseDxilBitcode(const uint8_t *ptr,
+                                               uint32_t size,
+                                               llvm::LLVMContext &context) {
   auto modOrErr = llvm::parseBitcodeFile(
       llvm::MemoryBufferRef(
           llvm::StringRef(reinterpret_cast<const char *>(ptr), size),
@@ -192,9 +197,8 @@ bool LoadDxilState(llvm::Module &module, hlsl::DxilModule *&outDxilModule) {
   return true;
 }
 
-bool LoadShaderForMutation(const std::string &inputPath,
-                           LoadedDxilShader &shader,
-                           bool restoreReflection) {
+bool LoadShaderFromPath(const std::string &inputPath, LoadedDxilShader &shader,
+                        bool restoreReflection) {
   if (!ReadFile(inputPath, shader.inputBytes)) {
     std::cerr << "Failed to read input shader: " << inputPath << "\n";
     return false;
@@ -206,7 +210,8 @@ bool LoadShaderForMutation(const std::string &inputPath,
     return false;
   }
 
-  shader.module = ParseDxilBitcode(dxilBitcode.ptr, dxilBitcode.size, shader.context);
+  shader.module =
+      ParseDxilBitcode(dxilBitcode.ptr, dxilBitcode.size, shader.context);
   if (!shader.module) {
     std::cerr << "Failed to parse DXIL bitcode.\n";
     return false;
@@ -219,12 +224,8 @@ bool LoadShaderForMutation(const std::string &inputPath,
   }
 
   if (restoreReflection) {
-    shader.reflectionContext = std::make_unique<llvm::LLVMContext>();
-    RestoreOriginalResourceReflection(shader.inputBytes,
-                                      *shader.dxilModule,
-                                      *shader.reflectionContext);
-  } else {
-    shader.reflectionContext.reset();
+    RestoreOriginalResourceReflection(shader.inputBytes, *shader.dxilModule,
+                                      shader.context);
   }
 
   return true;
@@ -253,8 +254,7 @@ bool ReloadPatchedContainer(const std::vector<uint8_t> &containerBytes,
     return false;
   }
 
-  module = ParseDxilBitcode(patchedDxilBitcode.ptr,
-                            patchedDxilBitcode.size,
+  module = ParseDxilBitcode(patchedDxilBitcode.ptr, patchedDxilBitcode.size,
                             context);
   if (!module) {
     std::cerr << "Failed to parse patched DXIL bitcode.\n";
@@ -269,8 +269,7 @@ bool ReloadPatchedContainer(const std::vector<uint8_t> &containerBytes,
   return true;
 }
 
-bool FindSrvByName(const hlsl::DxilModule &dxilModule,
-                   const std::string &name,
+bool FindSrvByName(const hlsl::DxilModule &dxilModule, const std::string &name,
                    const hlsl::DxilResource **resourceOut) {
   for (const auto &srv : dxilModule.GetSRVs()) {
     if (srv->GetGlobalName() == name) {
@@ -319,8 +318,8 @@ unsigned CountDxOpCalls(const llvm::Function &function,
   for (const llvm::BasicBlock &basicBlock : function) {
     for (const llvm::Instruction &instruction : basicBlock) {
       const llvm::CallInst *call = llvm::dyn_cast<llvm::CallInst>(&instruction);
-      const llvm::Function *callee = call != nullptr ? call->getCalledFunction()
-                                                     : nullptr;
+      const llvm::Function *callee =
+          call != nullptr ? call->getCalledFunction() : nullptr;
       if (callee != nullptr && callee->getName() == functionName)
         ++count;
     }
@@ -329,17 +328,12 @@ unsigned CountDxOpCalls(const llvm::Function &function,
   return count;
 }
 
-bool ApplyComputeNoiseRewriteUsingRules(llvm::Module &module,
-                                        hlsl::DxilModule &dxilModule,
-                                        const TextureResourceDesc &textureDesc,
-                                        const CBufferDesc &frameIndexCBufferDesc,
-                                        bool traceEnabled) {
+bool ApplyComputeNoiseRewriteUsingRules(
+    llvm::Module &module, hlsl::DxilModule &dxilModule,
+    const TextureResourceDesc &textureDesc,
+    const CBufferDesc &frameIndexCBufferDesc, bool traceEnabled) {
   return ReplaceIgnNoiseInComputeShaderWithTextureLoadUsingRules(
-      module,
-      dxilModule,
-      textureDesc,
-      frameIndexCBufferDesc,
-      traceEnabled);
+      module, dxilModule, textureDesc, frameIndexCBufferDesc, traceEnabled);
 }
 
 DxilRecipeStep MakeExpectIgnCountStep(unsigned expectedCount,
@@ -360,13 +354,13 @@ DxilRecipeStep MakeExpectIgnCountStep(unsigned expectedCount,
               "expect_ign_count: failed to locate DXIL entry function");
         }
 
-        const unsigned actualCount = CountIgnNoiseChains(*context.entryFunction);
+        const unsigned actualCount =
+            CountIgnNoiseChains(*context.entryFunction);
         if (actualCount != expectedCount) {
           return MakeRecipeStepFailure(
-              context,
-              "expect_ign_count: expected IGN count " +
-                  std::to_string(expectedCount) + ", found " +
-                  std::to_string(actualCount));
+              context, "expect_ign_count: expected IGN count " +
+                           std::to_string(expectedCount) + ", found " +
+                           std::to_string(actualCount));
         }
 
         return MakeRecipeStepSuccess(false, 0, false);
@@ -391,8 +385,8 @@ DxilRecipeStep MakeExpectBlueNoiseCountStep(unsigned expectedCount,
               "expect_blue_noise_count: failed to locate DXIL entry function");
         }
 
-        const unsigned actualCount =
-            CountBlueNoiseTextureLoads(*context.entryFunction, *context.dxilModule);
+        const unsigned actualCount = CountBlueNoiseTextureLoads(
+            *context.entryFunction, *context.dxilModule);
         if (actualCount != expectedCount) {
           return MakeRecipeStepFailure(
               context,
@@ -405,15 +399,13 @@ DxilRecipeStep MakeExpectBlueNoiseCountStep(unsigned expectedCount,
       });
 }
 
-DxilRecipeStep MakeApplyComputeNoiseRewriteRulesStep(
-    std::string name,
-    std::string textureId,
-    std::string cbufferId,
-    bool required) {
+DxilRecipeStep MakeApplyComputeNoiseRewriteRulesStep(std::string name,
+                                                     std::string textureId,
+                                                     std::string cbufferId,
+                                                     bool required) {
   return MakeCustomRecipeStep(
       std::move(name),
-      [textureId = std::move(textureId),
-       cbufferId = std::move(cbufferId),
+      [textureId = std::move(textureId), cbufferId = std::move(cbufferId),
        required](DxilRecipeContext &context) -> DxilRecipeStepResult {
         if (context.module == nullptr || context.dxilModule == nullptr) {
           return MakeRecipeStepFailure(
@@ -443,8 +435,8 @@ DxilRecipeStep MakeApplyComputeNoiseRewriteRulesStep(
         }
 
         const unsigned ignCount = CountIgnNoiseChains(*context.entryFunction);
-        const unsigned blueNoiseCount =
-            CountBlueNoiseTextureLoads(*context.entryFunction, *context.dxilModule);
+        const unsigned blueNoiseCount = CountBlueNoiseTextureLoads(
+            *context.entryFunction, *context.dxilModule);
         const unsigned matchCount = ignCount + blueNoiseCount;
         if (matchCount == 0) {
           if (required) {
@@ -455,11 +447,9 @@ DxilRecipeStep MakeApplyComputeNoiseRewriteRulesStep(
           return MakeRecipeStepSuccess(false, 0, false);
         }
 
-        if (!ApplyComputeNoiseRewriteUsingRules(*context.module,
-                                                *context.dxilModule,
-                                                textureIt->second,
-                                                cbufferIt->second,
-                                                context.traceEnabled)) {
+        if (!ApplyComputeNoiseRewriteUsingRules(
+                *context.module, *context.dxilModule, textureIt->second,
+                cbufferIt->second, context.traceEnabled)) {
           return MakeRecipeStepFailure(
               context,
               "compute_noise_rules: rule-based compute rewrite failed");

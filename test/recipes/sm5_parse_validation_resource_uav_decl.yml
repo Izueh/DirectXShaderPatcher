@@ -3,18 +3,24 @@ prefilters:
   - kind: check_shader_version
     major: 5
     minor: 0
-raw_resource_decls:
-  - handle: raw_srv
+steps:
+  - kind: add_raw_resource
+    name: add_raw_srv
+    handle: raw_srv
     auto_bind: true
-structured_resource_decls:
-  - handle: structured_srv
+
+  - kind: add_structured_resource
+    name: add_structured_srv
+    handle: structured_srv
     auto_bind: true
     stride: 16
-uav_decls:
-  - handle: raw_uav
+
+  - kind: add_uav
+    name: add_raw_uav
+    handle: raw_uav
     auto_bind: true
-    kind: raw
-steps:
+    uav_kind: raw
+
   - name: resource_uav_bind_handle
     rules:
       - match:

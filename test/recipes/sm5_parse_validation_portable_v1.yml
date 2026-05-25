@@ -3,13 +3,17 @@ prefilters:
   - kind: check_shader_version
     major: 5
     minor: 0
-texture_decls:
-  - handle: tex0
-    auto_bind: true
-sampler_decls:
-  - handle: samp0
-    auto_bind: true
 steps:
+  - kind: add_texture
+    name: add_tex0
+    handle: tex0
+    auto_bind: true
+
+  - kind: add_sampler
+    name: add_samp0
+    handle: samp0
+    auto_bind: true
+
   - name: portable
     rules:
       - match:

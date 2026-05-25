@@ -28,7 +28,6 @@
 using llvm::GlobalVariable;
 using llvm::Module;
 
-// NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace)
 namespace {
 
 static const char *GetTextureElementTypeName(hlsl::DXIL::ComponentType kind) {
@@ -350,7 +349,7 @@ static bool HasGlobalNameConflict(const Module &module,
 static void KeepGlobalAlive(hlsl::DxilModule &dxilModule,
                             llvm::GlobalVariable *globalVariable) {
   auto &llvmUsed = dxilModule.GetLLVMUsed();
-  // NOLINTNEXTLINE(llvm-use-ranges)
+
   if (std::find(llvmUsed.begin(), llvmUsed.end(), globalVariable) ==
       llvmUsed.end())
     llvmUsed.push_back(globalVariable);
@@ -559,7 +558,6 @@ static void TraceResourceMessage(bool traceEnabled, const char *message) {
 }
 
 } // namespace
-// NOLINTEND(llvm-prefer-static-over-anonymous-namespace)
 
 std::string MakeUniqueGlobalName(const Module &module,
                                  const std::string &baseName) {
@@ -762,9 +760,7 @@ bool AddSampler(Module &module, hlsl::DxilModule &dxilModule,
   return true;
 }
 
-// NOLINTNEXTLINE(misc-use-internal-linkage)
-void RefreshDxilAfterResourceMutation(hlsl::DxilModule &dxilModule,
-                                      bool traceEnabled) {
+void RefreshDxilModule(hlsl::DxilModule &dxilModule, bool traceEnabled) {
   TraceResourceMessage(traceEnabled, "refresh: refresh op cache");
   hlsl::OP *op = dxilModule.GetOP();
   if (op)
@@ -785,4 +781,9 @@ void RefreshDxilAfterResourceMutation(hlsl::DxilModule &dxilModule,
 
   TraceResourceMessage(traceEnabled, "refresh: clear llvm.used");
   dxilModule.ClearLLVMUsed();
+
+  TraceResourceMessage(traceEnabled, "refresh: refresh op cache (post-clear)");
+  op = dxilModule.GetOP();
+  if (op)
+    op->RefreshCache();
 }

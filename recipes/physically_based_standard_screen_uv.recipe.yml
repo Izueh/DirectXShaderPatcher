@@ -6,21 +6,29 @@ prefilters:
   - kind: check_shader_version
     major: 5
     minor: 0
-input_decls:
-  - handle: screen_uv_x
-    auto_bind: true
-    interpolation_mode: linear
-  - handle: screen_uv_y
-    auto_bind: true
-    interpolation_mode: linear
-output_decls:
-  - handle: screen_uv_out
-    auto_bind: true
 steps:
+  - kind: add_input
+    name: add_screen_uv_x
+    handle: screen_uv_x
+    auto_bind: true
+    interpolation_mode: linear
+
+  - kind: add_input
+    name: add_screen_uv_y
+    handle: screen_uv_y
+    auto_bind: true
+    interpolation_mode: linear
+
+  - kind: add_output
+    name: add_screen_uv_out
+    handle: screen_uv_out
+    auto_bind: true
+
   - name: inject_screen_uv_math
     mode: MatchAll
     rules:
       - match:
+          rewrite_mode: ReplaceRange
           sequence:
             - opcode: ret
         emit:

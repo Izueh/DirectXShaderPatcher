@@ -59,8 +59,10 @@ static void TraceMessage(bool enabled, const char *message) {
     std::cout << message << std::endl;
 }
 
-static bool IsConstantIntValue(const llvm::Value *value, uint64_t expectedValue) {
-  const llvm::ConstantInt *constantInt = llvm::dyn_cast<llvm::ConstantInt>(value);
+static bool IsConstantIntValue(const llvm::Value *value,
+                               uint64_t expectedValue) {
+  const llvm::ConstantInt *constantInt =
+      llvm::dyn_cast<llvm::ConstantInt>(value);
   return constantInt != nullptr && constantInt->getZExtValue() == expectedValue;
 }
 
@@ -73,7 +75,8 @@ static bool TryGetConstantStructIntField(const llvm::Value *value,
 
   const llvm::ConstantStruct *constantStruct =
       llvm::dyn_cast<llvm::ConstantStruct>(constantValue);
-  if (constantStruct == nullptr || fieldIndex >= constantStruct->getNumOperands())
+  if (constantStruct == nullptr ||
+      fieldIndex >= constantStruct->getNumOperands())
     return false;
 
   const llvm::ConstantInt *fieldConstant =
@@ -85,7 +88,8 @@ static bool TryGetConstantStructIntField(const llvm::Value *value,
   return true;
 }
 
-static bool TryGetDxilOpCode(const llvm::CallInst &call, hlsl::OP::OpCode &opcode) {
+static bool TryGetDxilOpCode(const llvm::CallInst &call,
+                             hlsl::OP::OpCode &opcode) {
   llvm::Function *callee = call.getCalledFunction();
   if (callee == nullptr)
     return false;
@@ -103,25 +107,31 @@ static bool TryGetDxilOpCode(const llvm::CallInst &call, hlsl::OP::OpCode &opcod
   return true;
 }
 
-static bool IsDxOpCall(const llvm::CallInst &call, hlsl::OP::OpCode expectedOpcode) {
+static bool IsDxOpCall(const llvm::CallInst &call,
+                       hlsl::OP::OpCode expectedOpcode) {
   hlsl::OP::OpCode actualOpcode;
   return TryGetDxilOpCode(call, actualOpcode) && actualOpcode == expectedOpcode;
 }
 
 static llvm::Value *TryGetFAddBaseOperand(llvm::Value *value) {
   llvm::Instruction *instruction = llvm::dyn_cast<llvm::Instruction>(value);
-  if (instruction == nullptr || instruction->getOpcode() != llvm::Instruction::FAdd)
+  if (instruction == nullptr ||
+      instruction->getOpcode() != llvm::Instruction::FAdd)
     return nullptr;
 
-  const bool lhsIsConstant = llvm::isa<llvm::ConstantFP>(instruction->getOperand(0));
-  const bool rhsIsConstant = llvm::isa<llvm::ConstantFP>(instruction->getOperand(1));
+  const bool lhsIsConstant =
+      llvm::isa<llvm::ConstantFP>(instruction->getOperand(0));
+  const bool rhsIsConstant =
+      llvm::isa<llvm::ConstantFP>(instruction->getOperand(1));
   if (lhsIsConstant == rhsIsConstant)
     return nullptr;
 
-  return lhsIsConstant ? instruction->getOperand(1) : instruction->getOperand(0);
+  return lhsIsConstant ? instruction->getOperand(1)
+                       : instruction->getOperand(0);
 }
 
-static bool TryMatchIgnNoiseChain(llvm::CallInst *call, IgnNoiseChainMatch &match) {
+static bool TryMatchIgnNoiseChain(llvm::CallInst *call,
+                                  IgnNoiseChainMatch &match) {
   if (call == nullptr || !IsDxOpCall(*call, hlsl::OP::OpCode::Frc) ||
       !IsConstantIntValue(call->getArgOperand(0),
                           static_cast<uint64_t>(hlsl::OP::OpCode::Frc))) {
@@ -130,20 +140,24 @@ static bool TryMatchIgnNoiseChain(llvm::CallInst *call, IgnNoiseChainMatch &matc
 
   llvm::Instruction *scaledNoise =
       llvm::dyn_cast<llvm::Instruction>(call->getArgOperand(1));
-  if (scaledNoise == nullptr || scaledNoise->getOpcode() != llvm::Instruction::FMul)
+  if (scaledNoise == nullptr ||
+      scaledNoise->getOpcode() != llvm::Instruction::FMul)
     return false;
 
   llvm::Value *preScaleNoise = nullptr;
-  const bool lhsIsConstant = llvm::isa<llvm::ConstantFP>(scaledNoise->getOperand(0));
-  const bool rhsIsConstant = llvm::isa<llvm::ConstantFP>(scaledNoise->getOperand(1));
+  const bool lhsIsConstant =
+      llvm::isa<llvm::ConstantFP>(scaledNoise->getOperand(0));
+  const bool rhsIsConstant =
+      llvm::isa<llvm::ConstantFP>(scaledNoise->getOperand(1));
   if (lhsIsConstant == rhsIsConstant)
     return false;
 
-  preScaleNoise = lhsIsConstant ? scaledNoise->getOperand(1)
-                                : scaledNoise->getOperand(0);
+  preScaleNoise =
+      lhsIsConstant ? scaledNoise->getOperand(1) : scaledNoise->getOperand(0);
 
   llvm::CallInst *firstFrcCall = llvm::dyn_cast<llvm::CallInst>(preScaleNoise);
-  if (firstFrcCall == nullptr || !IsDxOpCall(*firstFrcCall, hlsl::OP::OpCode::Frc) ||
+  if (firstFrcCall == nullptr ||
+      !IsDxOpCall(*firstFrcCall, hlsl::OP::OpCode::Frc) ||
       !IsConstantIntValue(firstFrcCall->getArgOperand(0),
                           static_cast<uint64_t>(hlsl::OP::OpCode::Frc))) {
     return false;
@@ -159,21 +173,26 @@ static bool TryMatchIgnNoiseChain(llvm::CallInst *call, IgnNoiseChainMatch &matc
     return false;
   }
 
-  llvm::Value *decorrelatedBaseX = TryGetFAddBaseOperand(dotCall->getArgOperand(1));
-  llvm::Value *decorrelatedBaseY = TryGetFAddBaseOperand(dotCall->getArgOperand(2));
+  llvm::Value *decorrelatedBaseX =
+      TryGetFAddBaseOperand(dotCall->getArgOperand(1));
+  llvm::Value *decorrelatedBaseY =
+      TryGetFAddBaseOperand(dotCall->getArgOperand(2));
 
   if ((decorrelatedBaseX == nullptr) != (decorrelatedBaseY == nullptr))
     return false;
 
   match.finalFrcCall = call;
-  match.baseX = decorrelatedBaseX != nullptr ? decorrelatedBaseX : dotCall->getArgOperand(1);
-  match.baseY = decorrelatedBaseY != nullptr ? decorrelatedBaseY : dotCall->getArgOperand(2);
+  match.baseX = decorrelatedBaseX != nullptr ? decorrelatedBaseX
+                                             : dotCall->getArgOperand(1);
+  match.baseY = decorrelatedBaseY != nullptr ? decorrelatedBaseY
+                                             : dotCall->getArgOperand(2);
   match.usesDecorrelatedComponent = decorrelatedBaseX != nullptr;
   return true;
 }
 
-static unsigned CollectIgnNoiseChains(llvm::Function &function,
-                                      std::vector<IgnNoiseChainMatch> &matches) {
+static unsigned
+CollectIgnNoiseChains(llvm::Function &function,
+                      std::vector<IgnNoiseChainMatch> &matches) {
   matches.clear();
 
   for (llvm::BasicBlock &basicBlock : function) {
@@ -195,7 +214,8 @@ static unsigned CollectIgnNoiseChains(llvm::Function &function,
 
 static bool HasLiveInstructionUsers(const llvm::Value &value) {
   for (const llvm::User *user : value.users()) {
-    const llvm::Instruction *instruction = llvm::dyn_cast<llvm::Instruction>(user);
+    const llvm::Instruction *instruction =
+        llvm::dyn_cast<llvm::Instruction>(user);
     if (instruction == nullptr || !instruction->use_empty())
       return true;
   }
@@ -203,8 +223,8 @@ static bool HasLiveInstructionUsers(const llvm::Value &value) {
   return false;
 }
 
-static const hlsl::DxilResource *FindSrvByGlobalName(hlsl::DxilModule &dxilModule,
-                                                     llvm::StringRef name) {
+static const hlsl::DxilResource *
+FindSrvByGlobalName(hlsl::DxilModule &dxilModule, llvm::StringRef name) {
   for (const auto &srv : dxilModule.GetSRVs()) {
     if (srv->GetGlobalName() == name)
       return srv.get();
@@ -214,8 +234,7 @@ static const hlsl::DxilResource *FindSrvByGlobalName(hlsl::DxilModule &dxilModul
 }
 
 static bool TryResolveTextureLoadBinding(llvm::CallInst *textureLoadCall,
-                                         unsigned &bindPoint,
-                                         unsigned &space) {
+                                         unsigned &bindPoint, unsigned &space) {
   if (textureLoadCall == nullptr ||
       !IsDxOpCall(*textureLoadCall, hlsl::OP::OpCode::TextureLoad)) {
     return false;
@@ -231,14 +250,17 @@ static bool TryResolveTextureLoadBinding(llvm::CallInst *textureLoadCall,
   llvm::CallInst *createHandleCall =
       llvm::dyn_cast<llvm::CallInst>(annotateHandleCall->getArgOperand(1));
   if (createHandleCall == nullptr ||
-      !IsDxOpCall(*createHandleCall, hlsl::OP::OpCode::CreateHandleFromBinding)) {
+      !IsDxOpCall(*createHandleCall,
+                  hlsl::OP::OpCode::CreateHandleFromBinding)) {
     return false;
   }
 
   uint64_t lowerBound = 0;
   uint64_t spaceId = 0;
-  if (!TryGetConstantStructIntField(createHandleCall->getArgOperand(1), 0, lowerBound) ||
-      !TryGetConstantStructIntField(createHandleCall->getArgOperand(1), 2, spaceId)) {
+  if (!TryGetConstantStructIntField(createHandleCall->getArgOperand(1), 0,
+                                    lowerBound) ||
+      !TryGetConstantStructIntField(createHandleCall->getArgOperand(1), 2,
+                                    spaceId)) {
     return false;
   }
 
@@ -250,7 +272,8 @@ static bool TryResolveTextureLoadBinding(llvm::CallInst *textureLoadCall,
 static bool TryMatchBlueNoiseSliceIndex(llvm::Value *value,
                                         llvm::Value *&sliceIndex) {
   llvm::Instruction *instruction = llvm::dyn_cast<llvm::Instruction>(value);
-  if (instruction == nullptr || instruction->getOpcode() != llvm::Instruction::Mul)
+  if (instruction == nullptr ||
+      instruction->getOpcode() != llvm::Instruction::Mul)
     return false;
 
   for (unsigned operandIndex = 0; operandIndex < 2; ++operandIndex) {
@@ -271,7 +294,8 @@ static bool TrySplitBlueNoiseStackedYCoordinate(llvm::Value *value,
                                                 llvm::Value *&coordY,
                                                 llvm::Value *&sliceIndex) {
   llvm::Instruction *instruction = llvm::dyn_cast<llvm::Instruction>(value);
-  if (instruction == nullptr || instruction->getOpcode() != llvm::Instruction::Add)
+  if (instruction == nullptr ||
+      instruction->getOpcode() != llvm::Instruction::Add)
     return false;
 
   for (unsigned operandIndex = 0; operandIndex < 2; ++operandIndex) {
@@ -327,8 +351,7 @@ static bool TryMatchBlueNoiseTextureLoad(llvm::CallInst *call,
 
   llvm::Value *stackedCoordY = nullptr;
   llvm::Value *stackedSliceIndex = nullptr;
-  if (TrySplitBlueNoiseStackedYCoordinate(call->getArgOperand(4),
-                                          stackedCoordY,
+  if (TrySplitBlueNoiseStackedYCoordinate(call->getArgOperand(4), stackedCoordY,
                                           stackedSliceIndex)) {
     coordY = stackedCoordY;
     originalZ = stackedSliceIndex;
@@ -348,24 +371,24 @@ static llvm::Value *BuildFastNoiseSliceIndex(llvm::IRBuilder<> &builder,
                                              llvm::Value *originalZ,
                                              bool usesStackedYSlice) {
   llvm::Value *sliceSource = frameIndexValue;
-  if (!usesStackedYSlice && originalZ != nullptr && !IsConstantIntValue(originalZ, 0)) {
+  if (!usesStackedYSlice && originalZ != nullptr &&
+      !IsConstantIntValue(originalZ, 0)) {
     llvm::Value *normalizedOriginalZ = originalZ;
     if (normalizedOriginalZ->getType() != frameIndexValue->getType()) {
-      normalizedOriginalZ = builder.CreateIntCast(normalizedOriginalZ,
-                                                  frameIndexValue->getType(),
-                                                  false);
+      normalizedOriginalZ = builder.CreateIntCast(
+          normalizedOriginalZ, frameIndexValue->getType(), false);
     }
     sliceSource = builder.CreateAdd(normalizedOriginalZ, frameIndexValue);
   }
 
   return builder.CreateURem(
-      sliceSource,
-      llvm::ConstantInt::get(frameIndexValue->getType(), 32));
+      sliceSource, llvm::ConstantInt::get(frameIndexValue->getType(), 32));
 }
 
-static unsigned CollectBlueNoiseTextureLoads(llvm::Function &function,
-                                             hlsl::DxilModule &dxilModule,
-                                             std::vector<BlueNoiseTextureLoadMatch> &matches) {
+static unsigned
+CollectBlueNoiseTextureLoads(llvm::Function &function,
+                             hlsl::DxilModule &dxilModule,
+                             std::vector<BlueNoiseTextureLoadMatch> &matches) {
   matches.clear();
 
   for (llvm::BasicBlock &basicBlock : function) {
@@ -383,10 +406,10 @@ static unsigned CollectBlueNoiseTextureLoads(llvm::Function &function,
 }
 
 static llvm::Constant *CreateResBindConstant(llvm::Type *resBindType,
-                                             unsigned bindPoint,
-                                             unsigned space,
+                                             unsigned bindPoint, unsigned space,
                                              unsigned resourceClass) {
-  llvm::StructType *resBindStructType = llvm::dyn_cast<llvm::StructType>(resBindType);
+  llvm::StructType *resBindStructType =
+      llvm::dyn_cast<llvm::StructType>(resBindType);
   if (resBindStructType == nullptr || resBindStructType->getNumElements() != 4)
     return nullptr;
 
@@ -403,15 +426,16 @@ static llvm::Constant *CreateResBindConstant(llvm::Type *resBindType,
   return llvm::ConstantStruct::get(resBindStructType, constants);
 }
 
-static bool ResolveComputeNoiseRewriteSupport(
-    hlsl::DxilModule &dxilModule,
-    const TextureResourceDesc &textureDesc,
-    const CBufferDesc &frameIndexCBufferDesc,
-    ComputeNoiseRewriteSupport &support) {
+static bool
+ResolveComputeNoiseRewriteSupport(hlsl::DxilModule &dxilModule,
+                                  const TextureResourceDesc &textureDesc,
+                                  const CBufferDesc &frameIndexCBufferDesc,
+                                  ComputeNoiseRewriteSupport &support) {
   support = ComputeNoiseRewriteSupport();
   support.entryFunction = dxilModule.GetEntryFunction();
   if (support.entryFunction == nullptr || support.entryFunction->empty()) {
-    std::cerr << "Failed to locate the DXIL entry function for IGN replacement.\n";
+    std::cerr
+        << "Failed to locate the DXIL entry function for IGN replacement.\n";
     return false;
   }
 
@@ -430,7 +454,8 @@ static bool ResolveComputeNoiseRewriteSupport(
   }
 
   if (support.noiseSrv == nullptr || support.frameIndexCBuffer == nullptr) {
-    std::cerr << "IGN replacement could not resolve the injected texture or cbuffer metadata.\n";
+    std::cerr << "IGN replacement could not resolve the injected texture or "
+                 "cbuffer metadata.\n";
     return false;
   }
 
@@ -458,7 +483,8 @@ static bool ResolveComputeNoiseRewriteSupport(
                  calleeName == "dx.op.cbufferLoadLegacy.i32") {
         support.prototypeCBufferLoadI32 = call;
       } else if (calleeName == "dx.op.groupId.i32") {
-        if (support.groupIdX == nullptr && IsConstantIntValue(call->getArgOperand(1), 0))
+        if (support.groupIdX == nullptr &&
+            IsConstantIntValue(call->getArgOperand(1), 0))
           support.groupIdX = call;
         else if (support.groupIdY == nullptr &&
                  IsConstantIntValue(call->getArgOperand(1), 1))
@@ -473,7 +499,8 @@ static bool ResolveComputeNoiseRewriteSupport(
       support.prototypeCBufferLoadI32 == nullptr ||
       support.groupIdX == nullptr || support.groupIdY == nullptr ||
       dxilModule.GetShaderModel() == nullptr) {
-    std::cerr << "Failed to resolve the compute shader handle/load prototypes for IGN replacement.\n";
+    std::cerr << "Failed to resolve the compute shader handle/load prototypes "
+                 "for IGN replacement.\n";
     return false;
   }
 
@@ -482,113 +509,104 @@ static bool ResolveComputeNoiseRewriteSupport(
       support.prototypeAnnotateHandle->getArgOperand(2)->getType(),
       *dxilModule.GetShaderModel());
   support.cbufferResourceProps = hlsl::resource_helper::getAsConstant(
-      hlsl::resource_helper::loadPropsFromResourceBase(support.frameIndexCBuffer),
+      hlsl::resource_helper::loadPropsFromResourceBase(
+          support.frameIndexCBuffer),
       support.prototypeAnnotateHandle->getArgOperand(2)->getType(),
       *dxilModule.GetShaderModel());
   if (support.textureResourceProps == nullptr ||
       support.cbufferResourceProps == nullptr) {
-    std::cerr << "Failed to materialize resource properties for IGN replacement.\n";
+    std::cerr
+        << "Failed to materialize resource properties for IGN replacement.\n";
     return false;
   }
 
-  support.createHandleIndexType = support.prototypeCreateHandle->getArgOperand(2)->getType();
-  support.cbufferLoadIndexType = support.prototypeCBufferLoadI32->getArgOperand(2)->getType();
+  support.createHandleIndexType =
+      support.prototypeCreateHandle->getArgOperand(2)->getType();
+  support.cbufferLoadIndexType =
+      support.prototypeCBufferLoadI32->getArgOperand(2)->getType();
   return true;
 }
 
-static bool MaterializeRewriteResources(
-    llvm::IRBuilder<> &builder,
-    const ComputeNoiseRewriteSupport &support,
-    const TextureResourceDesc &textureDesc,
-    const CBufferDesc &frameIndexCBufferDesc,
-    MaterializedRewriteResources &resources) {
+static bool
+MaterializeRewriteResources(llvm::IRBuilder<> &builder,
+                            const ComputeNoiseRewriteSupport &support,
+                            const TextureResourceDesc &textureDesc,
+                            const CBufferDesc &frameIndexCBufferDesc,
+                            MaterializedRewriteResources &resources) {
   resources = MaterializedRewriteResources();
 
   llvm::Constant *textureResBind = CreateResBindConstant(
       support.prototypeCreateHandle->getArgOperand(1)->getType(),
-      textureDesc.binding.GetBindPoint(),
-      textureDesc.binding.GetSpace(),
-      0);
+      textureDesc.binding.GetBindPoint(), textureDesc.binding.GetSpace(), 0);
   llvm::Constant *cbufferResBind = CreateResBindConstant(
       support.prototypeCreateHandle->getArgOperand(1)->getType(),
       frameIndexCBufferDesc.binding.GetBindPoint(),
-      frameIndexCBufferDesc.binding.GetSpace(),
-      2);
+      frameIndexCBufferDesc.binding.GetSpace(), 2);
   if (textureResBind == nullptr || cbufferResBind == nullptr)
     return false;
 
   llvm::Value *rawTextureHandle = builder.CreateCall(
       support.prototypeCreateHandle->getCalledFunction(),
-      {support.prototypeCreateHandle->getArgOperand(0),
-       textureResBind,
+      {support.prototypeCreateHandle->getArgOperand(0), textureResBind,
        llvm::ConstantInt::get(
            llvm::cast<llvm::IntegerType>(support.createHandleIndexType),
            textureDesc.binding.GetBindPoint()),
        support.prototypeCreateHandle->getArgOperand(3)});
-  resources.annotatedTextureHandle = builder.CreateCall(
-      support.prototypeAnnotateHandle->getCalledFunction(),
-      {support.prototypeAnnotateHandle->getArgOperand(0),
-       rawTextureHandle,
-       support.textureResourceProps});
+  resources.annotatedTextureHandle =
+      builder.CreateCall(support.prototypeAnnotateHandle->getCalledFunction(),
+                         {support.prototypeAnnotateHandle->getArgOperand(0),
+                          rawTextureHandle, support.textureResourceProps});
 
   llvm::Value *rawCBufferHandle = builder.CreateCall(
       support.prototypeCreateHandle->getCalledFunction(),
-      {support.prototypeCreateHandle->getArgOperand(0),
-       cbufferResBind,
+      {support.prototypeCreateHandle->getArgOperand(0), cbufferResBind,
        llvm::ConstantInt::get(
            llvm::cast<llvm::IntegerType>(support.createHandleIndexType),
            frameIndexCBufferDesc.binding.GetBindPoint()),
        support.prototypeCreateHandle->getArgOperand(3)});
-  resources.annotatedCBufferHandle = builder.CreateCall(
-      support.prototypeAnnotateHandle->getCalledFunction(),
-      {support.prototypeAnnotateHandle->getArgOperand(0),
-       rawCBufferHandle,
-       support.cbufferResourceProps});
+  resources.annotatedCBufferHandle =
+      builder.CreateCall(support.prototypeAnnotateHandle->getCalledFunction(),
+                         {support.prototypeAnnotateHandle->getArgOperand(0),
+                          rawCBufferHandle, support.cbufferResourceProps});
 
   llvm::Value *frameIndexLoad = builder.CreateCall(
       support.prototypeCBufferLoadI32->getCalledFunction(),
       {support.prototypeCBufferLoadI32->getArgOperand(0),
        resources.annotatedCBufferHandle,
        llvm::ConstantInt::get(
-           llvm::cast<llvm::IntegerType>(support.cbufferLoadIndexType),
-           0)});
+           llvm::cast<llvm::IntegerType>(support.cbufferLoadIndexType), 0)});
   resources.frameIndexValue = builder.CreateExtractValue(frameIndexLoad, 0);
   return true;
 }
 
 static llvm::Value *CreateFastNoiseTextureLoad(
-    llvm::IRBuilder<> &builder,
-    const ComputeNoiseRewriteSupport &support,
-    llvm::Value *annotatedTextureHandle,
-    llvm::Value *coordX,
-    llvm::Value *coordY,
-    llvm::Value *sliceIndex) {
+    llvm::IRBuilder<> &builder, const ComputeNoiseRewriteSupport &support,
+    llvm::Value *annotatedTextureHandle, llvm::Value *coordX,
+    llvm::Value *coordY, llvm::Value *sliceIndex) {
   return builder.CreateCall(
       support.prototypeTextureLoad->getCalledFunction(),
-      {support.prototypeTextureLoad->getArgOperand(0),
-       annotatedTextureHandle,
+      {support.prototypeTextureLoad->getArgOperand(0), annotatedTextureHandle,
        llvm::ConstantInt::get(
            llvm::cast<llvm::IntegerType>(
                support.prototypeTextureLoad->getArgOperand(2)->getType()),
            0),
-       coordX,
-       coordY,
-       sliceIndex,
-       llvm::UndefValue::get(support.prototypeTextureLoad->getArgOperand(6)->getType()),
-       llvm::UndefValue::get(support.prototypeTextureLoad->getArgOperand(7)->getType()),
-       llvm::UndefValue::get(support.prototypeTextureLoad->getArgOperand(8)->getType())});
+       coordX, coordY, sliceIndex,
+       llvm::UndefValue::get(
+           support.prototypeTextureLoad->getArgOperand(6)->getType()),
+       llvm::UndefValue::get(
+           support.prototypeTextureLoad->getArgOperand(7)->getType()),
+       llvm::UndefValue::get(
+           support.prototypeTextureLoad->getArgOperand(8)->getType())});
 }
 
-static bool BuildComputeNoiseRewriteRules(
-    hlsl::DxilModule &dxilModule,
-    const TextureResourceDesc &textureDesc,
-    const CBufferDesc &frameIndexCBufferDesc,
-    std::vector<DxilRewriteRule> &rules) {
+static bool
+BuildComputeNoiseRewriteRules(hlsl::DxilModule &dxilModule,
+                              const TextureResourceDesc &textureDesc,
+                              const CBufferDesc &frameIndexCBufferDesc,
+                              std::vector<DxilRewriteRule> &rules) {
   ComputeNoiseRewriteSupport support;
-  if (!ResolveComputeNoiseRewriteSupport(dxilModule,
-                                         textureDesc,
-                                         frameIndexCBufferDesc,
-                                         support)) {
+  if (!ResolveComputeNoiseRewriteSupport(dxilModule, textureDesc,
+                                         frameIndexCBufferDesc, support)) {
     return false;
   }
 
@@ -608,23 +626,23 @@ static bool BuildComputeNoiseRewriteRules(
                 .Capture("ign_root")
                 .Args({
                     ConstantIntOperand(
-                        0,
-                        static_cast<uint64_t>(hlsl::OP::OpCode::Frc)),
+                        0, static_cast<uint64_t>(hlsl::OP::OpCode::Frc)),
                     InstructionOperand(1, llvm::Instruction::FMul)
                         .Capture("outer_mul")
                         .Args({
-                            DxOpOperand(nestedNoiseOperandIndex, hlsl::OP::OpCode::Frc)
+                            DxOpOperand(nestedNoiseOperandIndex,
+                                        hlsl::OP::OpCode::Frc)
                                 .Capture("inner_frc")
                                 .Args({
                                     ConstantIntOperand(
-                                        0,
-                                        static_cast<uint64_t>(hlsl::OP::OpCode::Frc)),
+                                        0, static_cast<uint64_t>(
+                                               hlsl::OP::OpCode::Frc)),
                                     DxOpOperand(1, hlsl::OP::OpCode::Dot2)
                                         .Capture("dot_call")
                                         .Args({
                                             ConstantIntOperand(
-                                                0,
-                                                static_cast<uint64_t>(hlsl::OP::OpCode::Dot2)),
+                                                0, static_cast<uint64_t>(
+                                                       hlsl::OP::OpCode::Dot2)),
                                             AnyOperand(1).Capture("raw_x"),
                                             AnyOperand(2).Capture("raw_y"),
                                             AnyOperand(3).Capture("dot_c0"),
@@ -639,51 +657,41 @@ static bool BuildComputeNoiseRewriteRules(
                  llvm::isa<llvm::ConstantFP>(match.GetCapture("dot_c0")) &&
                  llvm::isa<llvm::ConstantFP>(match.GetCapture("dot_c1"));
         })
-        .Callback(
-            [capturedSupport,
-             capturedTextureDesc,
-             capturedFrameIndexCBufferDesc](const DxilMatchResult &match,
-                                            llvm::IRBuilder<> &builder,
-                                            llvm::Module &,
-                                            hlsl::DxilModule &) -> DxilRewriteResult {
-              MaterializedRewriteResources resources;
-              if (!MaterializeRewriteResources(builder,
-                                               capturedSupport,
-                                               capturedTextureDesc,
-                                               capturedFrameIndexCBufferDesc,
-                                               resources)) {
-                return DxilRewriteResult{false};
-              }
+        .Callback([capturedSupport, capturedTextureDesc,
+                   capturedFrameIndexCBufferDesc](
+                      const DxilMatchResult &match, llvm::IRBuilder<> &builder,
+                      llvm::Module &, hlsl::DxilModule &) -> DxilRewriteResult {
+          MaterializedRewriteResources resources;
+          if (!MaterializeRewriteResources(
+                  builder, capturedSupport, capturedTextureDesc,
+                  capturedFrameIndexCBufferDesc, resources)) {
+            return DxilRewriteResult{false};
+          }
 
-              llvm::Value *rawX = match.GetCapture("raw_x");
-              llvm::Value *rawY = match.GetCapture("raw_y");
-              const bool usesDecorrelatedComponent =
-                  TryGetFAddBaseOperand(rawX) != nullptr ||
-                  TryGetFAddBaseOperand(rawY) != nullptr;
+          llvm::Value *rawX = match.GetCapture("raw_x");
+          llvm::Value *rawY = match.GetCapture("raw_y");
+          const bool usesDecorrelatedComponent =
+              TryGetFAddBaseOperand(rawX) != nullptr ||
+              TryGetFAddBaseOperand(rawY) != nullptr;
 
-              llvm::Value *sliceIndex = builder.CreateURem(
-                  resources.frameIndexValue,
-                  llvm::ConstantInt::get(resources.frameIndexValue->getType(), 32));
-              llvm::Value *coordX = builder.CreateURem(
-                  capturedSupport.groupIdX,
-                  llvm::ConstantInt::get(capturedSupport.groupIdX->getType(), 128));
-              llvm::Value *coordY = builder.CreateURem(
-                  capturedSupport.groupIdY,
-                  llvm::ConstantInt::get(capturedSupport.groupIdY->getType(), 128));
-              llvm::Value *noiseLoad = CreateFastNoiseTextureLoad(
-                  builder,
-                  capturedSupport,
-                  resources.annotatedTextureHandle,
-                  coordX,
-                  coordY,
-                  sliceIndex);
+          llvm::Value *sliceIndex = builder.CreateURem(
+              resources.frameIndexValue,
+              llvm::ConstantInt::get(resources.frameIndexValue->getType(), 32));
+          llvm::Value *coordX = builder.CreateURem(
+              capturedSupport.groupIdX,
+              llvm::ConstantInt::get(capturedSupport.groupIdX->getType(), 128));
+          llvm::Value *coordY = builder.CreateURem(
+              capturedSupport.groupIdY,
+              llvm::ConstantInt::get(capturedSupport.groupIdY->getType(), 128));
+          llvm::Value *noiseLoad = CreateFastNoiseTextureLoad(
+              builder, capturedSupport, resources.annotatedTextureHandle,
+              coordX, coordY, sliceIndex);
 
-              DxilRewriteResult result;
-              result.replacementValue = builder.CreateExtractValue(
-                  noiseLoad,
-                  usesDecorrelatedComponent ? 1u : 0u);
-              return result;
-            });
+          DxilRewriteResult result;
+          result.replacementValue = builder.CreateExtractValue(
+              noiseLoad, usesDecorrelatedComponent ? 1u : 0u);
+          return result;
+        });
   };
 
   DxilRewriteRule blueNoiseRule =
@@ -691,89 +699,77 @@ static bool BuildComputeNoiseRewriteRules(
           .Mode(DxilRewriteMode::Replace)
           .ReplaceCapture("texture_load")
           .PruneDeadInstructions(false)
-          .Match(
-              DxOpCall(hlsl::OP::OpCode::TextureLoad)
-                  .Capture("texture_load")
-                  .Args({
-                      ResourceHandleOperand(1)
-                          .Capture("handle")
-                          .ResourceClass(hlsl::DXIL::ResourceClass::SRV)
-                          .ResourceKind(hlsl::DXIL::ResourceKind::Texture2D),
-                      AnyOperand(3).Capture("coord_x"),
-                      AnyOperand(4).Capture("coord_y"),
-                      AnyOperand(5).Capture("coord_z"),
-                  }))
+          .Match(DxOpCall(hlsl::OP::OpCode::TextureLoad)
+                     .Capture("texture_load")
+                     .Args({
+                         ResourceHandleOperand(1)
+                             .Capture("handle")
+                             .ResourceClass(hlsl::DXIL::ResourceClass::SRV)
+                             .ResourceKind(hlsl::DXIL::ResourceKind::Texture2D),
+                         AnyOperand(3).Capture("coord_x"),
+                         AnyOperand(4).Capture("coord_y"),
+                         AnyOperand(5).Capture("coord_z"),
+                     }))
           .Where([&](const DxilMatchResult &match) {
             BlueNoiseTextureLoadMatch blueNoiseMatch;
-            return TryMatchBlueNoiseTextureLoad(match.rootCall, dxilModule, blueNoiseMatch);
+            return TryMatchBlueNoiseTextureLoad(match.rootCall, dxilModule,
+                                                blueNoiseMatch);
           })
-          .Callback(
-              [capturedSupport,
-               capturedTextureDesc,
-               capturedFrameIndexCBufferDesc,
-               &dxilModule](const DxilMatchResult &match,
-                            llvm::IRBuilder<> &builder,
-                            llvm::Module &,
-                            hlsl::DxilModule &) -> DxilRewriteResult {
-                BlueNoiseTextureLoadMatch blueNoiseMatch;
-                if (!TryMatchBlueNoiseTextureLoad(match.rootCall,
-                                                  dxilModule,
-                                                  blueNoiseMatch)) {
+          .Callback([capturedSupport, capturedTextureDesc,
+                     capturedFrameIndexCBufferDesc,
+                     &dxilModule](const DxilMatchResult &match,
+                                  llvm::IRBuilder<> &builder, llvm::Module &,
+                                  hlsl::DxilModule &) -> DxilRewriteResult {
+            BlueNoiseTextureLoadMatch blueNoiseMatch;
+            if (!TryMatchBlueNoiseTextureLoad(match.rootCall, dxilModule,
+                                              blueNoiseMatch)) {
+              return DxilRewriteResult{false};
+            }
+
+            MaterializedRewriteResources resources;
+            if (!MaterializeRewriteResources(
+                    builder, capturedSupport, capturedTextureDesc,
+                    capturedFrameIndexCBufferDesc, resources)) {
+              return DxilRewriteResult{false};
+            }
+
+            llvm::Value *sliceIndex = BuildFastNoiseSliceIndex(
+                builder, resources.frameIndexValue, blueNoiseMatch.originalZ,
+                blueNoiseMatch.usesStackedYSlice);
+            llvm::Value *noiseLoad = CreateFastNoiseTextureLoad(
+                builder, capturedSupport, resources.annotatedTextureHandle,
+                blueNoiseMatch.coordX, blueNoiseMatch.coordY, sliceIndex);
+
+            std::vector<llvm::WeakTrackingVH> pruneRoots;
+            std::vector<llvm::User *> loadUsers(match.rootCall->user_begin(),
+                                                match.rootCall->user_end());
+            for (llvm::User *user : loadUsers) {
+              llvm::ExtractValueInst *extractValue =
+                  llvm::dyn_cast<llvm::ExtractValueInst>(user);
+              if (extractValue == nullptr || extractValue->getNumIndices() != 1)
+                continue;
+
+              const unsigned extractIndex = *extractValue->idx_begin();
+              if (extractIndex > 1) {
+                if (!extractValue->use_empty())
                   return DxilRewriteResult{false};
-                }
+                pruneRoots.emplace_back(extractValue);
+                continue;
+              }
 
-                MaterializedRewriteResources resources;
-                if (!MaterializeRewriteResources(builder,
-                                                 capturedSupport,
-                                                 capturedTextureDesc,
-                                                 capturedFrameIndexCBufferDesc,
-                                                 resources)) {
-                  return DxilRewriteResult{false};
-                }
+              llvm::Value *replacementComponent =
+                  builder.CreateExtractValue(noiseLoad, extractIndex);
+              extractValue->replaceAllUsesWith(replacementComponent);
+              pruneRoots.emplace_back(extractValue);
+            }
 
-                llvm::Value *sliceIndex = BuildFastNoiseSliceIndex(
-                    builder,
-                    resources.frameIndexValue,
-                    blueNoiseMatch.originalZ,
-                    blueNoiseMatch.usesStackedYSlice);
-                llvm::Value *noiseLoad = CreateFastNoiseTextureLoad(
-                    builder,
-                    capturedSupport,
-                    resources.annotatedTextureHandle,
-                    blueNoiseMatch.coordX,
-                    blueNoiseMatch.coordY,
-                    sliceIndex);
+            pruneRoots.emplace_back(match.rootCall);
+            PruneTrackedInstructionRoots(pruneRoots);
 
-                std::vector<llvm::WeakTrackingVH> pruneRoots;
-                std::vector<llvm::User *> loadUsers(match.rootCall->user_begin(),
-                                                    match.rootCall->user_end());
-                for (llvm::User *user : loadUsers) {
-                  llvm::ExtractValueInst *extractValue =
-                      llvm::dyn_cast<llvm::ExtractValueInst>(user);
-                  if (extractValue == nullptr || extractValue->getNumIndices() != 1)
-                    continue;
-
-                  const unsigned extractIndex = *extractValue->idx_begin();
-                  if (extractIndex > 1) {
-                    if (!extractValue->use_empty())
-                      return DxilRewriteResult{false};
-                    pruneRoots.emplace_back(extractValue);
-                    continue;
-                  }
-
-                  llvm::Value *replacementComponent =
-                      builder.CreateExtractValue(noiseLoad, extractIndex);
-                  extractValue->replaceAllUsesWith(replacementComponent);
-                  pruneRoots.emplace_back(extractValue);
-                }
-
-                pruneRoots.emplace_back(match.rootCall);
-                PruneTrackedInstructionRoots(pruneRoots);
-
-                DxilRewriteResult result;
-                result.handledReplacement = true;
-                return result;
-              });
+            DxilRewriteResult result;
+            result.handledReplacement = true;
+            return result;
+          });
 
   rules.clear();
   rules.push_back(buildIgnRule("ign_noise_lhs_constant", 1, 0));
@@ -808,12 +804,10 @@ unsigned CountBlueNoiseTextureLoads(llvm::Function &function,
 }
 
 bool ReplaceIgnNoiseInComputeShaderWithTextureLoad(
-    llvm::Module &module,
-    hlsl::DxilModule &dxilModule,
+    llvm::Module &module, hlsl::DxilModule &dxilModule,
     const TextureResourceDesc &textureDesc,
-    const CBufferDesc &frameIndexCBufferDesc,
-    bool traceEnabled) {
-    if (textureDesc.kind != hlsl::DXIL::ResourceKind::Texture2DArray ||
+    const CBufferDesc &frameIndexCBufferDesc, bool traceEnabled) {
+  if (textureDesc.kind != hlsl::DXIL::ResourceKind::Texture2DArray ||
       textureDesc.elementKind != hlsl::DXIL::ComponentType::F32 ||
       textureDesc.vectorWidth < 2 || textureDesc.isReadWrite) {
     std::cerr << "IGN replacement requires a Texture2DArray<float2+> SRV.\n";
@@ -821,10 +815,8 @@ bool ReplaceIgnNoiseInComputeShaderWithTextureLoad(
   }
 
   ComputeNoiseRewriteSupport support;
-  if (!ResolveComputeNoiseRewriteSupport(dxilModule,
-                                         textureDesc,
-                                         frameIndexCBufferDesc,
-                                         support)) {
+  if (!ResolveComputeNoiseRewriteSupport(dxilModule, textureDesc,
+                                         frameIndexCBufferDesc, support)) {
     return false;
   }
 
@@ -833,8 +825,8 @@ bool ReplaceIgnNoiseInComputeShaderWithTextureLoad(
       CollectIgnNoiseChains(*support.entryFunction, ignMatches);
 
   std::vector<BlueNoiseTextureLoadMatch> blueNoiseMatches;
-  const unsigned blueNoiseMatchCount =
-      CollectBlueNoiseTextureLoads(*support.entryFunction, dxilModule, blueNoiseMatches);
+  const unsigned blueNoiseMatchCount = CollectBlueNoiseTextureLoads(
+      *support.entryFunction, dxilModule, blueNoiseMatches);
 
   if (ignMatchCount == 0 && blueNoiseMatchCount == 0) {
     std::cerr << "Failed to locate any IGN or BlueNoise patterns to replace.\n";
@@ -847,12 +839,10 @@ bool ReplaceIgnNoiseInComputeShaderWithTextureLoad(
     llvm::IRBuilder<> builder(ignMatch.finalFrcCall);
 
     MaterializedRewriteResources resources;
-    if (!MaterializeRewriteResources(builder,
-                                     support,
-                                     textureDesc,
-                                     frameIndexCBufferDesc,
-                                     resources)) {
-      std::cerr << "Failed to build resource binding constants for IGN replacement.\n";
+    if (!MaterializeRewriteResources(builder, support, textureDesc,
+                                     frameIndexCBufferDesc, resources)) {
+      std::cerr << "Failed to build resource binding constants for IGN "
+                   "replacement.\n";
       return false;
     }
 
@@ -866,16 +856,12 @@ bool ReplaceIgnNoiseInComputeShaderWithTextureLoad(
         support.groupIdY,
         llvm::ConstantInt::get(support.groupIdY->getType(), 128));
 
-    llvm::Value *noiseLoad = CreateFastNoiseTextureLoad(builder,
-                                                        support,
-                                                        resources.annotatedTextureHandle,
-                                                        coordX,
-                                                        coordY,
-                                                        sliceIndex);
+    llvm::Value *noiseLoad = CreateFastNoiseTextureLoad(
+        builder, support, resources.annotatedTextureHandle, coordX, coordY,
+        sliceIndex);
 
     llvm::Value *replacementNoise = builder.CreateExtractValue(
-        noiseLoad,
-        ignMatch.usesDecorrelatedComponent ? 1u : 0u);
+        noiseLoad, ignMatch.usesDecorrelatedComponent ? 1u : 0u);
     ignMatch.finalFrcCall->replaceAllUsesWith(replacementNoise);
     deadInstructionRoots.emplace_back(ignMatch.finalFrcCall);
   }
@@ -884,37 +870,34 @@ bool ReplaceIgnNoiseInComputeShaderWithTextureLoad(
     llvm::IRBuilder<> builder(blueNoiseMatch.textureLoadCall);
 
     MaterializedRewriteResources resources;
-    if (!MaterializeRewriteResources(builder,
-                                     support,
-                                     textureDesc,
-                                     frameIndexCBufferDesc,
-                                     resources)) {
-      std::cerr << "Failed to build resource binding constants for BlueNoise replacement.\n";
+    if (!MaterializeRewriteResources(builder, support, textureDesc,
+                                     frameIndexCBufferDesc, resources)) {
+      std::cerr << "Failed to build resource binding constants for BlueNoise "
+                   "replacement.\n";
       return false;
     }
 
-    llvm::Value *sliceIndex = BuildFastNoiseSliceIndex(builder,
-                                                       resources.frameIndexValue,
-                                                       blueNoiseMatch.originalZ,
-                                                       blueNoiseMatch.usesStackedYSlice);
-    llvm::Value *noiseLoad = CreateFastNoiseTextureLoad(builder,
-                                                        support,
-                                                        resources.annotatedTextureHandle,
-                                                        blueNoiseMatch.coordX,
-                                                        blueNoiseMatch.coordY,
-                                                        sliceIndex);
+    llvm::Value *sliceIndex = BuildFastNoiseSliceIndex(
+        builder, resources.frameIndexValue, blueNoiseMatch.originalZ,
+        blueNoiseMatch.usesStackedYSlice);
+    llvm::Value *noiseLoad = CreateFastNoiseTextureLoad(
+        builder, support, resources.annotatedTextureHandle,
+        blueNoiseMatch.coordX, blueNoiseMatch.coordY, sliceIndex);
 
-    std::vector<llvm::User *> loadUsers(blueNoiseMatch.textureLoadCall->user_begin(),
-                                        blueNoiseMatch.textureLoadCall->user_end());
+    std::vector<llvm::User *> loadUsers(
+        blueNoiseMatch.textureLoadCall->user_begin(),
+        blueNoiseMatch.textureLoadCall->user_end());
     for (llvm::User *user : loadUsers) {
-      llvm::ExtractValueInst *extractValue = llvm::dyn_cast<llvm::ExtractValueInst>(user);
+      llvm::ExtractValueInst *extractValue =
+          llvm::dyn_cast<llvm::ExtractValueInst>(user);
       if (extractValue == nullptr || extractValue->getNumIndices() != 1)
         continue;
 
       const unsigned extractIndex = *extractValue->idx_begin();
       if (extractIndex > 1) {
         if (!extractValue->use_empty()) {
-          std::cerr << "BlueNoise replacement encountered a live component outside FASTNoiseTexture.xy.\n";
+          std::cerr << "BlueNoise replacement encountered a live component "
+                       "outside FASTNoiseTexture.xy.\n";
           return false;
         }
         deadInstructionRoots.emplace_back(extractValue);
@@ -932,18 +915,16 @@ bool ReplaceIgnNoiseInComputeShaderWithTextureLoad(
 
   PruneTrackedInstructionRoots(deadInstructionRoots);
 
-  TraceMessage(traceEnabled,
-               "compute IGN replacement: replaced IGN and BlueNoise patterns with Texture2DArray.Load");
+  TraceMessage(traceEnabled, "compute IGN replacement: replaced IGN and "
+                             "BlueNoise patterns with Texture2DArray.Load");
   return true;
 }
 
 bool ReplaceIgnNoiseInComputeShaderWithTextureLoadUsingRules(
-    llvm::Module &module,
-    hlsl::DxilModule &dxilModule,
+    llvm::Module &module, hlsl::DxilModule &dxilModule,
     const TextureResourceDesc &textureDesc,
-    const CBufferDesc &frameIndexCBufferDesc,
-    bool traceEnabled) {
-    if (textureDesc.kind != hlsl::DXIL::ResourceKind::Texture2DArray ||
+    const CBufferDesc &frameIndexCBufferDesc, bool traceEnabled) {
+  if (textureDesc.kind != hlsl::DXIL::ResourceKind::Texture2DArray ||
       textureDesc.elementKind != hlsl::DXIL::ComponentType::F32 ||
       textureDesc.vectorWidth < 2 || textureDesc.isReadWrite) {
     std::cerr << "IGN replacement requires a Texture2DArray<float2+> SRV.\n";
@@ -951,10 +932,8 @@ bool ReplaceIgnNoiseInComputeShaderWithTextureLoadUsingRules(
   }
 
   ComputeNoiseRewriteSupport support;
-  if (!ResolveComputeNoiseRewriteSupport(dxilModule,
-                                         textureDesc,
-                                         frameIndexCBufferDesc,
-                                         support)) {
+  if (!ResolveComputeNoiseRewriteSupport(dxilModule, textureDesc,
+                                         frameIndexCBufferDesc, support)) {
     return false;
   }
 
@@ -967,18 +946,13 @@ bool ReplaceIgnNoiseInComputeShaderWithTextureLoadUsingRules(
   }
 
   std::vector<DxilRewriteRule> rules;
-  if (!BuildComputeNoiseRewriteRules(dxilModule,
-                                     textureDesc,
-                                     frameIndexCBufferDesc,
-                                     rules)) {
+  if (!BuildComputeNoiseRewriteRules(dxilModule, textureDesc,
+                                     frameIndexCBufferDesc, rules)) {
     return false;
   }
 
   unsigned appliedRuleCount = 0;
-  if (!ApplyDxilRewriteRules(*support.entryFunction,
-                             module,
-                             dxilModule,
-                             rules,
+  if (!ApplyDxilRewriteRules(*support.entryFunction, module, dxilModule, rules,
                              &appliedRuleCount)) {
     return false;
   }
@@ -989,6 +963,7 @@ bool ReplaceIgnNoiseInComputeShaderWithTextureLoadUsingRules(
   }
 
   TraceMessage(traceEnabled,
-               "compute IGN replacement: rule-based rewrite replaced IGN and BlueNoise patterns with Texture2DArray.Load");
+               "compute IGN replacement: rule-based rewrite replaced IGN and "
+               "BlueNoise patterns with Texture2DArray.Load");
   return true;
 }

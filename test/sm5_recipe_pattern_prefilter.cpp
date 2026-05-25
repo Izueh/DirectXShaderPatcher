@@ -1,7 +1,5 @@
 #include "TestSupport.h"
-#include "dxp/sm5/Container.h"
 #include "dxp/sm5/Patch.h"
-#include "dxp/sm5/Parse.h"
 #include "dxp/sm5/Recipe.h"
 
 #include <iostream>
@@ -69,56 +67,45 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  dxp::sm5::Container inputContainer;
-  if (!dxp::sm5::ParseDxbcContainer(inputBytes, inputContainer)) {
-    std::cerr << "Failed to parse input DXBC container.\n";
-    return 1;
-  }
-
-  dxp::sm5::Program inputProgram;
-  if (!dxp::sm5::ParseShaderChunk(inputContainer, inputProgram)) {
-    std::cerr << "Failed to parse input SM5 program.\n";
-    return 1;
-  }
-
   dxp::sm5::Recipe optionalFailRecipe;
-  optionalFailRecipe.AddPrefilter(
-      dxp::sm5::MakePatternPrefilter(MakeSingleMulPattern(),
-                                     "required_single_mul", true));
-  optionalFailRecipe.AddPrefilter(
-      dxp::sm5::MakePatternPrefilter(MakeFrcMulSequencePattern(),
-                                     "required_frc_mul_sequence", true));
-  optionalFailRecipe.AddPrefilter(
-      dxp::sm5::MakePatternPrefilter(MakeImpossibleMulPattern(),
-                                     "optional_impossible", false));
+  optionalFailRecipe.AddPrefilter(dxp::sm5::MakePatternPrefilter(
+      MakeSingleMulPattern(), "required_single_mul", true));
+  optionalFailRecipe.AddPrefilter(dxp::sm5::MakePatternPrefilter(
+      MakeFrcMulSequencePattern(), "required_frc_mul_sequence", true));
+  optionalFailRecipe.AddPrefilter(dxp::sm5::MakePatternPrefilter(
+      MakeImpossibleMulPattern(), "optional_impossible", false));
 
   const auto optionalFailResult =
-      dxp::sm5::PatchContainerInMemory(inputBytes, optionalFailRecipe);
+      dxp::sm5::PatchContainer(inputBytes, optionalFailRecipe);
   if (!optionalFailResult.Success) {
-    std::cerr << "Expected optional-failure recipe to succeed, but patch failed: "
-              << optionalFailResult.Error << "\n";
+    std::cerr
+        << "Expected optional-failure recipe to succeed, but patch failed: "
+        << optionalFailResult.Error << "\n";
     return 1;
   }
 
-  if (!ContainsDiagnostic(optionalFailResult.RecipeContext,
-                          "optional SM5 prefilter did not match: optional_impossible")) {
-    std::cerr << "Expected optional pattern prefilter failure to record a diagnostic.\n";
+  if (!ContainsDiagnostic(
+          optionalFailResult.RecipeContext,
+          "optional SM5 prefilter did not match: optional_impossible")) {
+    std::cerr << "Expected optional pattern prefilter failure to record a "
+                 "diagnostic.\n";
     return 1;
   }
 
   dxp::sm5::Recipe requiredFailRecipe;
-  requiredFailRecipe.AddPrefilter(
-      dxp::sm5::MakePatternPrefilter(MakeImpossibleMulPattern(),
-                                     "required_impossible", true));
+  requiredFailRecipe.AddPrefilter(dxp::sm5::MakePatternPrefilter(
+      MakeImpossibleMulPattern(), "required_impossible", true));
 
   const auto requiredFailResult =
-      dxp::sm5::PatchContainerInMemory(inputBytes, requiredFailRecipe);
+      dxp::sm5::PatchContainer(inputBytes, requiredFailRecipe);
   if (requiredFailResult.Success) {
-    std::cerr << "Expected required-failure recipe to fail, but patch succeeded.\n";
+    std::cerr
+        << "Expected required-failure recipe to fail, but patch succeeded.\n";
     return 1;
   }
 
   std::cout << "SM5 pattern prefilters support single and sequence matching; "
-               "optional mismatches are diagnostic-only and required mismatches fail.\n";
+               "optional mismatches are diagnostic-only and required "
+               "mismatches fail.\n";
   return 0;
 }

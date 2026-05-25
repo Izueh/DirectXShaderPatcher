@@ -7,12 +7,11 @@ namespace {
 
 static unsigned CountGroupIdXCalls(llvm::Function &function) {
   std::vector<DxilMatchResult> matches;
-  CollectDxilCallMatches(
-      function,
-      DxOpCall(hlsl::OP::OpCode::GroupId)
-        .Args({ConstantIntOperand(1, 0)})
-          .Build(),
-      matches);
+  CollectDxilCallMatches(function,
+                         DxOpCall(hlsl::OP::OpCode::GroupId)
+                             .Args({ConstantIntOperand(1, 0)})
+                             .Build(),
+                         matches);
   return static_cast<unsigned>(matches.size());
 }
 
@@ -20,7 +19,8 @@ static unsigned CountGroupIdXCalls(llvm::Function &function) {
 
 int main(int argc, char **argv) {
   if (argc != 3) {
-    std::cerr << "Usage: declarative_emit_resource_recipe_0x56C468C3 <input.cso> <recipe.yml>\n";
+    std::cerr << "Usage: declarative_emit_resource_recipe_0x56C468C3 "
+                 "<input.cso> <recipe.yml>\n";
     return 1;
   }
 
@@ -33,7 +33,7 @@ int main(int argc, char **argv) {
   }
 
   LoadedDxilShader shader;
-  if (!LoadShaderForMutation(argv[1], shader, false))
+  if (!LoadShaderFromPath(argv[1], shader, false))
     return 1;
 
   llvm::Function *entryFunction = shader.dxilModule->GetEntryFunction();
@@ -46,7 +46,8 @@ int main(int argc, char **argv) {
   const unsigned initialCBufferLoadCount =
       CountDxOpCalls(*entryFunction, "dx.op.cbufferLoadLegacy.i32");
   if (initialGroupIdXCount == 0) {
-    std::cerr << "Expected test shader to contain at least one groupId.x call.\n";
+    std::cerr
+        << "Expected test shader to contain at least one groupId.x call.\n";
     return 1;
   }
 
@@ -58,12 +59,9 @@ int main(int argc, char **argv) {
 
   DxilRecipeContext recipeContext;
   std::vector<uint8_t> outputContainer;
-  if (!PatchDxilContainerInMemory(parseResult.recipe,
-                                  inputShader,
-                                  outputContainer,
-                                  parseResult.patchOptions,
-                                  &recipeContext)) {
-    std::cerr << "PatchDxilContainerInMemory failed.";
+  if (!PatchDxilContainer(parseResult.recipe, inputShader, outputContainer,
+                          parseResult.patchOptions, &recipeContext)) {
+    std::cerr << "PatchDxilContainer failed.";
     if (!recipeContext.lastError.empty())
       std::cerr << " " << recipeContext.lastError;
     std::cerr << "\n";
@@ -71,16 +69,15 @@ int main(int argc, char **argv) {
   }
 
   if (recipeContext.totalRuleMatches == 0) {
-    std::cerr << "Expected declarative emitted-call recipe to apply at least one rule.\n";
+    std::cerr << "Expected declarative emitted-call recipe to apply at least "
+                 "one rule.\n";
     return 1;
   }
 
   llvm::LLVMContext patchedContext;
   std::unique_ptr<llvm::Module> patchedModule;
   hlsl::DxilModule *patchedDxilModule = nullptr;
-  if (!ReloadPatchedContainer(outputContainer,
-                              patchedContext,
-                              patchedModule,
+  if (!ReloadPatchedContainer(outputContainer, patchedContext, patchedModule,
                               patchedDxilModule)) {
     return 1;
   }
@@ -92,7 +89,8 @@ int main(int argc, char **argv) {
   }
 
   if (HasTypedHandleDxilOpOverloads(*patchedModule)) {
-    std::cerr << "Patched module introduced typed DXIL handle op overloads instead of reusing the shader's existing prototypes.\n";
+    std::cerr << "Patched module introduced typed DXIL handle op overloads "
+                 "instead of reusing the shader's existing prototypes.\n";
     return 1;
   }
 
@@ -100,16 +98,18 @@ int main(int argc, char **argv) {
   const unsigned finalCBufferLoadCount =
       CountDxOpCalls(*patchedEntryFunction, "dx.op.cbufferLoadLegacy.i32");
   if (finalGroupIdXCount >= initialGroupIdXCount) {
-    std::cerr << "Expected emitted declarative rewrite to reduce groupId.x count from "
+    std::cerr << "Expected emitted declarative rewrite to reduce groupId.x "
+                 "count from "
               << initialGroupIdXCount << ", but saw " << finalGroupIdXCount
               << ".\n";
     return 1;
   }
 
   if (finalCBufferLoadCount <= initialCBufferLoadCount) {
-    std::cerr << "Expected emitted declarative rewrite to increase cbufferLoadLegacy.i32 count from "
-              << initialCBufferLoadCount << ", but saw " << finalCBufferLoadCount
-              << ".\n";
+    std::cerr << "Expected emitted declarative rewrite to increase "
+                 "cbufferLoadLegacy.i32 count from "
+              << initialCBufferLoadCount << ", but saw "
+              << finalCBufferLoadCount << ".\n";
     return 1;
   }
 
@@ -120,5 +120,4 @@ int main(int argc, char **argv) {
             << ".\n";
   std::cout.flush();
   std::cerr.flush();
-  std::_Exit(0);
 }
