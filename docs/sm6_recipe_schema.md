@@ -110,7 +110,7 @@ Rule shape:
 - Rule required: `id`, `match`
 - Rule optional: `name`, `bindings`, `emit`, `replace_with`, `replace_with_capture`
 - Match required: `opcode`
-- Match optional: `capture`, `replace`, `mode`, `prune_dead`, `prune_captures`, `operands`
+- Match optional: `capture`, `mode`, `range_start_offset`, `range_end_offset`, `prune_dead`, `prune_captures`, `operands`
 
 Supported rewrite modes:
 
@@ -120,9 +120,13 @@ Supported rewrite modes:
 
 Rule payload constraints:
 
-- A rule with `mode: None` must not define `replace`, `emit`, `replace_with`, `replace_with_capture`, or `prune_captures`.
+- A rule with `mode: None` must not define `emit`, `replace_with`, `replace_with_capture`, or `prune_captures`.
 - A non-`None` rule with no rewrite payload must use `mode: None`.
 - A rule with `emit` values must provide exactly one of `replace_with` or `replace_with_capture`.
+- Omitted `prune_dead` defaults to `true`.
+- `Replace` rewrites the full matched instruction window.
+- `ReplaceRange` rewrites only the sub-window selected by `range_start_offset` and `range_end_offset` inside that matched window.
+- `range_start_offset` and `range_end_offset` are valid only when `mode: ReplaceRange`.
 
 Example:
 
@@ -133,7 +137,6 @@ rewrite_rules:
     match:
       opcode: <opcode>
       capture: <capture_name>
-      replace: <replace_capture>
       mode: Replace
       prune_dead: <bool>
       prune_captures: []
@@ -180,6 +183,8 @@ Notes:
 - `resource_name_like` uses LLVM regex syntax and invalid patterns are rejected while parsing.
 - `resource_handle` operands may additionally constrain `resource_class`, `resource_kind`, `resource_name`, `resource_name_like`, `bind`, and `space`.
 - Auxiliary `bindings` currently support only `kind: dxop`.
+- `range_start_offset` is zero-based from the matched anchor instruction.
+- `range_end_offset` is zero-based from the matched anchor instruction; `-1` defaults to the same instruction as `range_start_offset` in the current declarative matcher.
 
 ## Steps
 

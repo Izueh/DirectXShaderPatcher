@@ -49,6 +49,38 @@ static std::string Lowercase(const std::string &value) {
   return lowered;
 }
 
+static bool ResolveOpcodeAndTestBoolean(const std::string &opcodeName,
+                                        int32_t requestedTestBoolean,
+                                        Opcode &opcode,
+                                        int32_t &resolvedTestBoolean,
+                                        std::string &error,
+                                        const char *context) {
+  int32_t implicitTestBoolean = -1;
+  if (!ParseOpcodeWithImplicitTestBoolean(opcodeName, opcode,
+                                          implicitTestBoolean)) {
+    error = std::string("Unknown SM5 opcode in ") + context + ": " + opcodeName;
+    return false;
+  }
+
+  resolvedTestBoolean = requestedTestBoolean;
+  if (implicitTestBoolean >= 0) {
+    if (resolvedTestBoolean >= 0 && resolvedTestBoolean != implicitTestBoolean) {
+      error = std::string("SM5 opcode alias '") + opcodeName +
+              "' conflicts with explicit test_boolean";
+      return false;
+    }
+    resolvedTestBoolean = implicitTestBoolean;
+  }
+
+  if (resolvedTestBoolean >= 0 && !OpcodeUsesTestBoolean(opcode)) {
+    error = std::string("SM5 test_boolean is not valid for opcode '") +
+            opcodeName + "'";
+    return false;
+  }
+
+  return true;
+}
+
 static uint32_t FloatAsUint(float value) {
   uint32_t bits = 0;
   std::memcpy(&bits, &value, sizeof(bits));
@@ -115,6 +147,8 @@ struct RuntimeRule {
   RecipeMatchCallback MatchCallback;
   std::vector<Instruction> Emit;
   std::string Replace;
+  int32_t RangeStartOffset = 0;
+  int32_t RangeEndOffset = -1;
   RecipeRuleApplicationMode ApplicationMode = RecipeRuleApplicationMode::First;
   RecipeRuleRewriteMode RewriteMode = RecipeRuleRewriteMode::Replace;
   std::function<bool(RecipeContext &)> Predicate;
@@ -479,8 +513,10 @@ static bool CompileEmitInstructionTemplate(
     return false;
   }
 
-  if (!ParseOpcode(emitModel.Opcode, instruction.Opcode)) {
-    error = "Unknown SM5 opcode in emit: " + emitModel.Opcode;
+  int32_t resolvedTestBoolean = emitModel.TestBoolean;
+  if (!ResolveOpcodeAndTestBoolean(emitModel.Opcode, emitModel.TestBoolean,
+                                   instruction.Opcode, resolvedTestBoolean,
+                                   error, "emit")) {
     return false;
   }
   if (!emitModel.Saturate.empty()) {
@@ -492,10 +528,10 @@ static bool CompileEmitInstructionTemplate(
     }
     instruction.Controls.Saturate = saturate;
   }
-  if (emitModel.TestBoolean >= 0) {
+    if (resolvedTestBoolean >= 0) {
     instruction.Controls.HasTestBoolean = true;
     instruction.Controls.TestBoolean =
-        static_cast<uint32_t>(emitModel.TestBoolean);
+      static_cast<uint32_t>(resolvedTestBoolean);
   }
   if (!emitModel.InterpolationMode.empty()) {
     uint32_t interpolationMode = 0;
@@ -693,8 +729,10 @@ CompileInstructionPattern(const RecipeInstructionPattern &matchModel,
                           std::string &error) {
   instructionMatch = InstructionMatch{};
 
-  if (!ParseOpcode(matchModel.Opcode, instructionMatch.Opcode)) {
-    error = "Unknown SM5 opcode in match: " + matchModel.Opcode;
+  int32_t resolvedTestBoolean = matchModel.TestBoolean;
+  if (!ResolveOpcodeAndTestBoolean(matchModel.Opcode, matchModel.TestBoolean,
+                                   instructionMatch.Opcode,
+                                   resolvedTestBoolean, error, "match")) {
     return false;
   }
   instructionMatch.HasOpcode = true;
@@ -708,10 +746,10 @@ CompileInstructionPattern(const RecipeInstructionPattern &matchModel,
     instructionMatch.HasSaturateMatch = true;
     instructionMatch.SaturateValue = saturate;
   }
-  if (matchModel.TestBoolean >= 0) {
+    if (resolvedTestBoolean >= 0) {
     instructionMatch.HasTestBooleanMatch = true;
     instructionMatch.MatchTestBoolean =
-        static_cast<uint32_t>(matchModel.TestBoolean);
+      static_cast<uint32_t>(resolvedTestBoolean);
   }
   if (!matchModel.InterpolationMode.empty()) {
     uint32_t interpolationMode = 0;
@@ -812,6 +850,8 @@ static bool CompileRule(const RecipeRule &ruleModel,
   }
 
   rule.Replace = ruleModel.Replace;
+  rule.RangeStartOffset = ruleModel.RangeStartOffset;
+  rule.RangeEndOffset = ruleModel.RangeEndOffset;
   rule.RewriteMode = ruleModel.RewriteMode;
   rule.RewriteCallback = ruleModel.RewriteCallback;
 
@@ -1183,23 +1223,68 @@ static bool ResolveReplaceIndex(const RuntimeRule &rule,
   return true;
 }
 
-static bool ResolveRangeReplacement(const RuntimeRule &rule,
+static bool ResolveReplacementRange(const RuntimeRule &rule,
                                     const MatchResult &match,
-                                    RewriteAction &action, std::string &error) {
-  if (rule.RewriteMode == RecipeRuleRewriteMode::ReplaceRange &&
-      !rule.Replace.empty()) {
-    error =
-        "SM5 rewrite mode ReplaceRange cannot be combined with replace capture";
+                                    uint32_t &rangeStart,
+                                    uint32_t &rangeEnd,
+                                    std::string &error) {
+  const uint32_t windowStart = match.RangeStartIndex;
+  const uint32_t windowEnd = match.RangeEndIndex;
+  if (windowStart > windowEnd) {
+    error = "invalid SM5 match window";
     return false;
   }
 
   if (rule.RewriteMode == RecipeRuleRewriteMode::Replace) {
-    uint32_t replaceIndex = 0;
-    if (!ResolveReplaceIndex(rule, match, replaceIndex, error)) {
+    rangeStart = windowStart;
+    rangeEnd = windowEnd;
+    return true;
+  }
+
+  if (rule.RewriteMode != RecipeRuleRewriteMode::ReplaceRange) {
+    error = "unsupported replacement window mode";
+    return false;
+  }
+
+  if (rule.RangeStartOffset < 0 || rule.RangeEndOffset < -1) {
+    error = "invalid SM5 replacement range offsets";
+    return false;
+  }
+
+  const uint32_t windowLength = windowEnd - windowStart + 1;
+  const uint32_t startOffset = static_cast<uint32_t>(rule.RangeStartOffset);
+  const uint32_t endOffset =
+      rule.RangeEndOffset < 0
+          ? (windowLength - 1)
+          : static_cast<uint32_t>(rule.RangeEndOffset);
+
+  if (startOffset >= windowLength || endOffset >= windowLength) {
+    error = "SM5 replacement range offsets are out of match window bounds";
+    return false;
+  }
+  if (startOffset > endOffset) {
+    error = "SM5 replacement range start offset must be <= end offset";
+    return false;
+  }
+
+  rangeStart = windowStart + startOffset;
+  rangeEnd = windowStart + endOffset;
+  return true;
+}
+
+static bool ResolveRangeReplacement(const RuntimeRule &rule,
+                                    const MatchResult &match,
+                                    RewriteAction &action, std::string &error) {
+  if (rule.RewriteMode == RecipeRuleRewriteMode::Replace) {
+    uint32_t rangeStart = 0;
+    uint32_t rangeEnd = 0;
+    if (!ResolveReplacementRange(rule, match, rangeStart, rangeEnd, error)) {
       return false;
     }
-    action.Type = RewriteActionType::ReplaceOne;
-    action.ReplaceIndex = replaceIndex;
+    action.Type = RewriteActionType::ReplaceRange;
+    action.ReplaceIndex = rangeStart;
+    action.RangeStart = rangeStart;
+    action.RangeEnd = rangeEnd;
     return true;
   }
 
@@ -1224,10 +1309,15 @@ static bool ResolveRangeReplacement(const RuntimeRule &rule,
   }
 
   if (rule.RewriteMode == RecipeRuleRewriteMode::ReplaceRange) {
+    uint32_t rangeStart = 0;
+    uint32_t rangeEnd = 0;
+    if (!ResolveReplacementRange(rule, match, rangeStart, rangeEnd, error)) {
+      return false;
+    }
     action.Type = RewriteActionType::ReplaceRange;
-    action.ReplaceIndex = match.RangeStartIndex;
-    action.RangeStart = match.RangeStartIndex;
-    action.RangeEnd = match.RangeEndIndex;
+    action.ReplaceIndex = rangeStart;
+    action.RangeStart = rangeStart;
+    action.RangeEnd = rangeEnd;
     return true;
   }
 

@@ -121,7 +121,8 @@ static bool MatchInstruction(
     return false;
 
   if (pattern.HasTestBooleanMatch &&
-      instruction.Controls.TestBoolean != pattern.MatchTestBoolean)
+      (!instruction.Controls.HasTestBoolean ||
+       instruction.Controls.TestBoolean != pattern.MatchTestBoolean))
     return false;
 
   if (pattern.HasInputInterpolationModeMatch) {

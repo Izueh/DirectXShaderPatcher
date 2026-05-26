@@ -33,7 +33,6 @@ rewrite_rules:
     match:
       opcode: Frc
       capture: ign_root
-      replace: ign_root
       prune_dead: true
       operands:
         - index: 1
@@ -171,7 +170,6 @@ rewrite_rules:
     match:
       opcode: Frc
       capture: ign_root
-      replace: ign_root
       prune_dead: true
       operands:
         - index: 1

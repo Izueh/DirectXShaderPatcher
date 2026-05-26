@@ -5,7 +5,6 @@ rewrite_rules:
     match:
       opcode: Frc
       capture: ign_root
-      replace: ign_root
       mode: Replace
       prune_dead: true
       operands:

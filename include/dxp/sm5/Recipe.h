@@ -1111,6 +1111,8 @@ struct RecipeRule {
   RecipeMatchCallback MatchCallback;
   std::vector<RecipeInstructionTemplate> Emit;
   std::string Replace;
+  int32_t RangeStartOffset = 0;
+  int32_t RangeEndOffset = -1;
   RecipeRuleApplicationMode ApplicationMode = RecipeRuleApplicationMode::First;
   RecipeRuleRewriteMode RewriteMode = RecipeRuleRewriteMode::Replace;
   RecipeRulePredicate Predicate;
@@ -1158,17 +1160,63 @@ struct RecipeRule {
     return std::move(*this);
   }
 
-  /// @brief Selects the captured instruction replaced by declarative rewriting.
+  /// @brief Selects the captured instruction targeted by declarative Before or
+  /// After rewriting.
   RecipeRule &ReplaceCapture(std::string capture) & {
     RewriteCallback = {};
     Replace = std::move(capture);
     return *this;
   }
 
-  /// @brief Selects the captured instruction replaced by declarative rewriting.
+  /// @brief Selects the captured instruction targeted by declarative Before or
+  /// After rewriting.
   RecipeRule &&ReplaceCapture(std::string capture) && {
     RewriteCallback = {};
     Replace = std::move(capture);
+    return std::move(*this);
+  }
+
+  /// @brief Sets start offset for ReplaceRange relative to the match window.
+  RecipeRule &RangeStart(int32_t offset) & {
+    RewriteCallback = {};
+    RangeStartOffset = offset;
+    return *this;
+  }
+
+  /// @brief Sets start offset for ReplaceRange relative to the match window.
+  RecipeRule &&RangeStart(int32_t offset) && {
+    RewriteCallback = {};
+    RangeStartOffset = offset;
+    return std::move(*this);
+  }
+
+  /// @brief Sets end offset for ReplaceRange relative to the match window.
+  RecipeRule &RangeEnd(int32_t offset) & {
+    RewriteCallback = {};
+    RangeEndOffset = offset;
+    return *this;
+  }
+
+  /// @brief Sets end offset for ReplaceRange relative to the match window.
+  RecipeRule &&RangeEnd(int32_t offset) && {
+    RewriteCallback = {};
+    RangeEndOffset = offset;
+    return std::move(*this);
+  }
+
+  /// @brief Sets ReplaceRange offsets relative to the match window.
+  RecipeRule &RangeOffsets(int32_t startOffset, int32_t endOffset) & {
+    RewriteCallback = {};
+    RangeStartOffset = startOffset;
+    RangeEndOffset = endOffset;
+    return *this;
+  }
+
+  /// @brief Sets ReplaceRange offsets relative to the match window.
+  RecipeRule &&RangeOffsets(int32_t startOffset, int32_t endOffset) && {
+    RewriteCallback = {};
+    RangeStartOffset = startOffset;
+    RangeEndOffset = endOffset;
     return std::move(*this);
   }
 
@@ -1200,6 +1248,8 @@ struct RecipeRule {
   RecipeRule &Rewrite(RecipeRewriteCallback callback) & {
     Emit.clear();
     Replace.clear();
+    RangeStartOffset = 0;
+    RangeEndOffset = -1;
     RewriteMode = RecipeRuleRewriteMode::Replace;
     RewriteCallback = std::move(callback);
     return *this;
@@ -1209,6 +1259,8 @@ struct RecipeRule {
   RecipeRule &&Rewrite(RecipeRewriteCallback callback) && {
     Emit.clear();
     Replace.clear();
+    RangeStartOffset = 0;
+    RangeEndOffset = -1;
     RewriteMode = RecipeRuleRewriteMode::Replace;
     RewriteCallback = std::move(callback);
     return std::move(*this);

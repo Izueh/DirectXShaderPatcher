@@ -91,6 +91,8 @@ struct YamlMatch {
   std::string opcode;
   std::string capture;
   std::string rewrite_mode;
+  int32_t range_start_offset = 0;
+  int32_t range_end_offset = -1;
   std::string saturate;
   std::string interpolation_mode;
   int32_t test_boolean = -1;
@@ -336,6 +338,8 @@ template <> struct MappingTraits<YamlMatch> {
     io.mapOptional("opcode", match.opcode);
     io.mapOptional("capture", match.capture);
     io.mapOptional("rewrite_mode", match.rewrite_mode);
+    io.mapOptional("range_start_offset", match.range_start_offset, 0);
+    io.mapOptional("range_end_offset", match.range_end_offset, -1);
     io.mapOptional("saturate", match.saturate);
     io.mapOptional("interpolation_mode", match.interpolation_mode);
     io.mapOptional("test_boolean", match.test_boolean, -1);
@@ -1138,15 +1142,58 @@ static bool FillRecipeOperandPattern(const YamlOperand &operandModel,
   return true;
 }
 
+static bool ResolveOpcodeAndTestBoolean(const std::string &opcodeName,
+                                        int32_t requestedTestBoolean,
+                                        Opcode &opcode,
+                                        std::string &canonicalName,
+                                        int32_t &resolvedTestBoolean,
+                                        std::string &error,
+                                        const char *context) {
+  int32_t implicitTestBoolean = -1;
+  if (!ParseOpcodeWithImplicitTestBoolean(opcodeName, opcode,
+                                          implicitTestBoolean)) {
+    error = std::string("Unknown SM5 opcode in ") + context + ": " + opcodeName;
+    return false;
+  }
+
+  canonicalName = GetOpcodeName(opcode);
+  resolvedTestBoolean = requestedTestBoolean;
+  if (implicitTestBoolean >= 0) {
+    if (resolvedTestBoolean >= 0 && resolvedTestBoolean != implicitTestBoolean) {
+      error = std::string("SM5 opcode alias '") + opcodeName +
+              "' conflicts with explicit test_boolean";
+      return false;
+    }
+    resolvedTestBoolean = implicitTestBoolean;
+  }
+
+  if (resolvedTestBoolean >= 0 && !OpcodeUsesTestBoolean(opcode)) {
+    error = std::string("SM5 test_boolean is not valid for opcode '") +
+            opcodeName + "'";
+    return false;
+  }
+
+  return true;
+}
+
 static bool BuildRecipeInstructionPattern(const YamlInstructionMatch &matchModel,
                                          RecipeInstructionPattern &pattern,
                                          std::string &error) {
+  Opcode parsedOpcode;
+  std::string canonicalOpcodeName;
+  int32_t resolvedTestBoolean = matchModel.test_boolean;
+  if (!ResolveOpcodeAndTestBoolean(matchModel.opcode, matchModel.test_boolean,
+                                   parsedOpcode, canonicalOpcodeName,
+                                   resolvedTestBoolean, error, "match")) {
+    return false;
+  }
+
   pattern = RecipeInstructionPattern{}
-                .WithOpcode(matchModel.opcode)
+                .WithOpcode(canonicalOpcodeName)
                 .CaptureAs(matchModel.capture)
                 .WithSaturate(matchModel.saturate)
                 .WithInterpolationMode(matchModel.interpolation_mode)
-                .WithTestBoolean(matchModel.test_boolean);
+                .WithTestBoolean(resolvedTestBoolean);
 
   for (const YamlOperand &operandModel : matchModel.operands) {
     RecipeOperandPattern operand;
@@ -1164,8 +1211,12 @@ static bool ParseInstructionMatch(const YamlInstructionMatch &matchModel,
                                   std::string &error) {
   instructionMatch = InstructionMatch{};
 
-  if (!ParseOpcode(matchModel.opcode, instructionMatch.Opcode)) {
-    error = "Unknown SM5 opcode in match: " + matchModel.opcode;
+  std::string canonicalOpcodeName;
+  int32_t resolvedTestBoolean = matchModel.test_boolean;
+  if (!ResolveOpcodeAndTestBoolean(matchModel.opcode, matchModel.test_boolean,
+                                   instructionMatch.Opcode,
+                                   canonicalOpcodeName, resolvedTestBoolean,
+                                   error, "match")) {
     return false;
   }
   instructionMatch.HasOpcode = true;
@@ -1179,10 +1230,10 @@ static bool ParseInstructionMatch(const YamlInstructionMatch &matchModel,
     instructionMatch.HasSaturateMatch = true;
     instructionMatch.SaturateValue = saturate;
   }
-  if (matchModel.test_boolean >= 0) {
+    if (resolvedTestBoolean >= 0) {
     instructionMatch.HasTestBooleanMatch = true;
     instructionMatch.MatchTestBoolean =
-        static_cast<uint32_t>(matchModel.test_boolean);
+      static_cast<uint32_t>(resolvedTestBoolean);
   }
   if (!matchModel.interpolation_mode.empty()) {
     uint32_t interpolationMode = 0;
@@ -1224,6 +1275,26 @@ static bool ParseRule(const YamlRule &ruleModel,
     return false;
   }
   rule.RewriteAs(rewriteMode);
+  rule.RangeOffsets(ruleModel.match.range_start_offset,
+                    ruleModel.match.range_end_offset);
+
+  const bool hasCustomRangeOffsets =
+      ruleModel.match.range_start_offset != 0 ||
+      ruleModel.match.range_end_offset != -1;
+  if (ruleModel.match.range_start_offset < 0) {
+    error = "SM5 match.range_start_offset must be >= 0";
+    return false;
+  }
+  if (ruleModel.match.range_end_offset < -1) {
+    error = "SM5 match.range_end_offset must be -1 or >= 0";
+    return false;
+  }
+  if (rewriteMode != RecipeRuleRewriteMode::ReplaceRange &&
+      hasCustomRangeOffsets) {
+    error =
+        "SM5 range offsets require match.rewrite_mode: ReplaceRange";
+    return false;
+  }
 
   if (!ruleModel.match.sequence.empty()) {
     if (!ruleModel.match.opcode.empty() || !ruleModel.match.capture.empty() ||
@@ -1252,18 +1323,22 @@ static bool ParseRule(const YamlRule &ruleModel,
     rule.WithMatch(std::move(match));
   } else if (!ruleModel.match.opcode.empty()) {
     Opcode parsedOpcode;
-    if (!ParseOpcode(ruleModel.match.opcode, parsedOpcode)) {
-      error = "Unknown SM5 opcode in match: " + ruleModel.match.opcode;
+    std::string canonicalOpcodeName;
+    int32_t resolvedTestBoolean = ruleModel.match.test_boolean;
+    if (!ResolveOpcodeAndTestBoolean(ruleModel.match.opcode,
+                                     ruleModel.match.test_boolean,
+                                     parsedOpcode, canonicalOpcodeName,
+                                     resolvedTestBoolean, error, "match")) {
       return false;
     }
 
     RecipeMatchPattern match = RecipeMatchPattern{}
-                                   .WithOpcode(ruleModel.match.opcode)
+                                   .WithOpcode(canonicalOpcodeName)
                                    .CaptureAs(ruleModel.match.capture)
                                    .WithSaturate(ruleModel.match.saturate)
                                    .WithInterpolationMode(
                                        ruleModel.match.interpolation_mode)
-                                   .WithTestBoolean(ruleModel.match.test_boolean);
+                                   .WithTestBoolean(resolvedTestBoolean);
     if (!ruleModel.match.saturate.empty()) {
       bool saturate = false;
       if (!ParseBoolToken(ruleModel.match.saturate, saturate, error)) {
@@ -1290,9 +1365,19 @@ static bool ParseRule(const YamlRule &ruleModel,
 
   rule.ReplaceCapture(ruleModel.replace);
 
+  if ((rule.RewriteMode == RecipeRuleRewriteMode::Replace ||
+       rule.RewriteMode == RecipeRuleRewriteMode::ReplaceRange) &&
+      !rule.Replace.empty()) {
+    error = "SM5 replace capture is only valid with Before or After rewrite "
+            "modes";
+    return false;
+  }
+
   if (rule.RewriteMode == RecipeRuleRewriteMode::None) {
-    if (!rule.Replace.empty() || !ruleModel.emit.empty()) {
-      error = "SM5 rewrite mode None cannot be combined with replace or emit";
+    if (!rule.Replace.empty() || !ruleModel.emit.empty() ||
+        hasCustomRangeOffsets) {
+      error = "SM5 rewrite mode None cannot be combined with replace, emit, "
+              "or range offsets";
       return false;
     }
   } else {
@@ -1309,10 +1394,15 @@ static bool ParseRule(const YamlRule &ruleModel,
     }
 
     Instruction instruction;
-    if (!ParseOpcode(emitModel.opcode, instruction.Opcode)) {
-      error = "Unknown SM5 opcode in emit: " + emitModel.opcode;
+    Opcode parsedOpcode;
+    std::string canonicalOpcodeName;
+    int32_t resolvedTestBoolean = emitModel.test_boolean;
+    if (!ResolveOpcodeAndTestBoolean(emitModel.opcode, emitModel.test_boolean,
+                                     parsedOpcode, canonicalOpcodeName,
+                                     resolvedTestBoolean, error, "emit")) {
       return false;
     }
+    instruction.Opcode = parsedOpcode;
     if (!emitModel.saturate.empty()) {
       bool saturate = false;
       if (!ParseBoolToken(emitModel.saturate, saturate, error)) {
@@ -1321,10 +1411,10 @@ static bool ParseRule(const YamlRule &ruleModel,
       }
       instruction.Controls.Saturate = saturate;
     }
-    if (emitModel.test_boolean >= 0) {
+        if (resolvedTestBoolean >= 0) {
       instruction.Controls.HasTestBoolean = true;
       instruction.Controls.TestBoolean =
-          static_cast<uint32_t>(emitModel.test_boolean);
+          static_cast<uint32_t>(resolvedTestBoolean);
     }
     if (!emitModel.interpolation_mode.empty()) {
       uint32_t interpolationMode = 0;
@@ -1353,10 +1443,10 @@ static bool ParseRule(const YamlRule &ruleModel,
     }
     RecipeInstructionTemplate emitInstruction =
         RecipeInstructionTemplate{}
-            .WithOpcode(emitModel.opcode)
+        .WithOpcode(canonicalOpcodeName)
             .WithSaturate(emitModel.saturate)
             .WithInterpolationMode(emitModel.interpolation_mode)
-            .WithTestBoolean(emitModel.test_boolean);
+        .WithTestBoolean(resolvedTestBoolean);
     for (const YamlOperand &operandModel : emitModel.operands) {
       RecipeOperandPattern operandPattern;
       if (!FillRecipeOperandPattern(operandModel, operandPattern, error)) {
@@ -1432,14 +1522,26 @@ static bool BuildRecipePrefilter(const YamlPrefilter &prefilterModel,
                   .Require(prefilterModel.required);
   prefilter.Kind = kind;
 
+  std::string canonicalOpcodeName = prefilterModel.match.opcode;
+  int32_t resolvedTestBoolean = prefilterModel.match.test_boolean;
+  if (!prefilterModel.match.opcode.empty()) {
+    Opcode parsedOpcode;
+    if (!ResolveOpcodeAndTestBoolean(prefilterModel.match.opcode,
+                                     prefilterModel.match.test_boolean,
+                                     parsedOpcode, canonicalOpcodeName,
+                                     resolvedTestBoolean, parseError,
+                                     "prefilter")) {
+      return false;
+    }
+  }
+
   RecipeMatchPattern match = RecipeMatchPattern{}
-                                 .WithOpcode(prefilterModel.match.opcode)
+                                 .WithOpcode(canonicalOpcodeName)
                                  .CaptureAs(prefilterModel.match.capture)
                                  .WithSaturate(prefilterModel.match.saturate)
                                  .WithInterpolationMode(
                                      prefilterModel.match.interpolation_mode)
-                                 .WithTestBoolean(
-                                     prefilterModel.match.test_boolean);
+                                 .WithTestBoolean(resolvedTestBoolean);
 
   for (const YamlOperand &operandModel : prefilterModel.match.operands) {
     RecipeOperandPattern operand;

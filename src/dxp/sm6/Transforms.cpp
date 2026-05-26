@@ -645,7 +645,114 @@ static bool CollectInstructionRange(llvm::Instruction *start,
   }
 
   range.clear();
+
   return false;
+}
+
+static bool AppendAutomaticPruneCandidates(
+    const DxilMatchResult &match, llvm::Instruction *rangeStart,
+    llvm::Instruction *rangeEnd,
+    std::vector<llvm::Instruction *> &pruneCandidates) {
+  std::vector<llvm::Instruction *> matchedRange;
+  if (rangeStart != nullptr && rangeEnd != nullptr &&
+      !CollectInstructionRange(rangeStart, rangeEnd, matchedRange)) {
+    return false;
+  }
+
+  for (const auto &captureEntry : match.captures) {
+    llvm::Instruction *capturedInstruction =
+        llvm::dyn_cast_or_null<llvm::Instruction>(captureEntry.second);
+    if (capturedInstruction == nullptr)
+      continue;
+
+    if (std::find(matchedRange.begin(), matchedRange.end(),
+                  capturedInstruction) != matchedRange.end()) {
+      continue;
+    }
+
+    AppendUniqueInstruction(pruneCandidates, capturedInstruction);
+  }
+
+  return true;
+}
+
+static bool ResolveInstructionAtOffset(llvm::Instruction *base,
+                                       uint32_t offset,
+                                       llvm::Instruction *&resolved) {
+  resolved = nullptr;
+  if (base == nullptr)
+    return false;
+
+  llvm::BasicBlock::iterator it(base);
+  for (uint32_t step = 0; step < offset; ++step) {
+    ++it;
+    if (it == base->getParent()->end())
+      return false;
+  }
+
+  resolved = &*it;
+  return true;
+}
+
+static bool ResolveReplacementRange(const DxilRewriteRule &rule,
+                                    llvm::Instruction *replacementTarget,
+                                    llvm::Instruction *&rangeStart,
+                                    llvm::Instruction *&rangeEnd) {
+  rangeStart = nullptr;
+  rangeEnd = nullptr;
+  if (replacementTarget == nullptr)
+    return false;
+
+  if (rule.mode == DxilRewriteMode::Replace) {
+    rangeStart = replacementTarget;
+    rangeEnd = replacementTarget;
+    return true;
+  }
+
+  if (rule.mode != DxilRewriteMode::ReplaceRange)
+    return false;
+
+  if (rule.rangeStartOffset < 0 || rule.rangeEndOffset < -1)
+    return false;
+
+  const uint32_t startOffset = static_cast<uint32_t>(rule.rangeStartOffset);
+  const uint32_t endOffset =
+      rule.rangeEndOffset < 0 ? startOffset
+                              : static_cast<uint32_t>(rule.rangeEndOffset);
+  if (startOffset > endOffset)
+    return false;
+
+  if (!ResolveInstructionAtOffset(replacementTarget, startOffset, rangeStart))
+    return false;
+  if (!ResolveInstructionAtOffset(replacementTarget, endOffset, rangeEnd))
+    return false;
+  return true;
+}
+
+static bool EraseInstructionRange(llvm::Instruction *rangeStart,
+                                  llvm::Instruction *rangeEnd,
+                                  llvm::Instruction *replacementTarget) {
+  std::vector<llvm::Instruction *> rangeInstructions;
+  if (!CollectInstructionRange(rangeStart, rangeEnd, rangeInstructions))
+    return false;
+
+  for (llvm::Instruction *instruction : rangeInstructions) {
+    if (instruction == replacementTarget) {
+      if (!instruction->use_empty())
+        return false;
+      continue;
+    }
+    if (!instruction->use_empty())
+      return false;
+  }
+
+  for (auto it = rangeInstructions.rbegin(); it != rangeInstructions.rend();
+       ++it) {
+    llvm::Instruction *instruction = *it;
+    if (instruction->use_empty())
+      instruction->eraseFromParent();
+  }
+  return true;
 }
 
 static const llvm::Argument *GetFunctionArg(llvm::Function *function,
@@ -1331,226 +1438,9 @@ bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
                                    unsigned *appliedRuleCount,
                                    unsigned *mutatedRuleCount,
                                    std::vector<DxilRuleApplicationReport> *ruleReports) {
-  struct ReplacementWork {
-    const DxilRewriteRule *rule = nullptr;
-    llvm::WeakTrackingVH replacementTarget;
-    llvm::WeakTrackingVH anchorInstruction;
-    DxilRewriteMode mode = DxilRewriteMode::Replace;
-    bool handledReplacement = false;
-    llvm::Value *replacementValue = nullptr;
-    std::vector<llvm::WeakTrackingVH> pruneRoots;
-    llvm::WeakTrackingVH rangeStart;
-    llvm::WeakTrackingVH rangeEnd;
-    llvm::BasicBlock *scratchBlock = nullptr;
-    bool mutating = false;
-  };
-
-  unsigned appliedCount = 0;
-  unsigned mutationCount = 0;
-  std::vector<llvm::Instruction *> allPruneCandidates;
-  std::vector<ReplacementWork> replacements;
-  std::vector<DxilRuleApplicationReport> localRuleReports;
-  if (ruleReports != nullptr) {
-    localRuleReports.resize(rules.size());
-    for (size_t ruleIndex = 0; ruleIndex < rules.size(); ++ruleIndex)
-      localRuleReports[ruleIndex].name = rules[ruleIndex].name;
-  }
-
-  for (size_t ruleIndex = 0; ruleIndex < rules.size(); ++ruleIndex) {
-    const DxilRewriteRule &rule = rules[ruleIndex];
-    const bool ruleMutating = IsMutatingRewriteMode(rule.mode);
-    std::vector<DxilMatchResult> matches;
-    CollectDxilCallMatches(function, rule.pattern, matches, &dxilModule);
-
-    for (const DxilMatchResult &match : matches) {
-      DxilMatchResult effectiveMatch = match;
-      bool missingBinding = false;
-      for (const DxilCallPattern &bindingPattern : rule.bindingPatterns) {
-        DxilMatchResult bindingMatch;
-        if (!FindDxilCallMatch(function, bindingPattern, bindingMatch,
-                               &dxilModule) ||
-            !MergeDxilMatchCaptures(bindingMatch.captures,
-                                    effectiveMatch.captures)) {
-          missingBinding = true;
-          break;
-        }
-      }
-      if (missingBinding)
-        continue;
-      if (rule.predicate && !rule.predicate(effectiveMatch))
-        continue;
-      if (ruleReports != nullptr)
-        ++localRuleReports[ruleIndex].matchCount;
-
-      if (!ruleMutating) {
-        ReplacementWork work;
-        work.rule = &rule;
-        work.mode = rule.mode;
-        work.mutating = false;
-        replacements.push_back(std::move(work));
-        continue;
-      }
-
-      llvm::Instruction *replaceInstruction =
-          ResolveMatchInstruction(effectiveMatch, rule.replaceCaptureName);
-      llvm::Instruction *rangeStartInstruction =
-          ResolveMatchInstruction(effectiveMatch, rule.rangeStartCaptureName);
-      llvm::Instruction *rangeEndInstruction =
-          ResolveMatchInstruction(effectiveMatch, rule.rangeEndCaptureName);
-
-      llvm::Instruction *anchorInstruction = nullptr;
-      if (rule.mode == DxilRewriteMode::After) {
-        anchorInstruction =
-            rangeEndInstruction != nullptr
-                ? rangeEndInstruction
-                : (replaceInstruction != nullptr ? replaceInstruction
-                                                 : effectiveMatch.rootCall);
-      } else {
-        anchorInstruction =
-            rangeStartInstruction != nullptr
-                ? rangeStartInstruction
-                : (replaceInstruction != nullptr ? replaceInstruction
-                                                 : effectiveMatch.rootCall);
-      }
-      if (anchorInstruction == nullptr)
-        return false;
-
-      llvm::Instruction *replacementTarget = replaceInstruction != nullptr
-                                                 ? replaceInstruction
-                                                 : effectiveMatch.rootCall;
-
-      llvm::BasicBlock *scratchBlock =
-          llvm::BasicBlock::Create(function.getContext(), "scratch");
-      llvm::IRBuilder<> builder(scratchBlock);
-
-      DxilRewriteResult rewriteResult;
-      if (rule.replacementCallback) {
-        rewriteResult = rule.replacementCallback(effectiveMatch, builder,
-                                                 module, dxilModule);
-      } else if (!BuildDeclarativeRewriteResult(
-                     rule, replacementTarget, builder, module, dxilModule,
-                     effectiveMatch, rewriteResult)) {
-        return false;
-      }
-      if (!rewriteResult.success)
-        return false;
-
-      ReplacementWork work;
-      work.rule = &rule;
-      work.replacementTarget = replacementTarget;
-      work.anchorInstruction = anchorInstruction;
-      work.mode = rule.mode;
-      work.mutating = ruleMutating;
-      work.handledReplacement = rewriteResult.handledReplacement;
-      work.replacementValue = rewriteResult.replacementValue;
-      work.rangeStart = rangeStartInstruction;
-      work.rangeEnd = rangeEndInstruction;
-      work.scratchBlock = scratchBlock;
-      for (llvm::Instruction *root : rewriteResult.pruneRoots)
-        work.pruneRoots.emplace_back(root);
-      replacements.push_back(std::move(work));
-    }
-  }
-
-  for (const ReplacementWork &work : replacements) {
-    if (!work.mutating) {
-      ++appliedCount;
-      if (ruleReports != nullptr) {
-        const size_t ruleIndex = static_cast<size_t>(work.rule - &rules[0]);
-        ++localRuleReports[ruleIndex].appliedCount;
-      }
-      continue;
-    }
-
-    llvm::Instruction *anchorInstruction =
-        llvm::dyn_cast_or_null<llvm::Instruction>(
-            static_cast<llvm::Value *>(work.anchorInstruction));
-    if (anchorInstruction == nullptr) {
-      delete work.scratchBlock;
-      continue;
-    }
-
-    std::vector<llvm::Instruction *> scratchInstructions;
-    for (llvm::Instruction &instruction : *work.scratchBlock)
-      scratchInstructions.push_back(&instruction);
-
-    for (llvm::Instruction *instruction : scratchInstructions) {
-      instruction->removeFromParent();
-      if (work.mode == DxilRewriteMode::After)
-        instruction->insertAfter(anchorInstruction);
-      else
-        instruction->insertBefore(anchorInstruction);
-    }
-    delete work.scratchBlock;
-
-    llvm::Instruction *replacementTarget =
-        llvm::dyn_cast_or_null<llvm::Instruction>(
-            static_cast<llvm::Value *>(work.replacementTarget));
-
-    if (work.mutating && (work.mode == DxilRewriteMode::Replace ||
-                          work.mode == DxilRewriteMode::ReplaceRange)) {
-      if (replacementTarget == nullptr)
-        continue;
-      if (!work.handledReplacement && work.replacementValue != nullptr)
-        replacementTarget->replaceAllUsesWith(work.replacementValue);
-      AppendUniqueInstruction(allPruneCandidates, replacementTarget);
-    }
-
-    if (work.mutating && work.mode == DxilRewriteMode::ReplaceRange) {
-      llvm::Instruction *rangeStart = llvm::dyn_cast_or_null<llvm::Instruction>(
-          static_cast<llvm::Value *>(work.rangeStart));
-      llvm::Instruction *rangeEnd = llvm::dyn_cast_or_null<llvm::Instruction>(
-          static_cast<llvm::Value *>(work.rangeEnd));
-      if (rangeStart == nullptr)
-        rangeStart = replacementTarget != nullptr ? replacementTarget
-                                                  : anchorInstruction;
-      if (rangeEnd == nullptr)
-        rangeEnd = rangeStart;
-
-      std::vector<llvm::Instruction *> rangeInstructions;
-      if (!CollectInstructionRange(rangeStart, rangeEnd, rangeInstructions))
-        continue;
-
-      for (llvm::Instruction *instruction : rangeInstructions)
-        AppendUniqueInstruction(allPruneCandidates, instruction);
-    }
-
-    if (work.mutating && work.rule->pruneDeadInstructions) {
-      for (const llvm::WeakTrackingVH &rootHandle : work.pruneRoots) {
-        llvm::Instruction *root = llvm::dyn_cast_or_null<llvm::Instruction>(
-            static_cast<llvm::Value *>(rootHandle));
-        AppendUniqueInstruction(allPruneCandidates, root);
-      }
-    }
-
-    ++appliedCount;
-    if (work.mutating)
-      ++mutationCount;
-    if (ruleReports != nullptr) {
-      const size_t ruleIndex = static_cast<size_t>(work.rule - &rules[0]);
-      ++localRuleReports[ruleIndex].appliedCount;
-      if (work.mutating)
-        ++localRuleReports[ruleIndex].mutatedCount;
-    }
-  }
-
-  if (!allPruneCandidates.empty())
-    PruneCandidateInstructions(allPruneCandidates);
-
-  {
-    hlsl::OP *op = dxilModule.GetOP();
-    if (op)
-      op->RefreshCache();
-  }
-
-  if (appliedRuleCount != nullptr)
-    *appliedRuleCount = appliedCount;
-  if (mutatedRuleCount != nullptr)
-    *mutatedRuleCount = mutationCount;
-  if (ruleReports != nullptr)
-    *ruleReports = std::move(localRuleReports);
-
-  return true;
+  return ApplyDxilRewriteRules(function, module, dxilModule, rules,
+                               appliedRuleCount, mutatedRuleCount,
+                               ruleReports);
 }
 
 bool ApplyDxilRewriteRules(llvm::Function &function, llvm::Module &module,
@@ -1608,24 +1498,28 @@ bool ApplyDxilRewriteRules(llvm::Function &function, llvm::Module &module,
 
         llvm::Instruction *replaceInstruction =
             ResolveMatchInstruction(effectiveMatch, rule.replaceCaptureName);
-        llvm::Instruction *rangeStartInstruction =
-            ResolveMatchInstruction(effectiveMatch, rule.rangeStartCaptureName);
-        llvm::Instruction *rangeEndInstruction =
-            ResolveMatchInstruction(effectiveMatch, rule.rangeEndCaptureName);
+        llvm::Instruction *replacementTarget = replaceInstruction != nullptr
+                                                   ? replaceInstruction
+                                                   : effectiveMatch.rootCall;
+
+        llvm::Instruction *rangeStartInstruction = replacementTarget;
+        llvm::Instruction *rangeEndInstruction = replacementTarget;
+        if ((rule.mode == DxilRewriteMode::Replace ||
+             rule.mode == DxilRewriteMode::ReplaceRange) &&
+            !ResolveReplacementRange(rule, replacementTarget,
+                                     rangeStartInstruction,
+                                     rangeEndInstruction)) {
+          return false;
+        }
 
         llvm::Instruction *anchorInstruction = nullptr;
         if (rule.mode == DxilRewriteMode::After) {
-          anchorInstruction =
-              rangeEndInstruction != nullptr
-                  ? rangeEndInstruction
-                  : (replaceInstruction != nullptr ? replaceInstruction
-                                                   : effectiveMatch.rootCall);
+          anchorInstruction = replacementTarget;
+        } else if (rule.mode == DxilRewriteMode::Replace ||
+                   rule.mode == DxilRewriteMode::ReplaceRange) {
+          anchorInstruction = rangeStartInstruction;
         } else {
-          anchorInstruction =
-              rangeStartInstruction != nullptr
-                  ? rangeStartInstruction
-                  : (replaceInstruction != nullptr ? replaceInstruction
-                                                   : effectiveMatch.rootCall);
+          anchorInstruction = replacementTarget;
         }
         if (anchorInstruction == nullptr)
           return false;
@@ -1638,10 +1532,6 @@ bool ApplyDxilRewriteRules(llvm::Function &function, llvm::Module &module,
         } else {
           builder.SetInsertPoint(anchorInstruction);
         }
-
-        llvm::Instruction *replacementTarget = replaceInstruction != nullptr
-                                                   ? replaceInstruction
-                                                   : effectiveMatch.rootCall;
 
         DxilRewriteResult rewriteResult;
         if (rule.replacementCallback) {
@@ -1660,38 +1550,30 @@ bool ApplyDxilRewriteRules(llvm::Function &function, llvm::Module &module,
             std::move(rewriteResult.pruneRoots);
 
         if (ruleMutating && (rule.mode == DxilRewriteMode::Replace ||
-                             rule.mode == DxilRewriteMode::ReplaceRange)) {
+                             rule.mode == DxilRewriteMode::ReplaceRange) &&
+            !rewriteResult.handledReplacement) {
+          if (rule.pruneDeadInstructions &&
+              !AppendAutomaticPruneCandidates(effectiveMatch,
+                                             rangeStartInstruction,
+                                             rangeEndInstruction,
+                                             pruneCandidates)) {
+            return false;
+          }
+
           if (replacementTarget == nullptr)
             return false;
 
-          if (!rewriteResult.handledReplacement) {
-            if (rewriteResult.replacementValue == nullptr)
-              return false;
-            replacementTarget->replaceAllUsesWith(
-                rewriteResult.replacementValue);
-          }
-
-          AppendUniqueInstruction(pruneCandidates, replacementTarget);
-        }
-
-        if (ruleMutating && rule.mode == DxilRewriteMode::ReplaceRange) {
-          llvm::Instruction *rangeStart =
-              rangeStartInstruction != nullptr
-                  ? rangeStartInstruction
-                  : (replaceInstruction != nullptr ? replaceInstruction
-                                                   : effectiveMatch.rootCall);
-          llvm::Instruction *rangeEnd =
-              rangeEndInstruction != nullptr ? rangeEndInstruction : rangeStart;
-
-          std::vector<llvm::Instruction *> rangeInstructions;
-          if (!CollectInstructionRange(rangeStart, rangeEnd, rangeInstructions))
+          if (rewriteResult.replacementValue == nullptr)
             return false;
+          replacementTarget->replaceAllUsesWith(rewriteResult.replacementValue);
 
-          for (llvm::Instruction *instruction : rangeInstructions)
-            AppendUniqueInstruction(pruneCandidates, instruction);
+          if (!EraseInstructionRange(rangeStartInstruction, rangeEndInstruction,
+                                     replacementTarget)) {
+            return false;
+          }
         }
 
-        if (ruleMutating && rule.pruneDeadInstructions)
+        if (ruleMutating && !pruneCandidates.empty())
           PruneCandidateInstructions(pruneCandidates);
 
         ++appliedCount;
@@ -1765,24 +1647,28 @@ bool ApplyDxilRewriteRulesOnce(llvm::Function &function, llvm::Module &module,
 
     llvm::Instruction *replaceInstruction =
         ResolveMatchInstruction(effectiveMatch, rule.replaceCaptureName);
-    llvm::Instruction *rangeStartInstruction =
-        ResolveMatchInstruction(effectiveMatch, rule.rangeStartCaptureName);
-    llvm::Instruction *rangeEndInstruction =
-        ResolveMatchInstruction(effectiveMatch, rule.rangeEndCaptureName);
+    llvm::Instruction *replacementTarget = replaceInstruction != nullptr
+                                               ? replaceInstruction
+                                               : effectiveMatch.rootCall;
+
+    llvm::Instruction *rangeStartInstruction = replacementTarget;
+    llvm::Instruction *rangeEndInstruction = replacementTarget;
+    if ((rule.mode == DxilRewriteMode::Replace ||
+         rule.mode == DxilRewriteMode::ReplaceRange) &&
+        !ResolveReplacementRange(rule, replacementTarget,
+                                 rangeStartInstruction,
+                                 rangeEndInstruction)) {
+      return false;
+    }
 
     llvm::Instruction *anchorInstruction = nullptr;
     if (rule.mode == DxilRewriteMode::After) {
-      anchorInstruction =
-          rangeEndInstruction != nullptr
-              ? rangeEndInstruction
-              : (replaceInstruction != nullptr ? replaceInstruction
-                                               : effectiveMatch.rootCall);
+      anchorInstruction = replacementTarget;
+    } else if (rule.mode == DxilRewriteMode::Replace ||
+               rule.mode == DxilRewriteMode::ReplaceRange) {
+      anchorInstruction = rangeStartInstruction;
     } else {
-      anchorInstruction =
-          rangeStartInstruction != nullptr
-              ? rangeStartInstruction
-              : (replaceInstruction != nullptr ? replaceInstruction
-                                               : effectiveMatch.rootCall);
+      anchorInstruction = replacementTarget;
     }
     if (anchorInstruction == nullptr)
       return false;
@@ -1795,10 +1681,6 @@ bool ApplyDxilRewriteRulesOnce(llvm::Function &function, llvm::Module &module,
     } else {
       builder.SetInsertPoint(anchorInstruction);
     }
-
-    llvm::Instruction *replacementTarget = replaceInstruction != nullptr
-                                               ? replaceInstruction
-                                               : effectiveMatch.rootCall;
 
     DxilRewriteResult rewriteResult;
     if (rule.replacementCallback) {
@@ -1817,37 +1699,30 @@ bool ApplyDxilRewriteRulesOnce(llvm::Function &function, llvm::Module &module,
         std::move(rewriteResult.pruneRoots);
 
     if (ruleMutating && (rule.mode == DxilRewriteMode::Replace ||
-                         rule.mode == DxilRewriteMode::ReplaceRange)) {
+                         rule.mode == DxilRewriteMode::ReplaceRange) &&
+        !rewriteResult.handledReplacement) {
+      if (rule.pruneDeadInstructions &&
+          !AppendAutomaticPruneCandidates(effectiveMatch,
+                                          rangeStartInstruction,
+                                          rangeEndInstruction,
+                                          pruneCandidates)) {
+        return false;
+      }
+
       if (replacementTarget == nullptr)
         return false;
 
-      if (!rewriteResult.handledReplacement) {
-        if (rewriteResult.replacementValue == nullptr)
-          return false;
-        replacementTarget->replaceAllUsesWith(rewriteResult.replacementValue);
-      }
-
-      AppendUniqueInstruction(pruneCandidates, replacementTarget);
-    }
-
-    if (ruleMutating && rule.mode == DxilRewriteMode::ReplaceRange) {
-      llvm::Instruction *rangeStart =
-          rangeStartInstruction != nullptr
-              ? rangeStartInstruction
-              : (replaceInstruction != nullptr ? replaceInstruction
-                                               : effectiveMatch.rootCall);
-      llvm::Instruction *rangeEnd =
-          rangeEndInstruction != nullptr ? rangeEndInstruction : rangeStart;
-
-      std::vector<llvm::Instruction *> rangeInstructions;
-      if (!CollectInstructionRange(rangeStart, rangeEnd, rangeInstructions))
+      if (rewriteResult.replacementValue == nullptr)
         return false;
+      replacementTarget->replaceAllUsesWith(rewriteResult.replacementValue);
 
-      for (llvm::Instruction *instruction : rangeInstructions)
-        AppendUniqueInstruction(pruneCandidates, instruction);
+      if (!EraseInstructionRange(rangeStartInstruction, rangeEndInstruction,
+                                 replacementTarget)) {
+        return false;
+      }
     }
 
-    if (ruleMutating && rule.pruneDeadInstructions)
+    if (ruleMutating && !pruneCandidates.empty())
       PruneCandidateInstructions(pruneCandidates);
 
     ++appliedCount;

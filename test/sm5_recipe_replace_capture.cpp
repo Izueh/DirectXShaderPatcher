@@ -82,7 +82,6 @@ steps:
           operands:
             - capture: dst
             - capture: src
-        replace: target_mul
         emit:
           - opcode: mov
             operands:
@@ -171,7 +170,7 @@ steps:
           operands:
             - capture: dst
             - capture: src
-        replace: missing_capture
+        replace: target_mul
         emit:
           - opcode: mov
             operands:
@@ -180,22 +179,14 @@ steps:
 )YAML";
 
   dxp::sm5::RecipeParseResult invalidParseResult;
-  if (!dxp::sm5::ParseRecipeText(invalidRecipeText, invalidParseResult,
-                                 "inline-sm5-invalid-replace-capture-test")) {
-    std::cerr << "Failed to parse inline SM5 invalid replace recipe: "
-              << invalidParseResult.Error << "\n";
+  if (dxp::sm5::ParseRecipeText(invalidRecipeText, invalidParseResult,
+                                "inline-sm5-invalid-replace-capture-test")) {
+    std::cerr << "Expected parsing to reject replace capture with default "
+                 "Replace semantics.\n";
     return 1;
   }
 
-  const auto invalidPatchResult =
-      dxp::sm5::PatchContainer(inputBytes, invalidParseResult.Recipe);
-  if (invalidPatchResult.Success) {
-    std::cerr << "Expected patching to fail when replace references an unknown "
-                 "instruction capture.\n";
-    return 1;
-  }
-
-  std::cout << "SM5 replace capture rewrote the named instruction target and "
-               "rejected unknown replace captures.\n";
+  std::cout << "SM5 Replace rewrote the full matched instruction window and "
+               "rejected legacy replace captures.\n";
   return 0;
 }

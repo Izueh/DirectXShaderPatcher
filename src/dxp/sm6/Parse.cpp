@@ -418,6 +418,8 @@ struct YamlRecipeMatchModel {
   std::string capture;
   std::string replace;
   std::string mode = "Replace";
+  int32_t range_start_offset = 0;
+  int32_t range_end_offset = -1;
   bool prune_dead = true;
   std::vector<std::string> prune_captures;
   std::vector<YamlRecipeOperandModel> operands;
@@ -655,6 +657,8 @@ template <> struct MappingTraits<YamlRecipeMatchModel> {
     io.mapOptional("replace", match.replace);
     io.mapOptional("capture", match.capture);
     io.mapOptional("mode", match.mode, std::string("Replace"));
+    io.mapOptional("range_start_offset", match.range_start_offset, 0);
+    io.mapOptional("range_end_offset", match.range_end_offset, -1);
     io.mapOptional("prune_dead", match.prune_dead, true);
     io.mapOptional("prune_captures", match.prune_captures);
     io.mapOptional("operands", match.operands);
@@ -1064,6 +1068,8 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
     DxilRewriteRule rule;
     rule.name = ruleModel.name.empty() ? ruleModel.id : ruleModel.name;
     rule.replaceCaptureName = ruleModel.match.replace;
+    rule.rangeStartOffset = ruleModel.match.range_start_offset;
+    rule.rangeEndOffset = ruleModel.match.range_end_offset;
     rule.replacementCaptureName = ruleModel.replace_with_capture;
     rule.pruneDeadInstructions = ruleModel.match.prune_dead;
     rule.pruneCaptureNames = ruleModel.match.prune_captures;
@@ -1073,9 +1079,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
       return false;
     }
 
-    const std::string rootCaptureName = ruleModel.match.capture.empty()
-                                            ? rule.replaceCaptureName
-                                            : ruleModel.match.capture;
+    const std::string rootCaptureName = ruleModel.match.capture;
     if (!buildRecipeCallPattern("rewrite rule", ruleModel.id,
                                 ruleModel.match.opcode, rootCaptureName,
                                 ruleModel.match.operands, rule.pattern)) {
@@ -1253,6 +1257,8 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
     const bool hasReplacementValue =
         !rule.emittedSequence.replacementValueName.empty();
     const bool isMatchOnlyMode = rule.mode == DxilRewriteMode::None;
+    const bool hasCustomRangeOffsets =
+        rule.rangeStartOffset != 0 || rule.rangeEndOffset != -1;
     if (hasReplacementCapture && hasReplacementValue) {
       result.error =
           sourceName.str() + ": rewrite rule '" + ruleModel.id +
@@ -1260,14 +1266,37 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
       return false;
     }
 
+    if (rule.rangeStartOffset < 0) {
+      result.error = sourceName.str() + ": rewrite rule '" + ruleModel.id +
+                     "' range_start_offset must be >= 0";
+      return false;
+    }
+    if (rule.rangeEndOffset < -1) {
+      result.error = sourceName.str() + ": rewrite rule '" + ruleModel.id +
+                     "' range_end_offset must be -1 or >= 0";
+      return false;
+    }
+    if (rule.mode != DxilRewriteMode::ReplaceRange && hasCustomRangeOffsets) {
+      result.error = sourceName.str() + ": rewrite rule '" + ruleModel.id +
+                     "' range offsets require mode ReplaceRange";
+      return false;
+    }
+    if (!rule.replaceCaptureName.empty()) {
+      result.error = sourceName.str() + ": rewrite rule '" + ruleModel.id +
+                     "' must not define replace; Replace rewrites the full "
+                     "matched instruction and ReplaceRange uses "
+                     "range_start_offset/range_end_offset within that match";
+      return false;
+    }
+
     if (isMatchOnlyMode) {
       if (!rule.replaceCaptureName.empty() || !ruleModel.emit.empty() ||
           hasReplacementCapture || hasReplacementValue ||
-          !rule.pruneCaptureNames.empty()) {
+          !rule.pruneCaptureNames.empty() || hasCustomRangeOffsets) {
         result.error =
             sourceName.str() + ": rewrite rule '" + ruleModel.id +
             "' with mode None must not define replace, emit, replace_with, "
-            "replace_with_capture, or prune_captures";
+            "replace_with_capture, prune_captures, or range offsets";
         return false;
       }
     } else if (!hasReplacementCapture && !hasReplacementValue &&

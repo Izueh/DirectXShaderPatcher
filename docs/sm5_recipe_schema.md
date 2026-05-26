@@ -155,6 +155,8 @@ Notes:
 - `expected_count < 0` means at most `abs(expected_count)`.
 - `expected_count == 0` means exactly zero.
 - `expected_count > 0` means at least that many.
+- `opcode` fields accept canonical SM5 opcode names for all non-reserved D3D10, D3D10.1, D3D11, D3D11.1, and WDDM 1.3 opcodes.
+- Test-boolean opcodes may also use assembly-style aliases like `discard_z`, `discard_nz`, `if_z`, and `retc_nz`.
 - `check_pattern_match` requires `match.opcode` or `match.sequence`.
 - `match.sequence` cannot be combined with single-instruction match fields in the same pattern.
 - `prefilter` no longer stops or fails the recipe directly; it publishes a boolean probe result for later `if` guards.
@@ -208,6 +210,8 @@ Supported `match` fields:
 - `opcode`
 - `capture`
 - `rewrite_mode`
+- `range_start_offset`
+- `range_end_offset`
 - `saturate`
 - `interpolation_mode`
 - `test_boolean`
@@ -225,14 +229,22 @@ Supported `match` fields:
 Rule notes:
 
 - Omitted `match.rewrite_mode` defaults to `Replace`.
+- `Replace` rewrites the full matched instruction window.
 - Rules without `emit` must use `match.rewrite_mode: None`.
 - Declarative rules always match through `match`; they cannot mix declarative
   `match` and callback-based matching in YAML.
+- `match.opcode` and `emit[].opcode` accept canonical SM5 opcode names for all non-reserved D3D10, D3D10.1, D3D11, D3D11.1, and WDDM 1.3 opcodes.
+- Test-boolean opcodes may use `_z` and `_nz` alias spellings instead of a separate `test_boolean` field.
+- Alias spellings and explicit `test_boolean` must agree; if an alias already implies zero or nonzero, a conflicting `test_boolean` is rejected.
+- `test_boolean` is valid only for opcodes that actually carry the SM5 zero/nonzero control bit.
 - `Before` inserts emitted instructions immediately before the matched instruction or named `replace` capture.
 - `After` inserts emitted instructions immediately after the matched instruction or named `replace` capture.
 - `match.sequence` matches a contiguous instruction window.
-- Use `ReplaceRange` when the full matched sequence should be replaced.
-- If `replace` is present with `match.sequence`, only the named captured instruction is replaced.
+- Use `ReplaceRange` with `range_start_offset` and `range_end_offset` to replace a sub-window inside the matched instruction window.
+- `range_start_offset` must be `>= 0`.
+- `range_end_offset` must be `-1` or `>= 0`; `-1` means the end of the matched instruction window.
+- Offset fields are valid only when `match.rewrite_mode: ReplaceRange`.
+- `replace` captures are only valid with `Before` and `After` rewrite modes.
 
 ## Operands
 

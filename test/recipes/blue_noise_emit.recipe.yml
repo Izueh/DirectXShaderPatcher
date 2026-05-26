@@ -33,7 +33,6 @@ rewrite_rules:
     match:
       opcode: TextureLoad
       capture: texture_load
-      replace: texture_load
       prune_dead: true
       operands:
         - index: 1
@@ -134,7 +133,6 @@ rewrite_rules:
     match:
       opcode: TextureLoad
       capture: texture_load
-      replace: texture_load
       prune_dead: true
       operands:
         - index: 1
@@ -235,7 +233,6 @@ rewrite_rules:
     match:
       opcode: TextureLoad
       capture: texture_load
-      replace: texture_load
       prune_dead: true
       operands:
         - index: 1
@@ -336,7 +333,6 @@ rewrite_rules:
     match:
       opcode: TextureLoad
       capture: texture_load
-      replace: texture_load
       prune_dead: true
       operands:
         - index: 1

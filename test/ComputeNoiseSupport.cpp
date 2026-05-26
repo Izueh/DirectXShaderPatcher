@@ -619,7 +619,6 @@ BuildComputeNoiseRewriteRules(hlsl::DxilModule &dxilModule,
                           unsigned scaleOperandIndex) {
     return RewriteRule(ruleName)
         .Mode(DxilRewriteMode::Replace)
-        .ReplaceCapture("ign_root")
         .PruneDeadInstructions(true)
         .Match(
             DxOpCall(hlsl::OP::OpCode::Frc)
@@ -665,7 +664,7 @@ BuildComputeNoiseRewriteRules(hlsl::DxilModule &dxilModule,
           if (!MaterializeRewriteResources(
                   builder, capturedSupport, capturedTextureDesc,
                   capturedFrameIndexCBufferDesc, resources)) {
-            return DxilRewriteResult{false};
+            return RewriteResult().Success(false);
           }
 
           llvm::Value *rawX = match.GetCapture("raw_x");
@@ -687,17 +686,14 @@ BuildComputeNoiseRewriteRules(hlsl::DxilModule &dxilModule,
               builder, capturedSupport, resources.annotatedTextureHandle,
               coordX, coordY, sliceIndex);
 
-          DxilRewriteResult result;
-          result.replacementValue = builder.CreateExtractValue(
-              noiseLoad, usesDecorrelatedComponent ? 1u : 0u);
-          return result;
+          return RewriteResult().ReplaceWith(builder.CreateExtractValue(
+              noiseLoad, usesDecorrelatedComponent ? 1u : 0u));
         });
   };
 
   DxilRewriteRule blueNoiseRule =
       RewriteRule("blue_noise_textureload_to_fastnoise")
           .Mode(DxilRewriteMode::Replace)
-          .ReplaceCapture("texture_load")
           .PruneDeadInstructions(false)
           .Match(DxOpCall(hlsl::OP::OpCode::TextureLoad)
                      .Capture("texture_load")
@@ -723,14 +719,14 @@ BuildComputeNoiseRewriteRules(hlsl::DxilModule &dxilModule,
             BlueNoiseTextureLoadMatch blueNoiseMatch;
             if (!TryMatchBlueNoiseTextureLoad(match.rootCall, dxilModule,
                                               blueNoiseMatch)) {
-              return DxilRewriteResult{false};
+              return RewriteResult().Success(false);
             }
 
             MaterializedRewriteResources resources;
             if (!MaterializeRewriteResources(
                     builder, capturedSupport, capturedTextureDesc,
                     capturedFrameIndexCBufferDesc, resources)) {
-              return DxilRewriteResult{false};
+              return RewriteResult().Success(false);
             }
 
             llvm::Value *sliceIndex = BuildFastNoiseSliceIndex(
@@ -740,7 +736,7 @@ BuildComputeNoiseRewriteRules(hlsl::DxilModule &dxilModule,
                 builder, capturedSupport, resources.annotatedTextureHandle,
                 blueNoiseMatch.coordX, blueNoiseMatch.coordY, sliceIndex);
 
-            std::vector<llvm::WeakTrackingVH> pruneRoots;
+            std::vector<llvm::Instruction *> pruneRoots;
             std::vector<llvm::User *> loadUsers(match.rootCall->user_begin(),
                                                 match.rootCall->user_end());
             for (llvm::User *user : loadUsers) {
@@ -752,23 +748,19 @@ BuildComputeNoiseRewriteRules(hlsl::DxilModule &dxilModule,
               const unsigned extractIndex = *extractValue->idx_begin();
               if (extractIndex > 1) {
                 if (!extractValue->use_empty())
-                  return DxilRewriteResult{false};
-                pruneRoots.emplace_back(extractValue);
+                  return RewriteResult().Success(false);
+                pruneRoots.push_back(extractValue);
                 continue;
               }
 
               llvm::Value *replacementComponent =
                   builder.CreateExtractValue(noiseLoad, extractIndex);
               extractValue->replaceAllUsesWith(replacementComponent);
-              pruneRoots.emplace_back(extractValue);
+              pruneRoots.push_back(extractValue);
             }
 
-            pruneRoots.emplace_back(match.rootCall);
-            PruneTrackedInstructionRoots(pruneRoots);
-
-            DxilRewriteResult result;
-            result.handledReplacement = true;
-            return result;
+            pruneRoots.push_back(match.rootCall);
+            return RewriteResult().HandledReplacement().Prune(pruneRoots);
           });
 
   rules.clear();

@@ -81,6 +81,10 @@ struct DxilMatchResult {
 };
 
 /// @brief Selects how a DXIL rewrite is applied.
+///
+/// Replace rewrites the full matched instruction window. ReplaceRange rewrites
+/// only the sub-window selected by rangeStartOffset and rangeEndOffset within
+/// that matched window.
 enum class DxilRewriteMode {
   None,
   Before,
@@ -90,6 +94,10 @@ enum class DxilRewriteMode {
 };
 
 /// @brief Reports the result of applying one DXIL rewrite.
+///
+/// replacementValue is consumed by the engine for Replace and ReplaceRange when
+/// handledReplacement is false. pruneRoots names additional instructions the
+/// callback or declarative rewrite made dead and wants the engine to prune.
 struct DxilRewriteResult {
   bool success = true;
   bool handledReplacement = false;
@@ -208,9 +216,20 @@ private:
   DxilRewriteResult result_;
 };
 
+/// @brief Creates a fluent builder for a rewrite result.
+inline DxilRewriteResultBuilder RewriteResult() {
+  return DxilRewriteResultBuilder();
+}
+
 /// @brief Predicate signature used to filter DXIL matches.
 using DxilMatchPredicate = std::function<bool(const DxilMatchResult &)>;
 /// @brief Callback signature used to build custom DXIL rewrites.
+///
+/// Callbacks should report cleanup through DxilRewriteResult rather than
+/// pruning directly. When handledReplacement is false, the engine applies the
+/// Replace or ReplaceRange contract using replacementValue. When it is true,
+/// the callback has already performed the replacement work and should return
+/// any extra prune roots through pruneRoots.
 using DxilRewriteCallback = std::function<DxilRewriteResult(
     const DxilMatchResult &, llvm::IRBuilder<> &, llvm::Module &,
     hlsl::DxilModule &)>;
@@ -223,12 +242,15 @@ struct DxilRewriteRule {
   DxilMatchPredicate predicate;
   DxilRewriteMode mode = DxilRewriteMode::Replace;
   std::string replaceCaptureName;
-  std::string rangeStartCaptureName;
-  std::string rangeEndCaptureName;
+  int32_t rangeStartOffset = 0;
+  int32_t rangeEndOffset = -1;
   std::string replacementCaptureName;
   DxilRewriteEmitCall emittedCall;
   DxilRewriteEmitSequence emittedSequence;
   std::vector<std::string> pruneCaptureNames;
+  /// Automatically prune matched captured instructions that become dead after
+  /// generic Replace or ReplaceRange. Explicit DxilRewriteResult pruneRoots are
+  /// honored regardless of this flag.
   bool pruneDeadInstructions = true;
   DxilRewriteCallback replacementCallback;
 };
@@ -374,13 +396,20 @@ public:
     return *this;
   }
 
-  DxilRewriteRuleBuilder &RangeStartCapture(std::string captureName) {
-    rule_.rangeStartCaptureName = std::move(captureName);
+  DxilRewriteRuleBuilder &RangeStartOffset(int32_t offset) {
+    rule_.rangeStartOffset = offset;
     return *this;
   }
 
-  DxilRewriteRuleBuilder &RangeEndCapture(std::string captureName) {
-    rule_.rangeEndCaptureName = std::move(captureName);
+  DxilRewriteRuleBuilder &RangeEndOffset(int32_t offset) {
+    rule_.rangeEndOffset = offset;
+    return *this;
+  }
+
+  DxilRewriteRuleBuilder &RangeOffsets(int32_t startOffset,
+                                       int32_t endOffset) {
+    rule_.rangeStartOffset = startOffset;
+    rule_.rangeEndOffset = endOffset;
     return *this;
   }
 
@@ -429,6 +458,8 @@ public:
     return *this;
   }
 
+  /// @brief Enables or disables automatic pruning of matched captures after
+  /// generic Replace or ReplaceRange. Explicit callback prune roots still run.
   DxilRewriteRuleBuilder &PruneDeadInstructions(bool pruneDeadInstructions) {
     rule_.pruneDeadInstructions = pruneDeadInstructions;
     return *this;

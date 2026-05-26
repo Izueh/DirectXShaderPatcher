@@ -173,11 +173,26 @@ struct Program {
 /// @return A static opcode name string.
 const char *GetOpcodeName(Opcode opcode);
 
+/// @brief Returns whether an opcode carries the test_boolean control bit.
+/// @param opcode Opcode to inspect.
+/// @return `true` when the opcode uses the zero/nonzero test control.
+bool OpcodeUsesTestBoolean(Opcode opcode);
+
 /// @brief Parses an opcode name into its typed representation.
 /// @param name Opcode name to parse.
 /// @param opcode Receives the parsed opcode on success.
 /// @return `true` when the name maps to a known opcode.
 bool ParseOpcode(const std::string &name, Opcode &opcode);
+
+/// @brief Parses an opcode name and resolves any implicit test_boolean alias.
+/// @param name Opcode name or assembly-style alias to parse.
+/// @param opcode Receives the parsed opcode on success.
+/// @param implicitTestBoolean Receives `-1` when no alias implied a test,
+/// otherwise the decoded zero/nonzero control.
+/// @return `true` when the name maps to a known opcode or supported alias.
+bool ParseOpcodeWithImplicitTestBoolean(const std::string &name,
+                                        Opcode &opcode,
+                                        int32_t &implicitTestBoolean);
 
 } // namespace sm5
 } // namespace dxp

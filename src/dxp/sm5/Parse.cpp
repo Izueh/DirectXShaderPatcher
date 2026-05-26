@@ -65,13 +65,18 @@ static OpcodeControls ParseOpcodeControls(const uint8_t *data,
       static_cast<OpcodeType>(DECODE_D3D10_SB_OPCODE_TYPE(token0));
   controls.Saturate =
       DECODE_IS_D3D10_SB_INSTRUCTION_SATURATE_ENABLED(token0) != 0;
-  controls.HasTestBoolean =
-      (token0 & D3D10_SB_INSTRUCTION_TEST_BOOLEAN_MASK) != 0;
-  controls.TestBoolean = DECODE_D3D10_SB_INSTRUCTION_TEST_BOOLEAN(token0);
+  controls.HasTestBoolean = OpcodeUsesTestBoolean(Opcode{opcode});
+  if (controls.HasTestBoolean) {
+    controls.TestBoolean = DECODE_D3D10_SB_INSTRUCTION_TEST_BOOLEAN(token0);
+  }
   controls.PreciseValues = DECODE_D3D11_SB_INSTRUCTION_PRECISE_VALUES(token0);
-  controls.ResinfoReturnType =
-      DECODE_D3D10_SB_RESINFO_INSTRUCTION_RETURN_TYPE(token0);
-  controls.SyncFlags = DECODE_D3D11_SB_SYNC_FLAGS(token0);
+  if (opcode == D3D10_SB_OPCODE_RESINFO) {
+    controls.ResinfoReturnType =
+        DECODE_D3D10_SB_RESINFO_INSTRUCTION_RETURN_TYPE(token0);
+  }
+  if (opcode == D3D11_SB_OPCODE_SYNC) {
+    controls.SyncFlags = DECODE_D3D11_SB_SYNC_FLAGS(token0);
+  }
   if (opcode == D3D10_SB_OPCODE_DCL_INPUT_PS ||
       opcode == D3D10_SB_OPCODE_DCL_INPUT_PS_SIV) {
     controls.HasInputInterpolationMode = true;

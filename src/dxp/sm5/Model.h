@@ -153,7 +153,11 @@ struct Program {
 };
 
 const char *GetOpcodeName(Opcode opcode);
+bool OpcodeUsesTestBoolean(Opcode opcode);
 bool ParseOpcode(const std::string &name, Opcode &opcode);
+bool ParseOpcodeWithImplicitTestBoolean(const std::string &name,
+                                        Opcode &opcode,
+                                        int32_t &implicitTestBoolean);
 
 } // namespace sm5
 } // namespace dxp

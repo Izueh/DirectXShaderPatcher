@@ -1,5 +1,8 @@
 #include "dxp/sm5/RecipeParse.h"
 
+#include "dxp/sm5/Model.h"
+
+#include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -20,9 +23,67 @@ static bool ParseFixture(const std::filesystem::path &relativePath,
   return dxp::sm5::ParseRecipeFile(recipePath.string(), parseResult);
 }
 
+static bool IsReservedOpcode(uint32_t opcodeValue) {
+  switch (static_cast<D3D10_SB_OPCODE_TYPE>(opcodeValue)) {
+  case D3D10_SB_OPCODE_RESERVED0:
+  case D3D10_1_SB_OPCODE_RESERVED1:
+  case D3D11_SB_OPCODE_RESERVED0:
+  case D3D11_1_SB_OPCODE_RESERVED0:
+  case D3DWDDM1_3_SB_OPCODE_RESERVED0:
+    return true;
+  default:
+    return false;
+  }
+}
+
 } // namespace
 
 int main() {
+  for (uint32_t opcodeValue = 0; opcodeValue < D3D10_SB_NUM_OPCODES;
+       ++opcodeValue) {
+    if (IsReservedOpcode(opcodeValue)) {
+      continue;
+    }
+
+    const dxp::sm5::Opcode opcode{opcodeValue};
+    const char *opcodeName = dxp::sm5::GetOpcodeName(opcode);
+    if (std::strcmp(opcodeName, "unknown") == 0) {
+      std::cerr << "Expected opcode value " << opcodeValue
+                << " to have a canonical SM5 name.\n";
+      return 1;
+    }
+
+    dxp::sm5::Opcode parsedOpcode;
+    if (!dxp::sm5::ParseOpcode(opcodeName, parsedOpcode) ||
+        parsedOpcode != opcode) {
+      std::cerr << "Expected SM5 opcode name '" << opcodeName
+                << "' to round-trip through ParseOpcode.\n";
+      return 1;
+    }
+  }
+
+  {
+    dxp::sm5::Opcode opcode;
+    int32_t implicitTestBoolean = -1;
+    if (!dxp::sm5::ParseOpcodeWithImplicitTestBoolean("discard_z", opcode,
+                                                      implicitTestBoolean) ||
+        opcode != dxp::sm5::Opcode{D3D10_SB_OPCODE_DISCARD} ||
+        implicitTestBoolean != D3D10_SB_INSTRUCTION_TEST_ZERO ||
+        !dxp::sm5::OpcodeUsesTestBoolean(opcode)) {
+      std::cerr << "Expected discard_z to resolve to discard with zero test_boolean.\n";
+      return 1;
+    }
+
+    if (!dxp::sm5::ParseOpcodeWithImplicitTestBoolean("retc_nz", opcode,
+                                                      implicitTestBoolean) ||
+        opcode != dxp::sm5::Opcode{D3D10_SB_OPCODE_RETC} ||
+        implicitTestBoolean != D3D10_SB_INSTRUCTION_TEST_NONZERO ||
+        !dxp::sm5::OpcodeUsesTestBoolean(opcode)) {
+      std::cerr << "Expected retc_nz to resolve to retc with nonzero test_boolean.\n";
+      return 1;
+    }
+  }
+
   {
     dxp::sm5::RecipeParseResult parseResult;
     if (!ParseFixture("test/recipes/sm5_parse_validation_portable_v1.yml",
@@ -171,7 +232,7 @@ int main() {
     }
   }
 
-  std::cout << "SM5 parser strict validation accepts canonical schema and "
-               "rejects deprecated fields.\n";
+  std::cout << "SM5 parser covers all non-reserved opcode names, accepts "
+               "test-boolean opcode aliases, and rejects deprecated fields.\n";
   return 0;
 }

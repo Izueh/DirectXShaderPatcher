@@ -24,7 +24,6 @@ rewrite_rules:
     match:
       opcode: GroupId
       capture: group_id_x
-      replace: group_id_x
       prune_dead: true
       operands:
         - index: 1

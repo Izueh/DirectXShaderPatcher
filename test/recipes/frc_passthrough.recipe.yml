@@ -5,7 +5,6 @@ rewrite_rules:
     match:
       opcode: Frc
       capture: outer_frc
-      replace: outer_frc
       mode: Replace
       prune_dead: true
       operands:
