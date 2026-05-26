@@ -34,7 +34,7 @@ jobs:
             $prerelease = "false"
           }
           else {
-            $releaseTag = "nightly-${{ github.sha }}"
+            $releaseTag = "nightly-${{ github.run_number }}"
             $releaseName = $releaseTag
             $prerelease = "true"
           }
@@ -68,42 +68,53 @@ jobs:
           New-Item -ItemType Directory -Path "artifacts/release/clang-release" | Out-Null
           New-Item -ItemType Directory -Path "artifacts/release/msvc-release" | Out-Null
 
-      - name: Build And Install Clang Debug SDK
+      - name: Build And Install Clang Debug Package
         shell: pwsh
         run: |
           cmake --preset ninja-clang-debug -DDXP_ENABLE_SDK_INSTALL=ON -DDXP_SDK_TOOLSET_SUBDIR=clang
-          cmake --build --preset ninja-clang-debug --target dxp_lib dxcompiler
-          cmake --install "out/build/ninja-clang-debug" --component DirectXShaderPatcherSDK --prefix "$env:GITHUB_WORKSPACE/artifacts/release/clang-debug"
+          cmake --build --preset ninja-clang-debug --target dxp_lib dxcompiler dxp
+          cmake --install "out/build/ninja-clang-debug" --prefix "$env:GITHUB_WORKSPACE/artifacts/release/clang-debug"
+          if (Test-Path "artifacts/release/clang-debug/DirectXShaderPatcher_SDK") {
+            Move-Item -Path "artifacts/release/clang-debug/DirectXShaderPatcher_SDK" -Destination "artifacts/release/clang-debug/DirectXShaderPatcher"
+          }
 
-      - name: Build And Install MSVC Debug SDK
+      - name: Build And Install MSVC Debug Package
         shell: pwsh
         run: |
           cmake --preset ninja-msvc-debug -DDXP_ENABLE_SDK_INSTALL=ON -DDXP_SDK_TOOLSET_SUBDIR=msvc
-          cmake --build --preset ninja-msvc-debug --target dxp_lib dxcompiler
-          cmake --install "out/build/ninja-msvc-debug" --component DirectXShaderPatcherSDK --prefix "$env:GITHUB_WORKSPACE/artifacts/release/msvc-debug"
+          cmake --build --preset ninja-msvc-debug --target dxp_lib dxcompiler dxp
+          cmake --install "out/build/ninja-msvc-debug" --prefix "$env:GITHUB_WORKSPACE/artifacts/release/msvc-debug"
+          if (Test-Path "artifacts/release/msvc-debug/DirectXShaderPatcher_SDK") {
+            Move-Item -Path "artifacts/release/msvc-debug/DirectXShaderPatcher_SDK" -Destination "artifacts/release/msvc-debug/DirectXShaderPatcher"
+          }
 
-      - name: Build And Install Clang Release SDK
+      - name: Build And Install Clang Release Package
         shell: pwsh
         run: |
           cmake --preset ninja-clang-release -DDXP_ENABLE_SDK_INSTALL=ON -DDXP_SDK_TOOLSET_SUBDIR=clang
-          cmake --build --preset ninja-clang-release --target dxp_lib dxcompiler
-          cmake --install "out/build/ninja-clang-release" --component DirectXShaderPatcherSDK --prefix "$env:GITHUB_WORKSPACE/artifacts/release/clang-release"
+          cmake --build --preset ninja-clang-release --target dxp_lib dxcompiler dxp
+          cmake --install "out/build/ninja-clang-release" --prefix "$env:GITHUB_WORKSPACE/artifacts/release/clang-release"
+          if (Test-Path "artifacts/release/clang-release/DirectXShaderPatcher_SDK") {
+            Move-Item -Path "artifacts/release/clang-release/DirectXShaderPatcher_SDK" -Destination "artifacts/release/clang-release/DirectXShaderPatcher"
+          }
 
-      - name: Build And Install MSVC Release SDK
+      - name: Build And Install MSVC Release Package
         shell: pwsh
         run: |
           cmake --preset ninja-msvc-release -DDXP_ENABLE_SDK_INSTALL=ON -DDXP_SDK_TOOLSET_SUBDIR=msvc
-          cmake --build --preset ninja-msvc-release --target dxp_lib dxcompiler
-          cmake --install "out/build/ninja-msvc-release" --component DirectXShaderPatcherSDK --prefix "$env:GITHUB_WORKSPACE/artifacts/release/msvc-release"
+          cmake --build --preset ninja-msvc-release --target dxp_lib dxcompiler dxp
+          cmake --install "out/build/ninja-msvc-release" --prefix "$env:GITHUB_WORKSPACE/artifacts/release/msvc-release"
+          if (Test-Path "artifacts/release/msvc-release/DirectXShaderPatcher_SDK") {
+            Move-Item -Path "artifacts/release/msvc-release/DirectXShaderPatcher_SDK" -Destination "artifacts/release/msvc-release/DirectXShaderPatcher"
+          }
 
-      - name: Archive SDK Distribution Packages
+      - name: Archive Distribution Packages
         shell: pwsh
         run: |
-          $releaseTag = "${{ steps.release_meta.outputs.release_tag }}"
-          Compress-Archive -Path "artifacts/release/clang-debug/DirectXShaderPatcher_SDK" -DestinationPath "artifacts/DirectXShaderPatcher-$releaseTag-clang-debug-SDK.zip" -Force
-          Compress-Archive -Path "artifacts/release/msvc-debug/DirectXShaderPatcher_SDK" -DestinationPath "artifacts/DirectXShaderPatcher-$releaseTag-msvc-debug-SDK.zip" -Force
-          Compress-Archive -Path "artifacts/release/clang-release/DirectXShaderPatcher_SDK" -DestinationPath "artifacts/DirectXShaderPatcher-$releaseTag-clang-release-SDK.zip" -Force
-          Compress-Archive -Path "artifacts/release/msvc-release/DirectXShaderPatcher_SDK" -DestinationPath "artifacts/DirectXShaderPatcher-$releaseTag-msvc-release-SDK.zip" -Force
+          Compress-Archive -Path "artifacts/release/clang-debug/*" -DestinationPath "artifacts/DirectXShaderPatcher-clang-debug.zip" -Force
+          Compress-Archive -Path "artifacts/release/msvc-debug/*" -DestinationPath "artifacts/DirectXShaderPatcher-msvc-debug.zip" -Force
+          Compress-Archive -Path "artifacts/release/clang-release/*" -DestinationPath "artifacts/DirectXShaderPatcher-clang-release.zip" -Force
+          Compress-Archive -Path "artifacts/release/msvc-release/*" -DestinationPath "artifacts/DirectXShaderPatcher-msvc-release.zip" -Force
 
       - name: Generate GitHub Release Asset Package
         if: github.event_name == 'push'
@@ -113,10 +124,10 @@ jobs:
           name: ${{ steps.release_meta.outputs.release_name }}
           target_commitish: ${{ github.sha }}
           files: |
-            artifacts/DirectXShaderPatcher-${{ steps.release_meta.outputs.release_tag }}-clang-debug-SDK.zip
-            artifacts/DirectXShaderPatcher-${{ steps.release_meta.outputs.release_tag }}-msvc-debug-SDK.zip
-            artifacts/DirectXShaderPatcher-${{ steps.release_meta.outputs.release_tag }}-clang-release-SDK.zip
-            artifacts/DirectXShaderPatcher-${{ steps.release_meta.outputs.release_tag }}-msvc-release-SDK.zip
+            artifacts/DirectXShaderPatcher-clang-debug.zip
+            artifacts/DirectXShaderPatcher-msvc-debug.zip
+            artifacts/DirectXShaderPatcher-clang-release.zip
+            artifacts/DirectXShaderPatcher-msvc-release.zip
           draft: false
           prerelease: ${{ steps.release_meta.outputs.prerelease }}
         env:
