@@ -1,6 +1,7 @@
 #include "TestSupport.h"
 #include "dxp/sm5/Patch.h"
 #include "dxp/sm5/Recipe.h"
+#include "dxp/sm5/RecipeParse.h"
 
 #include <iostream>
 #include <string>
@@ -225,6 +226,76 @@ int main(int argc, char **argv) {
       guardedSkipReport.Executed || !guardedSkipReport.Skipped ||
       !guardedSkipReport.Success) {
     std::cerr << "Expected probe-gated failure step to be skipped.\n";
+    return 1;
+  }
+
+  const char *yamlPrefilterRecipeText = R"YAML(version: 1
+steps:
+  - kind: prefilter
+    name: yaml_sequence_probe
+    checks:
+      - kind: check_pattern_match
+        match:
+          sequence:
+            - opcode: frc
+            - opcode: mul
+  - kind: apply_rules
+    name: yaml_match_only_probe
+    if:
+      state: yaml_sequence_probe
+    rules:
+      - match:
+          opcode: frc
+          rewrite_mode: None
+)YAML";
+
+  dxp::sm5::RecipeParseResult yamlParseResult;
+  if (!dxp::sm5::ParseRecipeText(yamlPrefilterRecipeText, yamlParseResult,
+                                 "inline-sm5-yaml-prefilter-test")) {
+    std::cerr << "Expected inline YAML prefilter recipe to parse, but saw: "
+              << yamlParseResult.Error << "\n";
+    return 1;
+  }
+
+  const auto yamlPrefilterResult =
+      dxp::sm5::PatchContainer(inputBytes, yamlParseResult.Recipe);
+  if (!yamlPrefilterResult.Success) {
+    std::cerr << "Expected inline YAML prefilter recipe to patch, but saw: "
+              << yamlPrefilterResult.Error << "\n";
+    return 1;
+  }
+
+  const bool *yamlSequenceProbe =
+      yamlPrefilterResult.RecipeContext.FindState<bool>("yaml_sequence_probe");
+  if (yamlSequenceProbe == nullptr || !*yamlSequenceProbe) {
+    std::cerr << "Expected YAML check_pattern_match prefilter to publish true "
+                 "state for a present FRC/MUL sequence.\n";
+    return 1;
+  }
+
+  if (yamlPrefilterResult.Report.Steps.size() != 2) {
+    std::cerr << "Expected YAML prefilter recipe to report two steps, but saw "
+              << yamlPrefilterResult.Report.Steps.size() << ".\n";
+    return 1;
+  }
+
+  const dxp::PatchStepReport &yamlProbeReport =
+      yamlPrefilterResult.Report.Steps.front();
+  if (yamlProbeReport.Name != "yaml_sequence_probe" ||
+      !yamlProbeReport.Executed || yamlProbeReport.Skipped ||
+      !yamlProbeReport.Success || yamlProbeReport.MatchCount != 1) {
+    std::cerr << "Expected YAML sequence prefilter to execute with one match.\n";
+    return 1;
+  }
+
+  const dxp::PatchStepReport &yamlRuleReport = yamlPrefilterResult.Report.Steps[1];
+  if (yamlRuleReport.Name != "yaml_match_only_probe" ||
+      !yamlRuleReport.Executed || yamlRuleReport.Skipped ||
+      !yamlRuleReport.Success || yamlRuleReport.MatchCount == 0 ||
+      yamlPrefilterResult.RecipeContext.TotalRuleMatches == 0 ||
+      yamlPrefilterResult.RecipeContext.ProgramModified) {
+    std::cerr << "Expected YAML prefilter state to enable a match-only apply_rules "
+                 "step without mutating the program.\n";
     return 1;
   }
 

@@ -10,6 +10,9 @@
 #include <sstream>
 #include <vector>
 
+void ComputeHashRetail(const unsigned char *pData, uint32_t byteCount,
+                       unsigned char *pOutHash);
+
 namespace {
 
 constexpr uint32_t DXBC_CONTAINER_SIGNATURE = 0x43425844;
@@ -379,10 +382,12 @@ bool RecomputeDxbcHash(std::vector<uint8_t> &containerBytes) {
   }
 
   constexpr uint32_t kHashStartOffset = offsetof(DxbcContainerHeader, One);
-  ComputeDXBCHash(
-      containerBytes.data() + kHashStartOffset,
+  ComputeHashRetail(
+      reinterpret_cast<const unsigned char *>(containerBytes.data() +
+                          kHashStartOffset),
       static_cast<uint32_t>(containerBytes.size() - kHashStartOffset),
-      containerBytes.data() + offsetof(DxbcContainerHeader, Hash));
+      reinterpret_cast<unsigned char *>(containerBytes.data() +
+                      offsetof(DxbcContainerHeader, Hash)));
 
   return true;
 }

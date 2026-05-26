@@ -1419,17 +1419,18 @@ static bool ValidatePrefilterModel(const YamlPrefilter &prefilter,
 static bool BuildRecipePrefilter(const YamlPrefilter &prefilterModel,
                                  RecipePrefilter &prefilter,
                                  std::string &parseError) {
-  if (!ParsePrefilterKindToken(prefilterModel.kind, prefilter.Kind,
-                               parseError)) {
+  PrefilterKind kind = PrefilterKind::CheckShaderVersion;
+  if (!ParsePrefilterKindToken(prefilterModel.kind, kind, parseError)) {
     return false;
   }
-  if (!ValidatePrefilterModel(prefilterModel, prefilter.Kind, parseError)) {
+  if (!ValidatePrefilterModel(prefilterModel, kind, parseError)) {
     return false;
   }
 
   prefilter = RecipePrefilter{}
                   .Named(prefilterModel.name)
                   .Require(prefilterModel.required);
+  prefilter.Kind = kind;
 
   RecipeMatchPattern match = RecipeMatchPattern{}
                                  .WithOpcode(prefilterModel.match.opcode)
@@ -1456,7 +1457,7 @@ static bool BuildRecipePrefilter(const YamlPrefilter &prefilterModel,
     match.AddInstruction(std::move(pattern));
   }
 
-  switch (prefilter.Kind) {
+  switch (kind) {
   case PrefilterKind::CheckShaderVersion:
     prefilter.CheckShaderVersion(prefilterModel.major, prefilterModel.minor);
     break;

@@ -105,6 +105,7 @@ endif()
 # 4. Library Target
 # -----------------------------------------------------------------------------
 add_library(dxp_lib STATIC
+    "external/DirectXShaderCompiler/lib/DxilHash/DxilHash.cpp"
   "src/dxp/sm6/Container.cpp"
   "src/dxp/sm6/Parse.cpp"
   "src/dxp/sm6/Patch.cpp"
