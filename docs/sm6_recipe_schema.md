@@ -183,6 +183,10 @@ Notes:
 
 ## Steps
 
+Any step may define:
+
+- `if.state`, `if.all`, `if.any`, and `if.not` optional condition fields
+
 Supported step kinds:
 
 - `add_texture`
@@ -200,25 +204,52 @@ Step semantics:
 - Resource steps (`add_texture`, `add_texture_uav`, `add_cbuffer`, `add_sampler`) use `id` to reference an entry under `resources`.
 - `apply_rule` uses `rule`, defaults `mode` to `First`, and accepts `First`, `Last`, or `MatchAll`.
 - `apply_rules` uses `rules`, defaults `mode` to `MatchAll`, and only supports `MatchAll`.
-- `prefilter` requires exactly one of `pattern` or `patterns`.
+- `prefilter` requires exactly one of `pattern` or `patterns` and may optionally define `set` to choose the context key it writes.
 - `required` defaults to `true` on `apply_rule` and `apply_rules`.
 - `refresh_resources` and `prune_dead_code` take no extra fields.
+- `if` may select one of `state`, `all`, or `any`; `not: true` negates the selected condition result.
+
+Conditional step example:
+
+```yaml
+steps:
+  - kind: prefilter
+    pattern: <prefilter_id>
+    set: expected_shader
+
+  - kind: add_texture
+    if:
+      any:
+        - state: expected_shader
+        - state: fallback_shader
+    id: <resource_id>
+```
 
 Example:
 
 ```yaml
 steps:
   - kind: prefilter
+    set: expected_shader
     patterns:
       - <prefilter_id_a>
       - <prefilter_id_b>
   - kind: add_texture
+    if:
+      state: expected_shader
     id: <resource_id>
   - kind: apply_rule
+    if:
+      all:
+        - state: expected_shader
+        - state: skip_rewrite
+          not: true
     rule: <rule_id>
     mode: MatchAll
     required: false
   - kind: apply_rules
+    if:
+      state: expected_shader
     rules:
       - <rule_id_a>
       - <rule_id_b>
@@ -226,4 +257,12 @@ steps:
     required: false
 ```
 
-For simple identity-style matcher probes, prefer `mode: First` or `mode: Last` on `apply_rule` so the step selects one stable match instead of depending on whole-pass side effects.
+Notes:
+
+- `if.state` reads from `DxilRecipeContext::state`.
+- `if.all` requires every nested condition to evaluate to true.
+- `if.any` requires at least one nested condition to evaluate to true.
+- `if.not: true` negates the result of `state`, `all`, or `any`.
+- Missing state values are treated as `false`.
+- `prefilter` is a probe step; it does not stop the recipe directly and instead publishes a boolean state value for later guards.
+- For simple identity-style matcher probes, prefer `mode: First` or `mode: Last` on `apply_rule` so the step selects one stable match instead of depending on whole-pass side effects.

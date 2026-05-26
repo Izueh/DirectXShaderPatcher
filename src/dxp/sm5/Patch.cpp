@@ -16,7 +16,7 @@ namespace dxp {
 namespace sm5 {
 
 bool ExecuteRecipe(Program &program, const Recipe &recipe,
-                   RecipeContext &context);
+                   RecipeContext &context, dxp::PatchReport *report = nullptr);
 
 namespace {
 
@@ -24,6 +24,60 @@ constexpr uint32_t DXBC_CHUNK_ISGN = 0x4E475349;
 constexpr uint32_t DXBC_CHUNK_ISG1 = 0x31475349;
 constexpr uint32_t DXBC_CHUNK_OSGN = 0x4E47534F;
 constexpr uint32_t DXBC_CHUNK_OSG1 = 0x3147534F;
+
+static std::string FourCCToString(uint32_t fourCC) {
+  std::string text(4, '\0');
+  text[0] = static_cast<char>(fourCC & 0xffu);
+  text[1] = static_cast<char>((fourCC >> 8u) & 0xffu);
+  text[2] = static_cast<char>((fourCC >> 16u) & 0xffu);
+  text[3] = static_cast<char>((fourCC >> 24u) & 0xffu);
+
+  for (char &ch : text) {
+    if (!std::isprint(static_cast<unsigned char>(ch)))
+      ch = '?';
+  }
+
+  return text;
+}
+
+static std::string DxbcHashToHex(const DxbcContainerHeader &header) {
+  static constexpr char kHexDigits[] = "0123456789abcdef";
+
+  std::string hex;
+  hex.reserve(32);
+  for (uint32_t word : header.Hash) {
+    for (unsigned shift = 0; shift < 32; shift += 8) {
+      const uint8_t byte = static_cast<uint8_t>((word >> shift) & 0xffu);
+      hex.push_back(kHexDigits[(byte >> 4u) & 0xfu]);
+      hex.push_back(kHexDigits[byte & 0xfu]);
+    }
+  }
+  return hex;
+}
+
+static bool BuildDxbcContainerReport(const std::vector<uint8_t> &containerBytes,
+                                     dxp::PatchContainerReport &report) {
+  Container container;
+  if (!ParseDxbcContainer(containerBytes, container))
+    return false;
+
+  report = dxp::PatchContainerReport{};
+  report.Format = "DXBC";
+  report.TotalSizeInBytes = container.Header.TotalSizeInBytes;
+  report.HashHex = DxbcHashToHex(container.Header);
+  report.Chunks.reserve(container.Chunks.size());
+
+  for (const DxbcChunk &chunk : container.Chunks) {
+    dxp::PatchChunkReport chunkReport;
+    chunkReport.Id = FourCCToString(chunk.FourCC);
+    chunkReport.FourCC = chunk.FourCC;
+    chunkReport.OffsetInContainer = chunk.OffsetInContainer;
+    chunkReport.SizeInBytes = static_cast<uint32_t>(chunk.Data.size());
+    report.Chunks.push_back(std::move(chunkReport));
+  }
+
+  return true;
+}
 
 static PatchResult MakeError(const std::string &message,
                              const RecipeContext *context = nullptr) {
@@ -627,11 +681,13 @@ PatchResult PatchContainer(const std::vector<uint8_t> &inputContainer,
 
   const Program originalProgram = program;
 
-  if (!ExecuteRecipe(program, recipe, result.RecipeContext)) {
+  if (!ExecuteRecipe(program, recipe, result.RecipeContext, &result.Report)) {
     const std::string error = result.RecipeContext.LastError.empty()
                                   ? "failed to execute SM5 recipe"
                                   : result.RecipeContext.LastError;
-    return MakeError(error, &result.RecipeContext);
+    result.Success = false;
+    result.Error = error;
+    return result;
   }
 
   const bool shouldRefreshResources =
@@ -673,6 +729,11 @@ PatchResult PatchContainer(const std::vector<uint8_t> &inputContainer,
                      &result.RecipeContext);
   if (!RecomputeDxbcHash(result.OutputBytes))
     return MakeError("failed to recompute DXBC hash", &result.RecipeContext);
+  if (!BuildDxbcContainerReport(result.OutputBytes,
+                                result.Report.OutputContainer)) {
+    return MakeError("failed to inspect serialized DXBC container",
+                     &result.RecipeContext);
+  }
 
   result.Success = true;
   return result;

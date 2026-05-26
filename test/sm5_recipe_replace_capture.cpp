@@ -73,7 +73,6 @@ int main(int argc, char **argv) {
       inputProgram.Instructions[static_cast<size_t>(targetInstructionIndex)];
 
   const char *validRecipeText = R"YAML(version: 1
-prefilters: []
 steps:
   - name: replace_captured_mul
     rules:
@@ -104,6 +103,25 @@ steps:
   if (!validPatchResult.Success) {
     std::cerr << "Failed to patch SM5 shader with replace capture recipe: "
               << validPatchResult.Error << "\n";
+    return 1;
+  }
+
+  if (validPatchResult.Report.Steps.size() != 1) {
+    std::cerr << "Expected exactly one step report for replace capture.\n";
+    return 1;
+  }
+
+  const auto &stepReport = validPatchResult.Report.Steps.front();
+  if (stepReport.Rules.size() != 1) {
+    std::cerr << "Expected exactly one rule report for replace capture.\n";
+    return 1;
+  }
+
+  const auto &ruleReport = stepReport.Rules.front();
+  if (ruleReport.MatchCount == 0 || ruleReport.AppliedCount == 0 ||
+      !ruleReport.Changed) {
+    std::cerr << "Expected replace capture rule report to record an applied "
+                 "mutating match.\n";
     return 1;
   }
 
@@ -144,7 +162,6 @@ steps:
   }
 
   const char *invalidRecipeText = R"YAML(version: 1
-prefilters: []
 steps:
   - name: invalid_replace_capture
     rules:

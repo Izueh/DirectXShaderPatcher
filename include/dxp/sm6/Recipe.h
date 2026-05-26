@@ -1,11 +1,13 @@
 #pragma once
 
 #include <any>
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include "../PatchReport.h"
 #include "Transforms.h"
 
 /// @brief Controls which DXIL match is rewritten when a rule matches more than
@@ -34,6 +36,46 @@ struct DxilRecipeStepResult {
   bool resourceBindingsChanged = false;
   bool resourcesRefreshed = false;
   bool moduleVerified = false;
+  std::vector<dxp::PatchRuleReport> ruleReports;
+  std::vector<dxp::PatchSideEffect> sideEffects;
+};
+
+/// @brief Describes a generic DXIL step guard based on recipe context state.
+struct DxilRecipeStepCondition {
+  std::string state;
+  std::vector<DxilRecipeStepCondition> all;
+  std::vector<DxilRecipeStepCondition> any;
+  bool negate = false;
+
+  static DxilRecipeStepCondition FromState(std::string stateValue,
+                                           bool negateValue = false) {
+    DxilRecipeStepCondition condition;
+    condition.state = std::move(stateValue);
+    condition.negate = negateValue;
+    return condition;
+  }
+
+  static DxilRecipeStepCondition
+  AllOf(std::vector<DxilRecipeStepCondition> conditions,
+        bool negateValue = false) {
+    DxilRecipeStepCondition condition;
+    condition.all = std::move(conditions);
+    condition.negate = negateValue;
+    return condition;
+  }
+
+  static DxilRecipeStepCondition
+  AnyOf(std::vector<DxilRecipeStepCondition> conditions,
+        bool negateValue = false) {
+    DxilRecipeStepCondition condition;
+    condition.any = std::move(conditions);
+    condition.negate = negateValue;
+    return condition;
+  }
+
+  bool IsSet() const {
+    return !state.empty() || !all.empty() || !any.empty();
+  }
 };
 
 /// @brief Carries mutable state across DXIL recipe execution.
@@ -100,6 +142,8 @@ struct DxilRecipeContext {
 /// @brief Callable signature for custom DXIL recipe steps.
 using DxilRecipeStepExecutor =
     std::function<DxilRecipeStepResult(DxilRecipeContext &)>;
+using DxilRecipeStepPredicate =
+  std::function<bool(DxilRecipeContext &)>;
 
 /// @brief Creates a successful DXIL step result.
 DxilRecipeStepResult MakeRecipeStepSuccess(bool changed = false,
@@ -115,7 +159,40 @@ DxilRecipeStepResult MakeRecipeStepFailure(DxilRecipeContext &context,
 /// @brief Represents one executable DXIL recipe step.
 struct DxilRecipeStep {
   std::string name;
+  bool required = true;
+  DxilRecipeStepCondition ifCondition;
   DxilRecipeStepExecutor execute;
+  DxilRecipeStepPredicate predicate;
+
+  DxilRecipeStep &Require(bool isRequired) & {
+    required = isRequired;
+    return *this;
+  }
+
+  DxilRecipeStep &&Require(bool isRequired) && {
+    required = isRequired;
+    return std::move(*this);
+  }
+
+  DxilRecipeStep &When(DxilRecipeStepCondition condition) & {
+    ifCondition = std::move(condition);
+    return *this;
+  }
+
+  DxilRecipeStep &&When(DxilRecipeStepCondition condition) && {
+    ifCondition = std::move(condition);
+    return std::move(*this);
+  }
+
+  DxilRecipeStep &When(DxilRecipeStepPredicate stepPredicate) & {
+    predicate = std::move(stepPredicate);
+    return *this;
+  }
+
+  DxilRecipeStep &&When(DxilRecipeStepPredicate stepPredicate) && {
+    predicate = std::move(stepPredicate);
+    return std::move(*this);
+  }
 };
 
 /// @brief Owns the ordered sequence of DXIL recipe steps.
@@ -152,11 +229,12 @@ DxilRecipeStep MakeAddSamplerStep(std::string id, SamplerDesc desc);
 DxilRecipeStep MakeApplyRewriteRulesStep(
     std::string name, std::vector<DxilRewriteRule> rules,
     DxilRecipeRuleApplicationMode mode = DxilRecipeRuleApplicationMode::First,
-    bool required = true);
+  bool required = true);
 
 /// @brief Creates a step that asserts one or more patterns are present.
 DxilRecipeStep MakePrefilterStep(std::string name,
-                                 std::vector<DxilCallPattern> patterns);
+                                 std::vector<DxilCallPattern> patterns,
+                                 std::string setState = {});
 
 /// @brief Creates a step that refreshes resource metadata.
 DxilRecipeStep MakeRefreshResourcesStep(std::string name = "refresh_resources");
@@ -168,10 +246,12 @@ DxilRecipeStep MakePruneDeadCodeStep(std::string name = "prune_dead_code");
 bool ExecuteDxilRecipe(const DxilRecipe &recipe, llvm::Module &module,
                        hlsl::DxilModule &dxilModule,
                        DxilRecipeContext *outContext = nullptr,
-                       bool traceEnabled = false);
+                       bool traceEnabled = false,
+                       dxp::PatchReport *outReport = nullptr);
 
 /// @brief Executes a DXIL recipe with explicit execution options.
 bool ExecuteDxilRecipe(const DxilRecipe &recipe, llvm::Module &module,
                        hlsl::DxilModule &dxilModule,
                        const DxilRecipeExecutionOptions &options,
-                       DxilRecipeContext *outContext = nullptr);
+                       DxilRecipeContext *outContext = nullptr,
+                       dxp::PatchReport *outReport = nullptr);

@@ -1,5 +1,4 @@
 ﻿version: 1
-prefilters: []
 steps:
   - kind: add_cbuffer
     name: add_frame_constants

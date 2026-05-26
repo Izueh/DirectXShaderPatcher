@@ -441,6 +441,13 @@ struct YamlRecipeRuleModel {
   std::string replace_with_capture;
 };
 
+struct YamlRecipeStepConditionModel {
+  std::string state;
+  std::vector<YamlRecipeStepConditionModel> all;
+  std::vector<YamlRecipeStepConditionModel> any;
+  bool not_condition = false;
+};
+
 struct YamlRecipeStepModel {
   std::string kind;
   std::string id;
@@ -449,8 +456,10 @@ struct YamlRecipeStepModel {
   std::string rule;
   std::vector<std::string> rules;
   std::string name;
+  std::string set;
   std::string mode;
   bool required = true;
+  YamlRecipeStepConditionModel if_condition;
 };
 
 struct YamlRecipeOptionsModel {
@@ -466,6 +475,56 @@ struct YamlRecipeDocumentModel {
   std::vector<YamlRecipeStepModel> steps;
 };
 
+static bool BuildStepCondition(const YamlRecipeStepConditionModel &conditionModel,
+                               DxilRecipeStepCondition &condition,
+                               std::string &error) {
+  condition = DxilRecipeStepCondition{};
+  condition.negate = conditionModel.not_condition;
+
+  size_t populatedFields = 0;
+  if (!conditionModel.state.empty()) {
+    ++populatedFields;
+  }
+  if (!conditionModel.all.empty()) {
+    ++populatedFields;
+  }
+  if (!conditionModel.any.empty()) {
+    ++populatedFields;
+  }
+
+  if (populatedFields == 0) {
+    return true;
+  }
+  if (populatedFields != 1) {
+    error = "step if must specify exactly one of state, all, or any";
+    return false;
+  }
+
+  if (!conditionModel.state.empty()) {
+    condition.state = conditionModel.state;
+    return true;
+  }
+
+  std::vector<DxilRecipeStepCondition> &destination =
+      !conditionModel.all.empty() ? condition.all : condition.any;
+  const std::vector<YamlRecipeStepConditionModel> &source =
+      !conditionModel.all.empty() ? conditionModel.all : conditionModel.any;
+  destination.reserve(source.size());
+  for (const YamlRecipeStepConditionModel &childModel : source) {
+    DxilRecipeStepCondition childCondition;
+    if (!BuildStepCondition(childModel, childCondition, error)) {
+      return false;
+    }
+    if (!childCondition.IsSet()) {
+      error = "nested step if condition must not be empty";
+      return false;
+    }
+    destination.push_back(std::move(childCondition));
+  }
+
+  return true;
+}
+
 } // namespace
 
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeFieldModel)
@@ -478,6 +537,7 @@ LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeEmitOperandModel)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeEmitModel)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipePrefilterModel)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeRuleModel)
+LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeStepConditionModel)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeStepModel)
 LLVM_YAML_IS_SEQUENCE_VECTOR(std::string)
 
@@ -623,6 +683,15 @@ template <> struct MappingTraits<YamlRecipeRuleModel> {
   }
 };
 
+template <> struct MappingTraits<YamlRecipeStepConditionModel> {
+  static void mapping(IO &io, YamlRecipeStepConditionModel &condition) {
+    io.mapOptional("state", condition.state);
+    io.mapOptional("all", condition.all);
+    io.mapOptional("any", condition.any);
+    io.mapOptional("not", condition.not_condition, false);
+  }
+};
+
 template <> struct MappingTraits<YamlRecipeStepModel> {
   static void mapping(IO &io, YamlRecipeStepModel &step) {
     io.mapRequired("kind", step.kind);
@@ -632,6 +701,8 @@ template <> struct MappingTraits<YamlRecipeStepModel> {
     io.mapOptional("rule", step.rule);
     io.mapOptional("rules", step.rules);
     io.mapOptional("name", step.name);
+    io.mapOptional("set", step.set);
+    io.mapOptional("if", step.if_condition);
     io.mapOptional("mode", step.mode, std::string());
     io.mapOptional("required", step.required, true);
   }
@@ -1221,6 +1292,14 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
 
   for (const YamlRecipeStepModel &stepModel : document.steps) {
     const std::string loweredKind = LowercaseRecipeToken(stepModel.kind);
+    DxilRecipeStepCondition stepCondition;
+    if (!BuildStepCondition(stepModel.if_condition, stepCondition,
+                            parseError)) {
+      result.error = sourceName.str() + ": invalid step if condition: " +
+                     parseError;
+      return false;
+    }
+
     if (loweredKind == "add_texture") {
       auto it = parsedTextures.find(stepModel.id);
       if (it == parsedTextures.end()) {
@@ -1228,7 +1307,9 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
             sourceName.str() + ": unknown texture id '" + stepModel.id + "'";
         return false;
       }
-      result.recipe.AddStep(MakeAddTextureStep(stepModel.id, it->second));
+      result.recipe.AddStep(MakeAddTextureStep(stepModel.id, it->second)
+                .Require(stepModel.required)
+                .When(stepCondition));
     } else if (loweredKind == "add_texture_uav") {
       auto it = parsedUavs.find(stepModel.id);
       if (it == parsedUavs.end()) {
@@ -1236,7 +1317,9 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
                        stepModel.id + "'";
         return false;
       }
-      result.recipe.AddStep(MakeAddTextureUAVStep(stepModel.id, it->second));
+      result.recipe.AddStep(MakeAddTextureUAVStep(stepModel.id, it->second)
+                .Require(stepModel.required)
+                .When(stepCondition));
     } else if (loweredKind == "add_cbuffer") {
       auto it = parsedCBuffers.find(stepModel.id);
       if (it == parsedCBuffers.end()) {
@@ -1244,7 +1327,9 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
             sourceName.str() + ": unknown cbuffer id '" + stepModel.id + "'";
         return false;
       }
-      result.recipe.AddStep(MakeAddCBufferStep(stepModel.id, it->second));
+      result.recipe.AddStep(MakeAddCBufferStep(stepModel.id, it->second)
+                .Require(stepModel.required)
+                .When(stepCondition));
     } else if (loweredKind == "add_sampler") {
       auto it = parsedSamplers.find(stepModel.id);
       if (it == parsedSamplers.end()) {
@@ -1252,7 +1337,9 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
             sourceName.str() + ": unknown sampler id '" + stepModel.id + "'";
         return false;
       }
-      result.recipe.AddStep(MakeAddSamplerStep(stepModel.id, it->second));
+      result.recipe.AddStep(MakeAddSamplerStep(stepModel.id, it->second)
+                .Require(stepModel.required)
+                .When(stepCondition));
     } else if (loweredKind == "apply_rule") {
       auto it = parsedRewriteRules.find(stepModel.rule);
       if (it == parsedRewriteRules.end()) {
@@ -1276,7 +1363,9 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
                                        ? ("apply_rule:" + stepModel.rule)
                                        : stepModel.name;
       result.recipe.AddStep(MakeApplyRewriteRulesStep(
-          stepName, {it->second}, applicationMode, stepModel.required));
+                                stepName, {it->second}, applicationMode,
+                                stepModel.required)
+                                .When(stepCondition));
     } else if (loweredKind == "apply_rules") {
       if (stepModel.rules.empty()) {
         result.error =
@@ -1316,7 +1405,9 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
       const std::string stepName =
           stepModel.name.empty() ? "apply_rules" : stepModel.name;
       result.recipe.AddStep(MakeApplyRewriteRulesStep(
-          stepName, std::move(rules), applicationMode, stepModel.required));
+                                stepName, std::move(rules), applicationMode,
+                                stepModel.required)
+                                .When(stepCondition));
     } else if (loweredKind == "prefilter") {
       const bool hasPattern = !stepModel.pattern.empty();
       const bool hasPatterns = !stepModel.patterns.empty();
@@ -1353,11 +1444,28 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
           stepModel.name.empty()
               ? (hasPattern ? ("prefilter:" + stepModel.pattern) : "prefilter")
               : stepModel.name;
-      result.recipe.AddStep(MakePrefilterStep(stepName, std::move(patterns)));
+        result.recipe.AddStep(MakePrefilterStep(stepName, std::move(patterns),
+                            stepModel.set)
+                    .Require(stepModel.required)
+                    .When(stepCondition));
     } else if (loweredKind == "refresh_resources") {
-      result.recipe.AddStep(MakeRefreshResourcesStep());
+      if (!stepModel.set.empty()) {
+        result.error =
+            sourceName.str() + ": step set is only valid for prefilter";
+        return false;
+      }
+      result.recipe.AddStep(MakeRefreshResourcesStep()
+                .Require(stepModel.required)
+                .When(stepCondition));
     } else if (loweredKind == "prune_dead_code") {
-      result.recipe.AddStep(MakePruneDeadCodeStep());
+      if (!stepModel.set.empty()) {
+        result.error =
+            sourceName.str() + ": step set is only valid for prefilter";
+        return false;
+      }
+      result.recipe.AddStep(MakePruneDeadCodeStep()
+                .Require(stepModel.required)
+                .When(stepCondition));
     } else {
       result.error =
           sourceName.str() + ": unsupported step kind '" + stepModel.kind + "'";

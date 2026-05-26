@@ -1329,7 +1329,8 @@ bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
                                    hlsl::DxilModule &dxilModule,
                                    const std::vector<DxilRewriteRule> &rules,
                                    unsigned *appliedRuleCount,
-                                   unsigned *mutatedRuleCount) {
+                                   unsigned *mutatedRuleCount,
+                                   std::vector<DxilRuleApplicationReport> *ruleReports) {
   struct ReplacementWork {
     const DxilRewriteRule *rule = nullptr;
     llvm::WeakTrackingVH replacementTarget;
@@ -1348,8 +1349,15 @@ bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
   unsigned mutationCount = 0;
   std::vector<llvm::Instruction *> allPruneCandidates;
   std::vector<ReplacementWork> replacements;
+  std::vector<DxilRuleApplicationReport> localRuleReports;
+  if (ruleReports != nullptr) {
+    localRuleReports.resize(rules.size());
+    for (size_t ruleIndex = 0; ruleIndex < rules.size(); ++ruleIndex)
+      localRuleReports[ruleIndex].name = rules[ruleIndex].name;
+  }
 
-  for (const DxilRewriteRule &rule : rules) {
+  for (size_t ruleIndex = 0; ruleIndex < rules.size(); ++ruleIndex) {
+    const DxilRewriteRule &rule = rules[ruleIndex];
     const bool ruleMutating = IsMutatingRewriteMode(rule.mode);
     std::vector<DxilMatchResult> matches;
     CollectDxilCallMatches(function, rule.pattern, matches, &dxilModule);
@@ -1371,6 +1379,8 @@ bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
         continue;
       if (rule.predicate && !rule.predicate(effectiveMatch))
         continue;
+      if (ruleReports != nullptr)
+        ++localRuleReports[ruleIndex].matchCount;
 
       if (!ruleMutating) {
         ReplacementWork work;
@@ -1445,6 +1455,10 @@ bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
   for (const ReplacementWork &work : replacements) {
     if (!work.mutating) {
       ++appliedCount;
+      if (ruleReports != nullptr) {
+        const size_t ruleIndex = static_cast<size_t>(work.rule - &rules[0]);
+        ++localRuleReports[ruleIndex].appliedCount;
+      }
       continue;
     }
 
@@ -1512,6 +1526,12 @@ bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
     ++appliedCount;
     if (work.mutating)
       ++mutationCount;
+    if (ruleReports != nullptr) {
+      const size_t ruleIndex = static_cast<size_t>(work.rule - &rules[0]);
+      ++localRuleReports[ruleIndex].appliedCount;
+      if (work.mutating)
+        ++localRuleReports[ruleIndex].mutatedCount;
+    }
   }
 
   if (!allPruneCandidates.empty())
@@ -1527,6 +1547,8 @@ bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
     *appliedRuleCount = appliedCount;
   if (mutatedRuleCount != nullptr)
     *mutatedRuleCount = mutationCount;
+  if (ruleReports != nullptr)
+    *ruleReports = std::move(localRuleReports);
 
   return true;
 }
@@ -1535,11 +1557,19 @@ bool ApplyDxilRewriteRules(llvm::Function &function, llvm::Module &module,
                            hlsl::DxilModule &dxilModule,
                            const std::vector<DxilRewriteRule> &rules,
                            unsigned *appliedRuleCount,
-                           unsigned *mutatedRuleCount) {
+                           unsigned *mutatedRuleCount,
+                           std::vector<DxilRuleApplicationReport> *ruleReports) {
   unsigned appliedCount = 0;
   unsigned mutationCount = 0;
+  std::vector<DxilRuleApplicationReport> localRuleReports;
+  if (ruleReports != nullptr) {
+    localRuleReports.resize(rules.size());
+    for (size_t ruleIndex = 0; ruleIndex < rules.size(); ++ruleIndex)
+      localRuleReports[ruleIndex].name = rules[ruleIndex].name;
+  }
 
-  for (const DxilRewriteRule &rule : rules) {
+  for (size_t ruleIndex = 0; ruleIndex < rules.size(); ++ruleIndex) {
+    const DxilRewriteRule &rule = rules[ruleIndex];
     const bool ruleMutating = IsMutatingRewriteMode(rule.mode);
     while (true) {
       std::vector<DxilMatchResult> matches;
@@ -1565,8 +1595,13 @@ bool ApplyDxilRewriteRules(llvm::Function &function, llvm::Module &module,
         if (rule.predicate && !rule.predicate(effectiveMatch))
           continue;
 
+        if (ruleReports != nullptr)
+          ++localRuleReports[ruleIndex].matchCount;
+
         if (!ruleMutating) {
           ++appliedCount;
+          if (ruleReports != nullptr)
+            ++localRuleReports[ruleIndex].appliedCount;
           appliedRule = true;
           break;
         }
@@ -1662,6 +1697,11 @@ bool ApplyDxilRewriteRules(llvm::Function &function, llvm::Module &module,
         ++appliedCount;
         if (ruleMutating)
           ++mutationCount;
+        if (ruleReports != nullptr) {
+          ++localRuleReports[ruleIndex].appliedCount;
+          if (ruleMutating)
+            ++localRuleReports[ruleIndex].mutatedCount;
+        }
         appliedRule = true;
         break;
       }
@@ -1675,6 +1715,8 @@ bool ApplyDxilRewriteRules(llvm::Function &function, llvm::Module &module,
     *appliedRuleCount = appliedCount;
   if (mutatedRuleCount != nullptr)
     *mutatedRuleCount = mutationCount;
+  if (ruleReports != nullptr)
+    *ruleReports = std::move(localRuleReports);
 
   return true;
 }
@@ -1683,11 +1725,18 @@ bool ApplyDxilRewriteRulesOnce(llvm::Function &function, llvm::Module &module,
                                hlsl::DxilModule &dxilModule,
                                const std::vector<DxilRewriteRule> &rules,
                                bool useLastMatch, unsigned *appliedRuleCount,
-                               unsigned *mutatedRuleCount) {
+                               unsigned *mutatedRuleCount,
+                               std::vector<DxilRuleApplicationReport> *ruleReports) {
   unsigned appliedCount = 0;
   unsigned mutationCount = 0;
+  std::vector<DxilRuleApplicationReport> localRuleReports;
+  if (ruleReports != nullptr) {
+    localRuleReports.resize(rules.size());
+    for (size_t ruleIndex = 0; ruleIndex < rules.size(); ++ruleIndex)
+      localRuleReports[ruleIndex].name = rules[ruleIndex].name;
+  }
 
-  auto applyMatch = [&](const DxilRewriteRule &rule,
+  auto applyMatch = [&](const DxilRewriteRule &rule, size_t ruleIndex,
                         const DxilMatchResult &match) -> bool {
     const bool ruleMutating = IsMutatingRewriteMode(rule.mode);
     DxilMatchResult effectiveMatch = match;
@@ -1704,8 +1753,13 @@ bool ApplyDxilRewriteRulesOnce(llvm::Function &function, llvm::Module &module,
     if (rule.predicate && !rule.predicate(effectiveMatch))
       return true;
 
+    if (ruleReports != nullptr)
+      ++localRuleReports[ruleIndex].matchCount;
+
     if (!ruleMutating) {
       ++appliedCount;
+      if (ruleReports != nullptr)
+        ++localRuleReports[ruleIndex].appliedCount;
       return true;
     }
 
@@ -1799,27 +1853,34 @@ bool ApplyDxilRewriteRulesOnce(llvm::Function &function, llvm::Module &module,
     ++appliedCount;
     if (ruleMutating)
       ++mutationCount;
+    if (ruleReports != nullptr) {
+      ++localRuleReports[ruleIndex].appliedCount;
+      if (ruleMutating)
+        ++localRuleReports[ruleIndex].mutatedCount;
+    }
     return true;
   };
 
   if (!useLastMatch) {
-    for (const DxilRewriteRule &rule : rules) {
+    for (size_t ruleIndex = 0; ruleIndex < rules.size(); ++ruleIndex) {
+      const DxilRewriteRule &rule = rules[ruleIndex];
       std::vector<DxilMatchResult> matches;
       CollectDxilCallMatches(function, rule.pattern, matches, &dxilModule);
       if (matches.empty())
         continue;
 
-      if (!applyMatch(rule, matches.front()))
+      if (!applyMatch(rule, ruleIndex, matches.front()))
         return false;
     }
   } else {
-    for (const DxilRewriteRule &rule : rules) {
+    for (size_t ruleIndex = 0; ruleIndex < rules.size(); ++ruleIndex) {
+      const DxilRewriteRule &rule = rules[ruleIndex];
       std::vector<DxilMatchResult> matches;
       CollectDxilCallMatches(function, rule.pattern, matches, &dxilModule);
       if (matches.empty())
         continue;
 
-      if (!applyMatch(rule, matches.back()))
+      if (!applyMatch(rule, ruleIndex, matches.back()))
         return false;
     }
   }
@@ -1828,6 +1889,8 @@ bool ApplyDxilRewriteRulesOnce(llvm::Function &function, llvm::Module &module,
     *appliedRuleCount = appliedCount;
   if (mutatedRuleCount != nullptr)
     *mutatedRuleCount = mutationCount;
+  if (ruleReports != nullptr)
+    *ruleReports = std::move(localRuleReports);
 
   return true;
 }

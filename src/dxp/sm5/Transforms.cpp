@@ -253,7 +253,8 @@ CollectSequenceMatches(const Program &program,
 
 RewriteAction::RewriteAction()
     : Type(RewriteActionType::ReplaceOne), ReplaceIndex(0), RangeStart(0),
-      RangeEnd(0), InsertPosition(0), RemoveStart(0), RemoveEnd(0) {}
+  RangeEnd(0), InsertPosition(0), RemoveStart(0), RemoveEnd(0),
+  RequiredTempCount(0) {}
 
 namespace {
 

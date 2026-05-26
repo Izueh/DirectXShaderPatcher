@@ -56,8 +56,8 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  const std::filesystem::path recipePath =
-      RepoRootPath() / "test" / "sm5_frc_to_mov.recipe.yml";
+    const std::filesystem::path recipePath =
+      RepoRootPath() / "test" / "recipes" / "sm5_frc_to_mov.recipe.yml";
   dxp::sm5::RecipeParseResult parseResult;
   if (!dxp::sm5::ParseRecipeFile(recipePath.string(), parseResult)) {
     std::cerr << "Failed to parse SM5 recipe file: " << parseResult.Error

@@ -82,6 +82,34 @@ steps:
     return 1;
   }
 
+  if (patchResult.Report.Steps.empty() ||
+      patchResult.Report.Steps.front().SideEffects.size() != 1) {
+    std::cerr << "Expected sampler-add step to report one side effect.\n";
+    return 1;
+  }
+
+  const auto &stepReport = patchResult.Report.Steps.front();
+  const auto &sideEffect = stepReport.SideEffects.front();
+  if (sideEffect.Kind != dxp::PatchSideEffectKind::ResourceAdded ||
+      sideEffect.ResourceKind != dxp::PatchResourceKind::Sampler ||
+      sideEffect.StepName != stepReport.Name ||
+      sideEffect.BindPoint != 11u || sideEffect.Space != 0u ||
+      !sideEffect.Changed) {
+    std::cerr << "Expected sampler-add side effect to describe added s11.\n";
+    return 1;
+  }
+
+  const auto bindingIt = patchResult.Report.NewBindings.find("add_s11");
+  if (bindingIt == patchResult.Report.NewBindings.end() ||
+      bindingIt->second.Handle != "add_s11" ||
+      bindingIt->second.ResourceKind != dxp::PatchResourceKind::Sampler ||
+      bindingIt->second.BindPoint != 11u ||
+      bindingIt->second.Space != 0u) {
+    std::cerr << "Expected sampler-add report to expose binding s11 in "
+                 "NewBindings.\n";
+    return 1;
+  }
+
   dxp::sm5::ProgramInspection patchedProgram;
   if (!dxp::sm5::InspectProgram(patchResult.OutputBytes, patchedProgram,
                                 &inspectError)) {

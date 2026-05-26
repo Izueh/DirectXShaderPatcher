@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../PatchReport.h"
+
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -40,17 +42,25 @@ bool ReloadDxilContainerFromMemory(const std::vector<uint8_t> &containerBytes,
                                    hlsl::DxilModule *&dxilModule);
 
 /// @brief Applies a DXIL recipe to an in-memory container buffer.
+/// @param outReport Optional caller-facing patch report. Read
+/// `outReport->NewBindings` for final runtime binding requirements and
+/// `outReport->OutputContainer` for the emitted DXIL envelope.
 bool PatchDxilContainer(const DxilRecipe &recipe, const void *inputData,
                         size_t inputSize, std::vector<uint8_t> &outputContainer,
                         const DxilContainerPatchOptions &options = {},
-                        DxilRecipeContext *outContext = nullptr);
+                        DxilRecipeContext *outContext = nullptr,
+                        dxp::PatchReport *outReport = nullptr);
 
 /// @brief Applies a DXIL recipe to a container byte vector.
+/// @param outReport Optional caller-facing patch report. Read
+/// `outReport->NewBindings` for final runtime binding requirements and
+/// `outReport->OutputContainer` for the emitted DXIL envelope.
 bool PatchDxilContainer(const DxilRecipe &recipe,
                         const std::vector<uint8_t> &inputContainer,
                         std::vector<uint8_t> &outputContainer,
                         const DxilContainerPatchOptions &options = {},
-                        DxilRecipeContext *outContext = nullptr);
+                        DxilRecipeContext *outContext = nullptr,
+                        dxp::PatchReport *outReport = nullptr);
 
 /// @brief Refreshes derived DXIL module state after IR mutation.
 void RefreshDxilModule(hlsl::DxilModule &dxilModule, bool traceEnabled = false);

@@ -49,14 +49,62 @@ int main(int argc, char **argv) {
           .Capture("probe_root")
           .Args({ConstantIntOperand(1, 3735928559)})
           .Build();
+  const DxilCallPattern frcProbe = DxOpCall(hlsl::OP::OpCode::Frc)
+                                       .Capture("frc_probe_root")
+                                       .Build();
 
   DxilRecipe recipe;
+  recipe.AddStep(MakePrefilterStep("detect_frc", {frcProbe}));
   recipe.AddStep(MakePrefilterStep("skip_if_probe_missing", {impossibleProbe}));
   recipe.AddStep(MakeCustomRecipeStep(
-      "should_not_execute_after_prefilter", [](DxilRecipeContext &context) {
-        return MakeRecipeStepFailure(
-            context, "prefilter sentinel step executed unexpectedly");
-      }));
+                    "execute_after_detect_frc", [](DxilRecipeContext &context) {
+                      context.SetState<bool>("positive_gate_hit", true);
+                      return MakeRecipeStepSuccess();
+                    })
+                    .When(DxilRecipeStepCondition::AllOf(
+                        {DxilRecipeStepCondition::FromState("detect_frc"),
+                         DxilRecipeStepCondition::FromState(
+                             "skip_if_probe_missing", true)})));
+  recipe.AddStep(MakeCustomRecipeStep(
+                    "execute_after_any_probe", [](DxilRecipeContext &context) {
+                      context.SetState<bool>("any_gate_hit", true);
+                      return MakeRecipeStepSuccess();
+                    })
+                    .When(DxilRecipeStepCondition::AnyOf(
+                        {DxilRecipeStepCondition::FromState(
+                             "skip_if_probe_missing"),
+                         DxilRecipeStepCondition::FromState("detect_frc")})));
+  recipe.AddStep(MakeCustomRecipeStep(
+                    "execute_after_negated_probe",
+                    [](DxilRecipeContext &context) {
+                      context.SetState<bool>("negated_gate_hit", true);
+                      return MakeRecipeStepSuccess();
+                    })
+                    .When(DxilRecipeStepCondition::FromState(
+                        "skip_if_probe_missing", true)));
+  recipe.AddStep(MakeCustomRecipeStep(
+                    "execute_after_callback", [](DxilRecipeContext &context) {
+                      context.SetState<bool>("callback_gate_hit", true);
+                      return MakeRecipeStepSuccess();
+                    })
+                    .When([](DxilRecipeContext &context) {
+                      const bool *detectFrc =
+                          context.FindState<bool>("detect_frc");
+                      const bool *missingProbe =
+                          context.FindState<bool>("skip_if_probe_missing");
+                      return detectFrc != nullptr && *detectFrc &&
+                             missingProbe != nullptr && !*missingProbe;
+                    }));
+  recipe.AddStep(
+      MakeCustomRecipeStep(
+          "should_not_execute_after_prefilter",
+          [](DxilRecipeContext &context) {
+            return MakeRecipeStepFailure(
+                context, "prefilter sentinel step executed unexpectedly");
+          })
+          .When(DxilRecipeStepCondition::AllOf(
+              {DxilRecipeStepCondition::FromState("detect_frc"),
+               DxilRecipeStepCondition::FromState("skip_if_probe_missing")})));
 
   DxilRecipeContext recipeContext;
   std::vector<uint8_t> outputContainer;
@@ -69,9 +117,18 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  if (recipeContext.totalRuleMatches != 0) {
-    std::cerr << "Expected prefilter miss to skip later rewrite steps without "
-                 "applying rules.\n";
+  const bool *detectFrc = recipeContext.FindState<bool>("detect_frc");
+  const bool *missingProbe = recipeContext.FindState<bool>("skip_if_probe_missing");
+  const bool *positiveGateHit = recipeContext.FindState<bool>("positive_gate_hit");
+  const bool *anyGateHit = recipeContext.FindState<bool>("any_gate_hit");
+  const bool *negatedGateHit = recipeContext.FindState<bool>("negated_gate_hit");
+  const bool *callbackGateHit = recipeContext.FindState<bool>("callback_gate_hit");
+  if (detectFrc == nullptr || !*detectFrc || missingProbe == nullptr ||
+      *missingProbe || positiveGateHit == nullptr || !*positiveGateHit ||
+      anyGateHit == nullptr || !*anyGateHit || negatedGateHit == nullptr ||
+      !*negatedGateHit || callbackGateHit == nullptr || !*callbackGateHit) {
+    std::cerr << "Expected DXIL prefilters to publish boolean state for later "
+                 "if-guarded steps.\n";
     return 1;
   }
 
@@ -164,8 +221,8 @@ steps:
     return 1;
   }
 
-  std::cout << "Declarative prefilter skipped later steps and SM6 match-only "
-               "rules preserved Frc count at "
+  std::cout << "DXIL prefilter probes now drive generic if-guarded steps and "
+               "SM6 match-only rules preserved Frc count at "
             << postMatchOnlyFrcCount << ".\n";
   std::cout.flush();
   std::cerr.flush();

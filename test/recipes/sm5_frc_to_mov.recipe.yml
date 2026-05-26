@@ -1,5 +1,4 @@
 ﻿version: 1
-prefilters: []
 steps:
   - name: frc_to_mov
     rules:

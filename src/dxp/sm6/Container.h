@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../../../include/dxp/PatchReport.h"
+
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -20,6 +22,8 @@ struct DxilProgramBitcode {
 bool ExtractProgramBitcodeFromContainerPart(
     const std::vector<uint8_t> &container, hlsl::DxilFourCC partKind,
     DxilProgramBitcode &out);
+bool BuildDxilContainerReport(const std::vector<uint8_t> &containerBytes,
+                dxp::PatchContainerReport &report);
 bool ExtractDxilProgramBitcode(const std::vector<uint8_t> &containerBytes,
                                DxilProgramBitcode &outBitcode);
 std::unique_ptr<llvm::Module>

@@ -1,5 +1,6 @@
 #include "Container.h"
 
+#include <cctype>
 #include <cstdint>
 #include <iostream>
 #include <memory>
@@ -18,6 +19,38 @@
 #include "dxc/Support/Global.h"
 
 namespace dxp::sm6 {
+
+namespace {
+
+static std::string FourCCToString(uint32_t fourCC) {
+  std::string text(4, '\0');
+  text[0] = static_cast<char>(fourCC & 0xffu);
+  text[1] = static_cast<char>((fourCC >> 8u) & 0xffu);
+  text[2] = static_cast<char>((fourCC >> 16u) & 0xffu);
+  text[3] = static_cast<char>((fourCC >> 24u) & 0xffu);
+
+  for (char &ch : text) {
+    if (!std::isprint(static_cast<unsigned char>(ch)))
+      ch = '?';
+  }
+
+  return text;
+}
+
+static std::string DigestToHex(const uint8_t *digest, size_t digestSize) {
+  static constexpr char kHexDigits[] = "0123456789abcdef";
+
+  std::string hex;
+  hex.reserve(digestSize * 2);
+  for (size_t index = 0; index < digestSize; ++index) {
+    const uint8_t byte = digest[index];
+    hex.push_back(kHexDigits[(byte >> 4u) & 0xfu]);
+    hex.push_back(kHexDigits[byte & 0xfu]);
+  }
+  return hex;
+}
+
+} // namespace
 
 bool ExtractProgramBitcodeFromContainerPart(
     const std::vector<uint8_t> &container, hlsl::DxilFourCC partKind,
@@ -52,6 +85,37 @@ bool ExtractProgramBitcodeFromContainerPart(
   out.ptr = reinterpret_cast<const uint8_t *>(
       hlsl::GetDxilBitcodeData(programHeader));
   out.size = hlsl::GetDxilBitcodeSize(programHeader);
+  return true;
+}
+
+bool BuildDxilContainerReport(const std::vector<uint8_t> &containerBytes,
+                              dxp::PatchContainerReport &report) {
+  const hlsl::DxilContainerHeader *header =
+      hlsl::IsDxilContainerLike(containerBytes.data(), containerBytes.size());
+  if (header == nullptr ||
+      !hlsl::IsValidDxilContainer(header, containerBytes.size())) {
+    std::cerr << "Failed to validate serialized DXIL container.\n";
+    return false;
+  }
+
+  report = dxp::PatchContainerReport{};
+  report.Format = "DXIL";
+  report.TotalSizeInBytes = header->ContainerSizeInBytes;
+  report.HashHex = DigestToHex(header->Hash.Digest, hlsl::DxilContainerHashSize);
+  report.Chunks.reserve(header->PartCount);
+
+  const uint8_t *base = reinterpret_cast<const uint8_t *>(header);
+  for (uint32_t index = 0; index < header->PartCount; ++index) {
+    const hlsl::DxilPartHeader *part = hlsl::GetDxilContainerPart(header, index);
+    dxp::PatchChunkReport chunk;
+    chunk.Id = FourCCToString(part->PartFourCC);
+    chunk.FourCC = part->PartFourCC;
+    chunk.OffsetInContainer =
+        static_cast<uint32_t>(reinterpret_cast<const uint8_t *>(part) - base);
+    chunk.SizeInBytes = part->PartSize;
+    report.Chunks.push_back(std::move(chunk));
+  }
+
   return true;
 }
 

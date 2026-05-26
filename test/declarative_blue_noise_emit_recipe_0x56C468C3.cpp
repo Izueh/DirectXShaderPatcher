@@ -47,9 +47,11 @@ int main(int argc, char **argv) {
   }
 
   DxilRecipeContext recipeContext;
+  dxp::PatchReport patchReport;
   std::vector<uint8_t> outputContainer;
   if (!PatchDxilContainer(parseResult.recipe, inputShader, outputContainer,
-                          parseResult.patchOptions, &recipeContext)) {
+                          parseResult.patchOptions, &recipeContext,
+                          &patchReport)) {
     std::cerr << "PatchDxilContainer failed.";
     if (!recipeContext.lastError.empty())
       std::cerr << " " << recipeContext.lastError;
@@ -60,6 +62,86 @@ int main(int argc, char **argv) {
   if (recipeContext.totalRuleMatches == 0) {
     std::cerr << "Expected declarative BlueNoise recipe to apply at least one "
                  "rule.\n";
+    return 1;
+  }
+
+  if (patchReport.OutputContainer.Format != "DXIL") {
+    std::cerr << "Expected DXIL patch report to identify DXIL output format.\n";
+    return 1;
+  }
+
+  if (patchReport.Steps.size() != parseResult.recipe.GetSteps().size()) {
+    std::cerr << "Expected DXIL patch report to record one entry per executed "
+                 "recipe step.\n";
+    return 1;
+  }
+
+  bool foundMatchingStep = false;
+  for (const auto &step : patchReport.Steps) {
+    if (step.Executed && step.Success && step.MatchCount != 0) {
+      foundMatchingStep = true;
+      break;
+    }
+  }
+
+  if (!foundMatchingStep) {
+    std::cerr << "Expected DXIL patch report to record at least one matching "
+                 "recipe step.\n";
+    return 1;
+  }
+
+  const auto fastNoiseBindingIt = patchReport.NewBindings.find("fast_noise");
+  const auto frameConstantsBindingIt =
+      patchReport.NewBindings.find("frame_constants");
+  if (fastNoiseBindingIt == patchReport.NewBindings.end() ||
+      frameConstantsBindingIt == patchReport.NewBindings.end()) {
+    std::cerr << "Expected DXIL patch report to expose added resource "
+                 "bindings by handle in NewBindings.\n";
+    return 1;
+  }
+
+  if (fastNoiseBindingIt->second.Handle != "fast_noise" ||
+      frameConstantsBindingIt->second.Handle != "frame_constants" ||
+      fastNoiseBindingIt->second.ResourceKind !=
+          dxp::PatchResourceKind::Texture ||
+      frameConstantsBindingIt->second.ResourceKind !=
+          dxp::PatchResourceKind::CBuffer) {
+    std::cerr << "Expected DXIL NewBindings to preserve resource kinds for "
+                 "added bindings.\n";
+    return 1;
+  }
+
+  if (patchReport.OutputContainer.TotalSizeInBytes != outputContainer.size()) {
+    std::cerr << "Expected DXIL patch report to expose final container size.\n";
+    return 1;
+  }
+
+  if (patchReport.OutputContainer.HashHex.size() != 32) {
+    std::cerr << "Expected DXIL patch report to expose a 32-character "
+                 "container hash.\n";
+    return 1;
+  }
+
+  if (patchReport.OutputContainer.Chunks.empty()) {
+    std::cerr << "Expected DXIL patch report to enumerate container parts.\n";
+    return 1;
+  }
+
+  bool foundDxilPart = false;
+  for (const auto &chunk : patchReport.OutputContainer.Chunks) {
+    if (chunk.SizeInBytes == 0) {
+      std::cerr << "Expected DXIL patch report part sizes to be populated.\n";
+      return 1;
+    }
+
+    if (chunk.Id == "DXIL") {
+      foundDxilPart = true;
+    }
+  }
+
+  if (!foundDxilPart) {
+    std::cerr << "Expected DXIL patch report to include the DXIL program "
+                 "part.\n";
     return 1;
   }
 

@@ -8,7 +8,6 @@
 #include <cstring>
 #include <fstream>
 #include <sstream>
-#include <unordered_map>
 
 #include "llvm/Support/YAMLTraits.h"
 
@@ -32,6 +31,23 @@ ParseRuleApplicationMode(const std::string &value) {
     return dxp::sm5::RecipeRuleApplicationMode::MatchAll;
   }
   return dxp::sm5::RecipeRuleApplicationMode::First;
+}
+
+static bool ParsePrefilterMode(const std::string &value,
+                               dxp::sm5::RecipePrefilterMode &mode,
+                               std::string &error) {
+  const std::string lowered = Lowercase(value);
+  if (lowered.empty() || lowered == "all") {
+    mode = dxp::sm5::RecipePrefilterMode::All;
+    return true;
+  }
+  if (lowered == "any") {
+    mode = dxp::sm5::RecipePrefilterMode::Any;
+    return true;
+  }
+
+  error = "unsupported SM5 prefilter mode '" + value + "'";
+  return false;
 }
 
 static bool ParseRuleRewriteMode(const std::string &value,
@@ -129,12 +145,34 @@ struct YamlRule {
   std::string mode;
 };
 
+struct YamlPrefilter {
+  std::string kind;
+  std::string name;
+  bool required = true;
+  uint32_t major = 0;
+  uint32_t minor = 0;
+  std::string opcode;
+  int32_t expected_count = 0;
+  int32_t expected_resources = 0;
+  YamlMatch match;
+};
+
+struct YamlStepCondition {
+  std::string state;
+  std::vector<YamlStepCondition> all;
+  std::vector<YamlStepCondition> any;
+  bool not_condition = false;
+};
+
 struct YamlStep {
   std::string kind;
   std::string name;
   bool required = true;
   std::string mode;
+  std::string set;
+  YamlStepCondition if_condition;
   std::vector<YamlRule> rules;
+  std::vector<YamlPrefilter> checks;
 
   int32_t bind_point = -1;
   std::string handle;
@@ -148,18 +186,6 @@ struct YamlStep {
   uint32_t stride = 16;
   bool globally_coherent = false;
   bool has_counter = false;
-};
-
-struct YamlPrefilter {
-  std::string kind;
-  std::string name;
-  bool required = true;
-  uint32_t major = 0;
-  uint32_t minor = 0;
-  std::string opcode;
-  int32_t expected_count = 0;
-  int32_t expected_resources = 0;
-  YamlMatch match;
 };
 
 struct YamlTextureDecl {
@@ -252,6 +278,7 @@ LLVM_YAML_IS_SEQUENCE_VECTOR(YamlInstructionMatch)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlEmitInstruction)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRule)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlStep)
+LLVM_YAML_IS_SEQUENCE_VECTOR(YamlStepCondition)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlPrefilter)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlTempDecl)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlTextureDecl)
@@ -336,13 +363,25 @@ template <> struct MappingTraits<YamlRule> {
   }
 };
 
+template <> struct MappingTraits<YamlStepCondition> {
+  static void mapping(IO &io, YamlStepCondition &condition) {
+    io.mapOptional("state", condition.state);
+    io.mapOptional("all", condition.all);
+    io.mapOptional("any", condition.any);
+    io.mapOptional("not", condition.not_condition, false);
+  }
+};
+
 template <> struct MappingTraits<YamlStep> {
   static void mapping(IO &io, YamlStep &step) {
     io.mapOptional("kind", step.kind);
     io.mapOptional("name", step.name);
     io.mapOptional("required", step.required, true);
     io.mapOptional("mode", step.mode);
+    io.mapOptional("set", step.set);
+    io.mapOptional("if", step.if_condition);
     io.mapOptional("rules", step.rules);
+    io.mapOptional("checks", step.checks);
     io.mapOptional("bind_point", step.bind_point, -1);
     io.mapOptional("handle", step.handle);
     io.mapOptional("auto_bind", step.auto_bind, false);
@@ -1058,20 +1097,20 @@ static bool ParseMatchOperand(const YamlOperand &operandModel,
 }
 
 static bool FillRecipeOperandPattern(const YamlOperand &operandModel,
-                                     bool forEmit,
                                      RecipeOperandPattern &operandPattern,
                                      std::string &error) {
-  operandPattern = RecipeOperandPattern{};
-  operandPattern.Type = operandModel.type;
-  operandPattern.Indices = operandModel.indices;
-  operandPattern.BindHandle = operandModel.bind_handle;
-  operandPattern.StateTemp = operandModel.state_temp;
-  operandPattern.NumComponents = operandModel.num_components;
-  operandPattern.Modifier = operandModel.modifier;
-  operandPattern.ImmediateU32 = operandModel.immediates_u32;
-  operandPattern.ImmediateF32 = operandModel.immediates_f32;
-  operandPattern.MatchCapture = operandModel.match_capture;
-  operandPattern.Scratch = operandModel.scratch;
+  operandPattern = RecipeOperandPattern{}
+                       .WithType(operandModel.type)
+                       .WithIndices(operandModel.indices)
+                       .WithBindHandle(operandModel.bind_handle)
+                       .WithStateTemp(operandModel.state_temp)
+                       .WithNumComponents(operandModel.num_components)
+                       .WithModifier(operandModel.modifier)
+                       .WithImmediateU32(operandModel.immediates_u32)
+                       .WithImmediateF32(operandModel.immediates_f32)
+                       .WithMatchCapture(operandModel.match_capture)
+                       .WithScratch(operandModel.scratch)
+                       .CaptureAs(operandModel.capture);
 
   if (!operandModel.mask.empty() || !operandModel.swizzle.empty() ||
       !operandModel.select.empty()) {
@@ -1084,11 +1123,11 @@ static bool FillRecipeOperandPattern(const YamlOperand &operandModel,
       !operandModel.components.value.empty()) {
     const std::string kind = Lowercase(operandModel.components.kind);
     if (kind == "mask") {
-      operandPattern.Mask = operandModel.components.value;
+      operandPattern.WithMask(operandModel.components.value);
     } else if (kind == "swizzle") {
-      operandPattern.Swizzle = operandModel.components.value;
+      operandPattern.WithSwizzle(operandModel.components.value);
     } else if (kind == "select") {
-      operandPattern.Select = operandModel.components.value;
+      operandPattern.WithSelect(operandModel.components.value);
     } else {
       error =
           "unsupported SM5 component selector: " + operandModel.components.kind;
@@ -1096,7 +1135,26 @@ static bool FillRecipeOperandPattern(const YamlOperand &operandModel,
     }
   }
 
-  operandPattern.Capture = operandModel.capture;
+  return true;
+}
+
+static bool BuildRecipeInstructionPattern(const YamlInstructionMatch &matchModel,
+                                         RecipeInstructionPattern &pattern,
+                                         std::string &error) {
+  pattern = RecipeInstructionPattern{}
+                .WithOpcode(matchModel.opcode)
+                .CaptureAs(matchModel.capture)
+                .WithSaturate(matchModel.saturate)
+                .WithInterpolationMode(matchModel.interpolation_mode)
+                .WithTestBoolean(matchModel.test_boolean);
+
+  for (const YamlOperand &operandModel : matchModel.operands) {
+    RecipeOperandPattern operand;
+    if (!FillRecipeOperandPattern(operandModel, operand, error)) {
+      return false;
+    }
+    pattern.AddOperand(std::move(operand));
+  }
 
   return true;
 }
@@ -1155,17 +1213,17 @@ static bool ParseInstructionMatch(const YamlInstructionMatch &matchModel,
 static bool ParseRule(const YamlRule &ruleModel,
                       RecipeRuleApplicationMode inheritedMode, RecipeRule &rule,
                       std::string &error) {
-  rule = RecipeRule{};
-  rule.ApplicationMode = inheritedMode;
+  rule = RecipeRule{}.ApplyMode(inheritedMode);
 
   if (!ruleModel.mode.empty()) {
-    rule.ApplicationMode = ParseRuleApplicationMode(ruleModel.mode);
+    rule.ApplyMode(ParseRuleApplicationMode(ruleModel.mode));
   }
 
-  if (!ParseRuleRewriteMode(ruleModel.match.rewrite_mode, rule.RewriteMode,
-                            error)) {
+  RecipeRuleRewriteMode rewriteMode = RecipeRuleRewriteMode::Replace;
+  if (!ParseRuleRewriteMode(ruleModel.match.rewrite_mode, rewriteMode, error)) {
     return false;
   }
+  rule.RewriteAs(rewriteMode);
 
   if (!ruleModel.match.sequence.empty()) {
     if (!ruleModel.match.opcode.empty() || !ruleModel.match.capture.empty() ||
@@ -1178,34 +1236,34 @@ static bool ParseRule(const YamlRule &ruleModel,
       return false;
     }
 
+    RecipeMatchPattern match;
     for (const YamlInstructionMatch &matchModel : ruleModel.match.sequence) {
       InstructionMatch instructionMatch;
       if (!ParseInstructionMatch(matchModel, instructionMatch, error)) {
         return false;
       }
+
       RecipeInstructionPattern pattern;
-      pattern.Opcode = matchModel.opcode;
-      pattern.Capture = matchModel.capture;
-      pattern.Saturate = matchModel.saturate;
-      pattern.InterpolationMode = matchModel.interpolation_mode;
-      pattern.TestBoolean = matchModel.test_boolean;
-      for (const YamlOperand &operandModel : matchModel.operands) {
-        RecipeOperandPattern operand;
-        if (!FillRecipeOperandPattern(operandModel, false, operand, error)) {
-          return false;
-        }
-        pattern.Operands.push_back(std::move(operand));
+      if (!BuildRecipeInstructionPattern(matchModel, pattern, error)) {
+        return false;
       }
-      rule.Match.Sequence.push_back(std::move(pattern));
+      match.AddInstruction(std::move(pattern));
     }
+    rule.WithMatch(std::move(match));
   } else if (!ruleModel.match.opcode.empty()) {
     Opcode parsedOpcode;
     if (!ParseOpcode(ruleModel.match.opcode, parsedOpcode)) {
       error = "Unknown SM5 opcode in match: " + ruleModel.match.opcode;
       return false;
     }
-    rule.Match.Opcode = ruleModel.match.opcode;
-    rule.Match.Capture = ruleModel.match.capture;
+
+    RecipeMatchPattern match = RecipeMatchPattern{}
+                                   .WithOpcode(ruleModel.match.opcode)
+                                   .CaptureAs(ruleModel.match.capture)
+                                   .WithSaturate(ruleModel.match.saturate)
+                                   .WithInterpolationMode(
+                                       ruleModel.match.interpolation_mode)
+                                   .WithTestBoolean(ruleModel.match.test_boolean);
     if (!ruleModel.match.saturate.empty()) {
       bool saturate = false;
       if (!ParseBoolToken(ruleModel.match.saturate, saturate, error)) {
@@ -1213,26 +1271,24 @@ static bool ParseRule(const YamlRule &ruleModel,
         return false;
       }
     }
-    rule.Match.Saturate = ruleModel.match.saturate;
-    rule.Match.InterpolationMode = ruleModel.match.interpolation_mode;
-    rule.Match.TestBoolean = ruleModel.match.test_boolean;
     for (const YamlOperand &operandModel : ruleModel.match.operands) {
       OperandMatch operandMatch;
       if (!ParseMatchOperand(operandModel, operandMatch, error)) {
         return false;
       }
       RecipeOperandPattern operand;
-      if (!FillRecipeOperandPattern(operandModel, false, operand, error)) {
+      if (!FillRecipeOperandPattern(operandModel, operand, error)) {
         return false;
       }
-      rule.Match.Operands.push_back(std::move(operand));
+      match.AddOperand(std::move(operand));
     }
+    rule.WithMatch(std::move(match));
   } else {
     error = "SM5 rules require match.opcode or match.sequence";
     return false;
   }
 
-  rule.Replace = ruleModel.replace;
+  rule.ReplaceCapture(ruleModel.replace);
 
   if (rule.RewriteMode == RecipeRuleRewriteMode::None) {
     if (!rule.Replace.empty() || !ruleModel.emit.empty()) {
@@ -1295,20 +1351,20 @@ static bool ParseRule(const YamlRule &ruleModel,
       }
       instruction.Operands.push_back(std::move(operand));
     }
-    RecipeInstructionTemplate emitInstruction;
-    emitInstruction.Opcode = emitModel.opcode;
-    emitInstruction.Saturate = emitModel.saturate;
-    emitInstruction.InterpolationMode = emitModel.interpolation_mode;
-    emitInstruction.TestBoolean = emitModel.test_boolean;
+    RecipeInstructionTemplate emitInstruction =
+        RecipeInstructionTemplate{}
+            .WithOpcode(emitModel.opcode)
+            .WithSaturate(emitModel.saturate)
+            .WithInterpolationMode(emitModel.interpolation_mode)
+            .WithTestBoolean(emitModel.test_boolean);
     for (const YamlOperand &operandModel : emitModel.operands) {
       RecipeOperandPattern operandPattern;
-      if (!FillRecipeOperandPattern(operandModel, true, operandPattern,
-                                    error)) {
+      if (!FillRecipeOperandPattern(operandModel, operandPattern, error)) {
         return false;
       }
-      emitInstruction.Operands.push_back(std::move(operandPattern));
+      emitInstruction.AddOperand(std::move(operandPattern));
     }
-    rule.Emit.push_back(std::move(emitInstruction));
+    rule.AddEmit(std::move(emitInstruction));
   }
 
   return true;
@@ -1358,6 +1414,71 @@ static bool ValidatePrefilterModel(const YamlPrefilter &prefilter,
   }
 
   return false;
+}
+
+static bool BuildRecipePrefilter(const YamlPrefilter &prefilterModel,
+                                 RecipePrefilter &prefilter,
+                                 std::string &parseError) {
+  if (!ParsePrefilterKindToken(prefilterModel.kind, prefilter.Kind,
+                               parseError)) {
+    return false;
+  }
+  if (!ValidatePrefilterModel(prefilterModel, prefilter.Kind, parseError)) {
+    return false;
+  }
+
+  prefilter = RecipePrefilter{}
+                  .Named(prefilterModel.name)
+                  .Require(prefilterModel.required);
+
+  RecipeMatchPattern match = RecipeMatchPattern{}
+                                 .WithOpcode(prefilterModel.match.opcode)
+                                 .CaptureAs(prefilterModel.match.capture)
+                                 .WithSaturate(prefilterModel.match.saturate)
+                                 .WithInterpolationMode(
+                                     prefilterModel.match.interpolation_mode)
+                                 .WithTestBoolean(
+                                     prefilterModel.match.test_boolean);
+
+  for (const YamlOperand &operandModel : prefilterModel.match.operands) {
+    RecipeOperandPattern operand;
+    if (!FillRecipeOperandPattern(operandModel, operand, parseError)) {
+      return false;
+    }
+    match.AddOperand(std::move(operand));
+  }
+
+  for (const YamlInstructionMatch &matchModel : prefilterModel.match.sequence) {
+    RecipeInstructionPattern pattern;
+    if (!BuildRecipeInstructionPattern(matchModel, pattern, parseError)) {
+      return false;
+    }
+    match.AddInstruction(std::move(pattern));
+  }
+
+  switch (prefilter.Kind) {
+  case PrefilterKind::CheckShaderVersion:
+    prefilter.CheckShaderVersion(prefilterModel.major, prefilterModel.minor);
+    break;
+  case PrefilterKind::CheckOpcodeCount: {
+    Opcode parsedOpcode;
+    if (!ParseOpcode(prefilterModel.opcode, parsedOpcode)) {
+      parseError = "Unknown SM5 opcode in prefilter: " + prefilterModel.opcode;
+      return false;
+    }
+    prefilter.CheckOpcodeCount(prefilterModel.opcode,
+                               prefilterModel.expected_count);
+    break;
+  }
+  case PrefilterKind::CheckResourceCount:
+    prefilter.CheckResourceCount(prefilterModel.expected_resources);
+    break;
+  case PrefilterKind::CheckPatternMatch:
+    prefilter.CheckPatternMatch(std::move(match));
+    break;
+  }
+
+  return true;
 }
 
 static bool CollectDeclarationHandlesFromSteps(
@@ -1564,6 +1685,60 @@ static bool ValidateEmitHandleReferences(const YamlRecipeDocument &document,
   return true;
 }
 
+static bool BuildStepCondition(const YamlStepCondition &conditionModel,
+                               RecipeStepCondition &condition,
+                               std::string &error) {
+  condition = RecipeStepCondition{};
+  condition.Negate = conditionModel.not_condition;
+
+  size_t populatedFields = 0;
+  if (!conditionModel.state.empty()) {
+    ++populatedFields;
+  }
+  if (!conditionModel.all.empty()) {
+    ++populatedFields;
+  }
+  if (!conditionModel.any.empty()) {
+    ++populatedFields;
+  }
+
+  if (populatedFields == 0) {
+    return true;
+  }
+
+  if (populatedFields != 1) {
+    error = "SM5 step if must specify exactly one of state, all, or any";
+    return false;
+  }
+
+  if (!conditionModel.state.empty()) {
+    condition.State = conditionModel.state;
+    if (condition.State.empty()) {
+      error = "SM5 step if.state must not be empty";
+      return false;
+    }
+    return true;
+  }
+
+  std::vector<RecipeStepCondition> &destination =
+      !conditionModel.all.empty() ? condition.All : condition.Any;
+  const std::vector<YamlStepCondition> &source =
+      !conditionModel.all.empty() ? conditionModel.all : conditionModel.any;
+  destination.reserve(source.size());
+  for (const YamlStepCondition &childModel : source) {
+    RecipeStepCondition childCondition;
+    if (!BuildStepCondition(childModel, childCondition, error)) {
+      return false;
+    }
+    if (!childCondition.IsSet()) {
+      error = "SM5 nested step if condition must not be empty";
+      return false;
+    }
+    destination.push_back(std::move(childCondition));
+  }
+  return true;
+}
+
 static bool ValidatePortableDeclarationModel(const YamlRecipeDocument &document,
                                              std::string &error) {
   for (const YamlTempDecl &decl : document.temp_decls) {
@@ -1749,6 +1924,12 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
                                       "does not allow top-level rewrite_rules";
     return false;
   }
+  if (!document.prefilters.empty()) {
+    result.Error = sourceName.str() +
+                   ": top-level prefilters are deprecated and unsupported in "
+                   "schema version 1; use prefilter steps";
+    return false;
+  }
   if (document.steps.empty()) {
     result.Error =
         sourceName.str() + ": schema version 1 requires at least one step";
@@ -1769,9 +1950,8 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
   }
 
   for (const YamlTempDecl &declModel : document.temp_decls) {
-    RecipeTempDecl decl;
-    decl.Handle = declModel.handle;
-    result.Recipe.AddTempDecl(std::move(decl));
+    result.Recipe.AddTempDecl(
+        RecipeTempDecl{}.WithHandle(declModel.handle));
   }
 
   if (!ValidateUniqueDeclarationHandles(document, parseError)) {
@@ -1784,103 +1964,104 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
     return false;
   }
 
-  for (const YamlPrefilter &prefilterModel : document.prefilters) {
-    RecipePrefilter prefilter;
-    if (!ParsePrefilterKindToken(prefilterModel.kind, prefilter.Kind,
-                                 parseError)) {
-      result.Error = sourceName.str() + ": " + parseError;
-      return false;
-    }
-    if (!ValidatePrefilterModel(prefilterModel, prefilter.Kind, parseError)) {
-      result.Error = sourceName.str() + ": " + parseError;
-      return false;
-    }
-    prefilter.Name = prefilterModel.name;
-    prefilter.Required = prefilterModel.required;
-    prefilter.ExpectedMajorVersion = prefilterModel.major;
-    prefilter.ExpectedMinorVersion = prefilterModel.minor;
-    prefilter.ExpectedCount = prefilterModel.expected_count;
-    prefilter.ExpectedResourceCount = prefilterModel.expected_resources;
-    prefilter.Match.Opcode = prefilterModel.match.opcode;
-    prefilter.Match.Capture = prefilterModel.match.capture;
-    prefilter.Match.Saturate = prefilterModel.match.saturate;
-    prefilter.Match.TestBoolean = prefilterModel.match.test_boolean;
-    for (const YamlOperand &operandModel : prefilterModel.match.operands) {
-      RecipeOperandPattern operand;
-      if (!FillRecipeOperandPattern(operandModel, false, operand, parseError)) {
-        result.Error = sourceName.str() + ": " + parseError;
-        return false;
-      }
-      prefilter.Match.Operands.push_back(std::move(operand));
-    }
-    for (const YamlInstructionMatch &matchModel :
-         prefilterModel.match.sequence) {
-      RecipeInstructionPattern pattern;
-      pattern.Opcode = matchModel.opcode;
-      pattern.Capture = matchModel.capture;
-      pattern.Saturate = matchModel.saturate;
-      pattern.TestBoolean = matchModel.test_boolean;
-      for (const YamlOperand &operandModel : matchModel.operands) {
-        RecipeOperandPattern operand;
-        if (!FillRecipeOperandPattern(operandModel, false, operand,
-                                      parseError)) {
-          result.Error = sourceName.str() + ": " + parseError;
-          return false;
-        }
-        pattern.Operands.push_back(std::move(operand));
-      }
-      prefilter.Match.Sequence.push_back(std::move(pattern));
-    }
-    if (!prefilterModel.opcode.empty()) {
-      Opcode parsedOpcode;
-      if (!ParseOpcode(prefilterModel.opcode, parsedOpcode)) {
-        result.Error =
-            sourceName.str() +
-            ": Unknown SM5 opcode in prefilter: " + prefilterModel.opcode;
-        return false;
-      }
-      prefilter.Opcode = prefilterModel.opcode;
-    }
-    result.Recipe.AddPrefilter(std::move(prefilter));
-  }
-
-  auto appendRuleToStep = [&](const YamlRule &ruleModel,
-                              RecipeStep &step) -> bool {
+  auto appendRule = [&](const YamlRule &ruleModel,
+                        RecipeRuleApplicationMode inheritedMode,
+                        std::vector<RecipeRule> &rules) -> bool {
     RecipeRule rule;
-    if (!ParseRule(ruleModel, step.ApplicationMode, rule, parseError)) {
+    if (!ParseRule(ruleModel, inheritedMode, rule, parseError)) {
       result.Error = sourceName.str() + ": " + parseError;
       return false;
     }
-    step.Rules.push_back(std::move(rule));
+    rules.push_back(std::move(rule));
     return true;
   };
 
-  for (size_t stepIndex = 0; stepIndex < document.steps.size(); ++stepIndex) {
-    const YamlStep &stepModel = document.steps[stepIndex];
-    RecipeStep step;
+  for (const YamlStep &stepModel : document.steps) {
     const std::string stepKind =
         stepModel.kind.empty() ? "apply_rules" : Lowercase(stepModel.kind);
-    step.Name = stepModel.name.empty() ? stepKind : stepModel.name;
-    step.Required = stepModel.required;
+    const std::string stepName =
+        stepModel.name.empty() ? stepKind : stepModel.name;
+    RecipeStepCondition stepCondition;
+    if (!BuildStepCondition(stepModel.if_condition, stepCondition, parseError)) {
+      result.Error = sourceName.str() + ": " + parseError;
+      return false;
+    }
 
     if (stepKind == "apply_rules") {
+      RecipeRuleApplicationMode applicationMode = RecipeRuleApplicationMode::First;
       if (!stepModel.mode.empty()) {
-        step.ApplicationMode = ParseRuleApplicationMode(stepModel.mode);
+        applicationMode = ParseRuleApplicationMode(stepModel.mode);
       }
 
+      std::vector<RecipeRule> rules;
+      rules.reserve(stepModel.rules.size());
+
       for (const YamlRule &ruleModel : stepModel.rules) {
-        if (!appendRuleToStep(ruleModel, step)) {
+        if (!appendRule(ruleModel, applicationMode, rules)) {
           return false;
         }
       }
 
-      result.Recipe.AddStep(std::move(step));
+      result.Recipe.AddStep(MakeRewriteRulesStep(stepName, std::move(rules),
+                                                applicationMode,
+                                                stepModel.required)
+                                .When(stepCondition));
+      continue;
+    }
+
+    if (stepKind == "prefilter") {
+      if (!stepModel.rules.empty()) {
+        result.Error = sourceName.str() +
+                       ": SM5 prefilter steps cannot define rules";
+        return false;
+      }
+      if (stepModel.checks.empty()) {
+        result.Error = sourceName.str() +
+                       ": SM5 prefilter steps require at least one check";
+        return false;
+      }
+
+      RecipePrefilterMode prefilterMode = RecipePrefilterMode::All;
+      if (!ParsePrefilterMode(stepModel.mode, prefilterMode, parseError)) {
+        result.Error = sourceName.str() + ": " + parseError;
+        return false;
+      }
+
+      std::vector<RecipePrefilter> checks;
+      checks.reserve(stepModel.checks.size());
+      for (const YamlPrefilter &checkModel : stepModel.checks) {
+        RecipePrefilter prefilter;
+        if (!BuildRecipePrefilter(checkModel, prefilter, parseError)) {
+          result.Error = sourceName.str() + ": " + parseError;
+          return false;
+        }
+        checks.push_back(std::move(prefilter));
+      }
+
+        result.Recipe.AddStep(
+            MakePrefilterStep(stepName, std::move(checks), stepModel.set,
+                  prefilterMode)
+                .Require(stepModel.required)
+                .When(stepCondition));
       continue;
     }
 
     if (!stepModel.mode.empty()) {
       result.Error = sourceName.str() +
-                     ": SM5 step mode is only valid for apply_rules steps";
+                     ": SM5 step mode is only valid for apply_rules or "
+                     "prefilter steps";
+      return false;
+    }
+
+    if (!stepModel.checks.empty()) {
+      result.Error = sourceName.str() +
+                     ": SM5 step checks are only valid for prefilter steps";
+      return false;
+    }
+
+    if (!stepModel.set.empty()) {
+      result.Error = sourceName.str() +
+                     ": SM5 step set is only valid for prefilter steps";
       return false;
     }
 
@@ -1891,107 +2072,142 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
     }
 
     if (stepKind == "refresh_resources") {
-      result.Recipe.AddStep(MakeRefreshResourcesStep(step.Name));
+      result.Recipe.AddStep(MakeRefreshResourcesStep(stepName)
+                                .Require(stepModel.required)
+                                .When(stepCondition));
     } else if (stepKind == "verify_program") {
-      result.Recipe.AddStep(MakeVerifyProgramStep(step.Name));
+      result.Recipe.AddStep(MakeVerifyProgramStep(stepName)
+                                .Require(stepModel.required)
+                                .When(stepCondition));
     } else if (stepKind == "add_input") {
-      RecipeInputDecl decl;
-      decl.BindPoint = stepModel.bind_point >= 0
-                           ? static_cast<uint32_t>(stepModel.bind_point)
-                           : 0u;
-      decl.Handle = stepModel.handle;
-      decl.AutoBind = stepModel.auto_bind;
+      RecipeInputDecl decl = RecipeInputDecl{}
+                                .WithBindPoint(stepModel.bind_point >= 0
+                                                   ? static_cast<uint32_t>(
+                                                         stepModel.bind_point)
+                                                   : 0u)
+                                .WithHandle(stepModel.handle)
+                                .AutoBindToNext(stepModel.auto_bind);
       if (!ParseInterpolationModeToken(stepModel.interpolation_mode,
                                        decl.InterpolationMode, parseError)) {
         result.Error = sourceName.str() + ": " + parseError;
         return false;
       }
-      result.Recipe.AddStep(MakeAddInputStep(step.Name, decl));
+      decl.WithInterpolationMode(decl.InterpolationMode);
+      result.Recipe.AddStep(MakeAddInputStep(stepName, std::move(decl))
+                                .Require(stepModel.required)
+                                .When(stepCondition));
     } else if (stepKind == "add_output") {
-      RecipeOutputDecl decl;
-      decl.BindPoint = stepModel.bind_point >= 0
-                           ? static_cast<uint32_t>(stepModel.bind_point)
-                           : 0u;
-      decl.Handle = stepModel.handle;
-      decl.AutoBind = stepModel.auto_bind;
-      result.Recipe.AddStep(MakeAddOutputStep(step.Name, decl));
+      RecipeOutputDecl decl = RecipeOutputDecl{}
+                                 .WithBindPoint(stepModel.bind_point >= 0
+                                                    ? static_cast<uint32_t>(
+                                                          stepModel.bind_point)
+                                                    : 0u)
+                                 .WithHandle(stepModel.handle)
+                                 .AutoBindToNext(stepModel.auto_bind);
+      result.Recipe.AddStep(MakeAddOutputStep(stepName, std::move(decl))
+                                .Require(stepModel.required)
+                                .When(stepCondition));
     } else if (stepKind == "add_texture") {
-      RecipeTextureDecl decl;
-      decl.BindPoint = stepModel.bind_point >= 0
-                           ? static_cast<uint32_t>(stepModel.bind_point)
-                           : 0u;
-      decl.Handle = stepModel.handle;
-      decl.AutoBind = stepModel.auto_bind;
+      RecipeTextureDecl decl = RecipeTextureDecl{}
+                                  .WithBindPoint(stepModel.bind_point >= 0
+                                                     ? static_cast<uint32_t>(
+                                                           stepModel.bind_point)
+                                                     : 0u)
+                                  .WithHandle(stepModel.handle)
+                                  .AutoBindToNext(stepModel.auto_bind);
       if (!ParseTextureDimensionToken(stepModel.dimension, decl.Dimension,
                                       parseError)) {
         result.Error = sourceName.str() + ": " + parseError;
         return false;
       }
-      result.Recipe.AddStep(MakeAddTextureStep(step.Name, decl));
+      decl.WithDimension(decl.Dimension);
+      result.Recipe.AddStep(MakeAddTextureStep(stepName, std::move(decl))
+                                .Require(stepModel.required)
+                                .When(stepCondition));
     } else if (stepKind == "add_raw_resource") {
-      RecipeRawResourceDecl decl;
-      decl.BindPoint = stepModel.bind_point >= 0
-                           ? static_cast<uint32_t>(stepModel.bind_point)
-                           : 0u;
-      decl.Handle = stepModel.handle;
-      decl.AutoBind = stepModel.auto_bind;
-      result.Recipe.AddStep(MakeAddRawResourceStep(step.Name, decl));
+      RecipeRawResourceDecl decl = RecipeRawResourceDecl{}
+                                      .WithBindPoint(stepModel.bind_point >= 0
+                                                         ? static_cast<uint32_t>(
+                                                               stepModel.bind_point)
+                                                         : 0u)
+                                      .WithHandle(stepModel.handle)
+                                      .AutoBindToNext(stepModel.auto_bind);
+      result.Recipe.AddStep(MakeAddRawResourceStep(stepName, std::move(decl))
+                                .Require(stepModel.required)
+                                .When(stepCondition));
     } else if (stepKind == "add_structured_resource") {
-      RecipeStructuredResourceDecl decl;
-      decl.BindPoint = stepModel.bind_point >= 0
-                           ? static_cast<uint32_t>(stepModel.bind_point)
-                           : 0u;
-      decl.StructureStride = stepModel.stride;
-      decl.Handle = stepModel.handle;
-      decl.AutoBind = stepModel.auto_bind;
-      result.Recipe.AddStep(MakeAddStructuredResourceStep(step.Name, decl));
+      RecipeStructuredResourceDecl decl =
+          RecipeStructuredResourceDecl{}
+              .WithBindPoint(stepModel.bind_point >= 0
+                                 ? static_cast<uint32_t>(stepModel.bind_point)
+                                 : 0u)
+              .WithStructureStride(stepModel.stride)
+              .WithHandle(stepModel.handle)
+              .AutoBindToNext(stepModel.auto_bind);
+      result.Recipe.AddStep(
+          MakeAddStructuredResourceStep(stepName, std::move(decl))
+              .Require(stepModel.required)
+              .When(stepCondition));
     } else if (stepKind == "add_cbuffer") {
-      RecipeCBufferDecl decl;
-      decl.BindPoint = stepModel.bind_point >= 0
-                           ? static_cast<uint32_t>(stepModel.bind_point)
-                           : 0u;
-      decl.Elements = stepModel.elements;
-      decl.Handle = stepModel.handle;
-      decl.AutoBind = stepModel.auto_bind;
+      RecipeCBufferDecl decl = RecipeCBufferDecl{}
+                                  .WithBindPoint(stepModel.bind_point >= 0
+                                                     ? static_cast<uint32_t>(
+                                                           stepModel.bind_point)
+                                                     : 0u)
+                                  .WithElements(stepModel.elements)
+                                  .WithHandle(stepModel.handle)
+                                  .AutoBindToNext(stepModel.auto_bind);
       if (!ParseCBufferAccessPatternToken(stepModel.access_pattern,
                                           decl.AccessPattern, parseError)) {
         result.Error = sourceName.str() + ": " + parseError;
         return false;
       }
-      result.Recipe.AddStep(MakeAddCBufferStep(step.Name, decl));
+      decl.WithAccessPattern(decl.AccessPattern);
+      result.Recipe.AddStep(MakeAddCBufferStep(stepName, std::move(decl))
+                                .Require(stepModel.required)
+                                .When(stepCondition));
     } else if (stepKind == "add_sampler") {
-      RecipeSamplerDecl decl;
-      decl.BindPoint = stepModel.bind_point >= 0
-                           ? static_cast<uint32_t>(stepModel.bind_point)
-                           : 0u;
-      decl.Handle = stepModel.handle;
-      decl.AutoBind = stepModel.auto_bind;
+      RecipeSamplerDecl decl = RecipeSamplerDecl{}
+                                  .WithBindPoint(stepModel.bind_point >= 0
+                                                     ? static_cast<uint32_t>(
+                                                           stepModel.bind_point)
+                                                     : 0u)
+                                  .WithHandle(stepModel.handle)
+                                  .AutoBindToNext(stepModel.auto_bind);
       if (!ParseSamplerModeToken(stepModel.sampler_mode, decl.Mode,
                                  parseError)) {
         result.Error = sourceName.str() + ": " + parseError;
         return false;
       }
-      result.Recipe.AddStep(MakeAddSamplerStep(step.Name, decl));
+      decl.WithMode(decl.Mode);
+      result.Recipe.AddStep(MakeAddSamplerStep(stepName, std::move(decl))
+                                .Require(stepModel.required)
+                                .When(stepCondition));
     } else if (stepKind == "add_uav") {
-      RecipeUavDecl decl;
-      decl.BindPoint = stepModel.bind_point >= 0
-                           ? static_cast<uint32_t>(stepModel.bind_point)
-                           : 0u;
-      decl.Handle = stepModel.handle;
-      decl.AutoBind = stepModel.auto_bind;
-      decl.StructureStride = stepModel.stride;
-      decl.GloballyCoherent = stepModel.globally_coherent;
-      decl.HasOrderPreservingCounter = stepModel.has_counter;
+      RecipeUavDecl decl = RecipeUavDecl{}
+                              .WithBindPoint(stepModel.bind_point >= 0
+                                                 ? static_cast<uint32_t>(
+                                                       stepModel.bind_point)
+                                                 : 0u)
+                              .WithHandle(stepModel.handle)
+                              .AutoBindToNext(stepModel.auto_bind)
+                              .WithStructureStride(stepModel.stride)
+                              .WithGloballyCoherent(stepModel.globally_coherent)
+                              .WithOrderPreservingCounter(stepModel.has_counter);
       if (!ParseUavKindToken(stepModel.uav_kind, decl.Kind, parseError)) {
         result.Error = sourceName.str() + ": " + parseError;
         return false;
       }
+      decl.WithKind(decl.Kind);
       if (!ParseTextureDimensionToken(stepModel.dimension, decl.Dimension,
                                       parseError)) {
         result.Error = sourceName.str() + ": " + parseError;
         return false;
       }
-      result.Recipe.AddStep(MakeAddUavStep(step.Name, decl));
+      decl.WithDimension(decl.Dimension);
+      result.Recipe.AddStep(MakeAddUavStep(stepName, std::move(decl))
+                                .Require(stepModel.required)
+                                .When(stepCondition));
     } else {
       result.Error = sourceName.str() + ": unsupported SM5 step kind '" +
                      stepModel.kind + "'";

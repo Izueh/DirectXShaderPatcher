@@ -86,7 +86,6 @@ int main(int argc, char **argv) {
   const size_t initialInstructionCount = inputProgram.Instructions.size();
 
   const char *recipeText = R"YAML(version: 1
-prefilters: []
 steps:
   - name: replace_frc_mul_sequence
     rules:
@@ -120,6 +119,63 @@ steps:
   if (!patchResult.Success) {
     std::cerr << "Failed to patch SM5 shader with sequence recipe: "
               << patchResult.Error << "\n";
+    return 1;
+  }
+
+  if (patchResult.Report.OutputContainer.Format != "DXBC") {
+    std::cerr << "Expected SM5 patch report to identify DXBC output format.\n";
+    return 1;
+  }
+
+  if (patchResult.Report.Steps.size() != parseResult.Recipe.GetSteps().size()) {
+    std::cerr << "Expected SM5 patch report to record one entry per executed "
+                 "recipe step.\n";
+    return 1;
+  }
+
+  if (patchResult.Report.Steps.empty() ||
+      patchResult.Report.Steps.front().Name != "replace_frc_mul_sequence" ||
+      !patchResult.Report.Steps.front().Executed ||
+      !patchResult.Report.Steps.front().Success ||
+      !patchResult.Report.Steps.front().Changed ||
+      patchResult.Report.Steps.front().MatchCount == 0) {
+    std::cerr << "Expected SM5 patch report to describe the executed rewrite "
+                 "step.\n";
+    return 1;
+  }
+
+  if (patchResult.Report.OutputContainer.TotalSizeInBytes !=
+      patchResult.OutputBytes.size()) {
+    std::cerr << "Expected SM5 patch report to expose final DXBC container "
+                 "size.\n";
+    return 1;
+  }
+
+  if (patchResult.Report.OutputContainer.HashHex.size() != 32) {
+    std::cerr << "Expected SM5 patch report to expose a 32-character DXBC "
+                 "hash.\n";
+    return 1;
+  }
+
+  if (patchResult.Report.OutputContainer.Chunks.empty()) {
+    std::cerr << "Expected SM5 patch report to enumerate DXBC chunks.\n";
+    return 1;
+  }
+
+  bool foundShaderChunk = false;
+  for (const auto &chunk : patchResult.Report.OutputContainer.Chunks) {
+    if (chunk.SizeInBytes == 0) {
+      std::cerr << "Expected SM5 patch report chunk sizes to be populated.\n";
+      return 1;
+    }
+
+    if (chunk.Id == "SHDR" || chunk.Id == "SHEX") {
+      foundShaderChunk = true;
+    }
+  }
+
+  if (!foundShaderChunk) {
+    std::cerr << "Expected SM5 patch report to include the shader chunk.\n";
     return 1;
   }
 
@@ -167,7 +223,6 @@ steps:
 
   const int initialFrcCount = CountOpcode(inputProgram, D3D10_SB_OPCODE_FRC);
   const char *matchOnlyRecipeText = R"YAML(version: 1
-prefilters: []
 steps:
   - name: match_only_probe
     required: true

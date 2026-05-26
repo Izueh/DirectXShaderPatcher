@@ -240,7 +240,8 @@ bool ReloadDxilContainerFromMemory(const std::vector<uint8_t> &containerBytes,
 bool PatchDxilContainer(const DxilRecipe &recipe, const void *inputData,
                         size_t inputSize, std::vector<uint8_t> &outputContainer,
                         const DxilContainerPatchOptions &options,
-                        DxilRecipeContext *outContext) {
+                        DxilRecipeContext *outContext,
+                        dxp::PatchReport *outReport) {
   const ScopedPatchCoInitialize coinit;
   const bool traceEnabled = options.recipeExecutionOptions.traceEnabled;
 
@@ -258,7 +259,8 @@ bool PatchDxilContainer(const DxilRecipe &recipe, const void *inputData,
   DxilRecipeContext *recipeContext =
       outContext != nullptr ? outContext : &localContext;
   if (!ExecuteDxilRecipe(recipe, *shader->module, *shader->dxilModule,
-                         options.recipeExecutionOptions, recipeContext)) {
+                         options.recipeExecutionOptions, recipeContext,
+                         outReport)) {
     return false;
   }
 
@@ -288,6 +290,10 @@ bool PatchDxilContainer(const DxilRecipe &recipe, const void *inputData,
                                       outputContainer);
   if (ok && recipeContext->moduleModified)
     ok = ValidatePatchedContainerOrReport(outputContainer);
+  if (ok && outReport != nullptr) {
+    ok = dxp::sm6::BuildDxilContainerReport(outputContainer,
+                                            outReport->OutputContainer);
+  }
   if (ok)
     shader.release();
   return ok;
@@ -297,10 +303,11 @@ bool PatchDxilContainer(const DxilRecipe &recipe,
                         const std::vector<uint8_t> &inputContainer,
                         std::vector<uint8_t> &outputContainer,
                         const DxilContainerPatchOptions &options,
-                        DxilRecipeContext *outContext) {
+                        DxilRecipeContext *outContext,
+                        dxp::PatchReport *outReport) {
   return PatchDxilContainer(recipe, inputContainer.data(),
                             inputContainer.size(), outputContainer, options,
-                            outContext);
+                            outContext, outReport);
 }
 
 std::vector<uint8_t> SerializeModuleToBitcode(Module &module) {

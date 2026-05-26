@@ -74,7 +74,6 @@ int main(int argc, char **argv) {
   const size_t initialInstructionCount = inputProgram.Instructions.size();
 
   const char *beforeRecipeText = R"YAML(version: 1
-prefilters: []
 steps:
   - name: insert_before_mul
     rules:
@@ -148,7 +147,6 @@ steps:
   }
 
   const char *afterRecipeText = R"YAML(version: 1
-prefilters: []
 steps:
   - name: insert_after_mul
     rules:

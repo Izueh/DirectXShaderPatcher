@@ -134,6 +134,8 @@ struct RewriteAction {
   uint32_t RemoveStart;
   uint32_t RemoveEnd;
 
+  uint32_t RequiredTempCount;
+
   std::vector<Instruction> NewInstructions;
 
   RewriteAction();

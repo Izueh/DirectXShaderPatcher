@@ -2,29 +2,40 @@ version: 1
 reserved_temps: 1
 temp_decls:
   - handle: screen_uv_temp
-prefilters:
-  - kind: check_shader_version
-    major: 5
-    minor: 0
 steps:
+  - kind: prefilter
+    name: require_sm5_0
+    checks:
+      - kind: check_shader_version
+        major: 5
+        minor: 0
+
   - kind: add_input
     name: add_screen_uv_x
+    if:
+      state: require_sm5_0
     handle: screen_uv_x
     auto_bind: true
     interpolation_mode: linear
 
   - kind: add_input
     name: add_screen_uv_y
+    if:
+      state: require_sm5_0
     handle: screen_uv_y
     auto_bind: true
     interpolation_mode: linear
 
   - kind: add_output
     name: add_screen_uv_out
+    if:
+      state: require_sm5_0
     handle: screen_uv_out
     auto_bind: true
 
   - name: inject_screen_uv_math
+    if:
+      state: require_sm5_0
     mode: MatchAll
     rules:
       - match:

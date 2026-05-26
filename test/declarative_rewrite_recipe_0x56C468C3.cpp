@@ -52,9 +52,11 @@ int main(int argc, char **argv) {
   }
 
   DxilRecipeContext recipeContext;
+  dxp::PatchReport patchReport;
   std::vector<uint8_t> outputContainer;
   if (!PatchDxilContainer(parseResult.recipe, inputShader, outputContainer,
-                          parseResult.patchOptions, &recipeContext)) {
+                          parseResult.patchOptions, &recipeContext,
+                          &patchReport)) {
     std::cerr << "PatchDxilContainer failed.";
     if (!recipeContext.lastError.empty())
       std::cerr << " " << recipeContext.lastError;
@@ -65,6 +67,39 @@ int main(int argc, char **argv) {
   if (recipeContext.totalRuleMatches == 0) {
     std::cerr
         << "Expected declarative rewrite recipe to apply at least one rule.\n";
+    return 1;
+  }
+
+  if (patchReport.Steps.size() != parseResult.recipe.GetSteps().size()) {
+    std::cerr << "Expected one step report per declarative rewrite step.\n";
+    return 1;
+  }
+
+  const dxp::PatchStepReport *rewriteStepReport = nullptr;
+  for (const auto &stepReport : patchReport.Steps) {
+    if (stepReport.Name == "strip_outer_frc") {
+      rewriteStepReport = &stepReport;
+      break;
+    }
+  }
+
+  if (rewriteStepReport == nullptr) {
+    std::cerr << "Expected declarative rewrite report to include the rewrite "
+                 "step entry.\n";
+    return 1;
+  }
+
+  if (rewriteStepReport->Rules.size() != 1) {
+    std::cerr << "Expected exactly one rule report for the declarative "
+                 "rewrite step.\n";
+    return 1;
+  }
+
+  const auto &ruleReport = rewriteStepReport->Rules.front();
+  if (ruleReport.MatchCount == 0 || ruleReport.AppliedCount == 0 ||
+      !ruleReport.Changed) {
+    std::cerr << "Expected declarative rewrite rule report to record an "
+                 "applied mutating match.\n";
     return 1;
   }
 

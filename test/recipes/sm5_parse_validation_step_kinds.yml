@@ -1,5 +1,12 @@
 version: 1
 steps:
+  - kind: prefilter
+    name: require_mul_probe
+    checks:
+      - kind: check_pattern_match
+        match:
+          opcode: mul
+
   - kind: apply_rules
     name: apply_probe
     mode: MatchAll
@@ -10,6 +17,15 @@ steps:
 
   - kind: refresh_resources
     name: refresh
+    if:
+      all:
+        - state: require_mul_probe
+        - state: require_mul_probe
 
   - kind: verify_program
     name: verify
+    if:
+      any:
+        - state: require_mul_probe
+        - state: optional_probe
+          not: true

@@ -73,7 +73,6 @@ int main(int argc, char **argv) {
       inputProgram.Instructions[static_cast<size_t>(targetInstructionIndex)];
 
   const char *recipeText = R"YAML(version: 1
-prefilters: []
 steps:
   - name: replace_mul_with_mov
     rules:

@@ -173,6 +173,49 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+    const auto rawSrvBindingIt =
+      patchResult.Report.NewBindings.find("injected_raw_srv");
+    const auto structuredSrvBindingIt =
+      patchResult.Report.NewBindings.find("injected_structured_srv");
+    const auto rawUavBindingIt =
+      patchResult.Report.NewBindings.find("injected_raw_uav");
+    if (rawSrvBindingIt == patchResult.Report.NewBindings.end() ||
+      structuredSrvBindingIt == patchResult.Report.NewBindings.end() ||
+      rawUavBindingIt == patchResult.Report.NewBindings.end()) {
+    std::cerr << "Expected injected declaration handles to be exported in the "
+                 "patch report.\n";
+    return 1;
+  }
+
+    if (rawSrvBindingIt->second.ResourceKind !=
+        dxp::PatchResourceKind::RawResource ||
+      rawSrvBindingIt->second.Handle != "injected_raw_srv" ||
+      rawSrvBindingIt->second.BindPoint != rawSrvIt->second ||
+      rawSrvBindingIt->second.Space != 0u) {
+    std::cerr << "Expected raw SRV export to expose the resolved binding.\n";
+    return 1;
+  }
+
+    if (structuredSrvBindingIt->second.ResourceKind !=
+        dxp::PatchResourceKind::StructuredResource ||
+      structuredSrvBindingIt->second.Handle !=
+          "injected_structured_srv" ||
+      structuredSrvBindingIt->second.BindPoint != structuredSrvIt->second ||
+      structuredSrvBindingIt->second.Space != 0u) {
+    std::cerr << "Expected structured SRV export to expose the resolved "
+                 "binding.\n";
+    return 1;
+  }
+
+    if (rawUavBindingIt->second.ResourceKind !=
+        dxp::PatchResourceKind::Uav ||
+      rawUavBindingIt->second.Handle != "injected_raw_uav" ||
+      rawUavBindingIt->second.BindPoint != rawUavIt->second ||
+      rawUavBindingIt->second.Space != 0u) {
+    std::cerr << "Expected raw UAV export to expose the resolved binding.\n";
+    return 1;
+  }
+
   dxp::sm5::ProgramInspection patchedProgram;
   if (!dxp::sm5::InspectProgram(patchResult.OutputBytes, patchedProgram,
                                 &inspectError)) {

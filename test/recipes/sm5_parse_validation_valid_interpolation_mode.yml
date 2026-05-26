@@ -1,9 +1,12 @@
 ﻿version: 1
-prefilters:
-  - kind: check_shader_version
-    major: 5
-    minor: 0
 steps:
+  - kind: prefilter
+    name: require_sm5_0
+    checks:
+      - kind: check_shader_version
+        major: 5
+        minor: 0
+
   - kind: add_input
     name: add_interpolated_input
     handle: interpolated_input

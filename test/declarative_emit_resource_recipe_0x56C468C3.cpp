@@ -58,9 +58,11 @@ int main(int argc, char **argv) {
   }
 
   DxilRecipeContext recipeContext;
+  dxp::PatchReport patchReport;
   std::vector<uint8_t> outputContainer;
   if (!PatchDxilContainer(parseResult.recipe, inputShader, outputContainer,
-                          parseResult.patchOptions, &recipeContext)) {
+                          parseResult.patchOptions, &recipeContext,
+                          &patchReport)) {
     std::cerr << "PatchDxilContainer failed.";
     if (!recipeContext.lastError.empty())
       std::cerr << " " << recipeContext.lastError;
@@ -71,6 +73,40 @@ int main(int argc, char **argv) {
   if (recipeContext.totalRuleMatches == 0) {
     std::cerr << "Expected declarative emitted-call recipe to apply at least "
                  "one rule.\n";
+    return 1;
+  }
+
+  const dxp::PatchStepReport *addStepReport = nullptr;
+  for (const auto &stepReport : patchReport.Steps) {
+    if (stepReport.Name == "add_cbuffer:frame_constants") {
+      addStepReport = &stepReport;
+      break;
+    }
+  }
+
+  if (addStepReport == nullptr || addStepReport->SideEffects.size() != 1) {
+    std::cerr << "Expected add_cbuffer step to report one side effect.\n";
+    return 1;
+  }
+
+  const auto &sideEffect = addStepReport->SideEffects.front();
+  if (sideEffect.Kind != dxp::PatchSideEffectKind::ResourceAdded ||
+      sideEffect.ResourceKind != dxp::PatchResourceKind::CBuffer ||
+      sideEffect.StepName != "add_cbuffer:frame_constants" ||
+      sideEffect.Space != 0u || !sideEffect.Changed) {
+    std::cerr << "Expected emitted resource recipe to report added cbuffer "
+                 "binding metadata.\n";
+    return 1;
+  }
+
+  const auto bindingIt = patchReport.NewBindings.find("frame_constants");
+  if (bindingIt == patchReport.NewBindings.end() ||
+      bindingIt->second.Handle != "frame_constants" ||
+      bindingIt->second.ResourceKind != dxp::PatchResourceKind::CBuffer ||
+      bindingIt->second.BindPoint != sideEffect.BindPoint ||
+      bindingIt->second.Space != sideEffect.Space) {
+    std::cerr << "Expected emitted resource recipe report to expose the "
+                 "resolved cbuffer binding in NewBindings.\n";
     return 1;
   }
 

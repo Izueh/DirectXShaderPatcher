@@ -113,9 +113,10 @@ int main() {
       return 1;
     }
 
-    if (!Contains(parseResult.Error, "schema version 1 requires steps and does "
-                                     "not allow top-level rewrite_rules")) {
-      std::cerr << "Expected strict schema version 1 validation error.\n";
+    if (!Contains(parseResult.Error,
+                  "top-level prefilters are deprecated and unsupported in "
+                  "schema version 1; use prefilter steps")) {
+      std::cerr << "Expected top-level prefilter rejection error.\n";
       return 1;
     }
   }
@@ -129,7 +130,8 @@ int main() {
     }
 
     if (!Contains(parseResult.Error,
-                  "SM5 step mode is only valid for apply_rules steps")) {
+                  "SM5 step mode is only valid for apply_rules or prefilter "
+                  "steps")) {
       std::cerr << "Expected step mode validation error.\n";
       return 1;
     }

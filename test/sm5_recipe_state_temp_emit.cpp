@@ -74,45 +74,36 @@ int main(int argc, char **argv) {
       inputProgram
           .Instructions[static_cast<size_t>(targetInstructionIndex + 1)];
 
-  dxp::sm5::RecipeRule stateTempRule;
-  stateTempRule.RewriteMode = dxp::sm5::RecipeRuleRewriteMode::ReplaceRange;
-  dxp::sm5::RecipeInstructionPattern firstInstruction;
-  firstInstruction.Opcode = "frc";
-  firstInstruction.Capture = "ign_frc";
-  stateTempRule.Match.Sequence.push_back(firstInstruction);
-
-  dxp::sm5::RecipeInstructionPattern secondInstruction;
-  secondInstruction.Opcode = "mul";
-  secondInstruction.Capture = "ign_mul";
-  dxp::sm5::RecipeOperandPattern matchDst;
-  matchDst.Capture = "dst";
-  secondInstruction.Operands.push_back(matchDst);
-  dxp::sm5::RecipeOperandPattern matchSrc;
-  matchSrc.Capture = "src";
-  secondInstruction.Operands.push_back(matchSrc);
-  stateTempRule.Match.Sequence.push_back(secondInstruction);
-
-  dxp::sm5::RecipeInstructionTemplate saveValue;
-  saveValue.Opcode = "mov";
-  dxp::sm5::RecipeOperandPattern saveDst;
-  saveDst.Type = "temp";
-  saveDst.StateTemp = "shared_temp_r";
-  saveValue.Operands.push_back(saveDst);
-  dxp::sm5::RecipeOperandPattern saveSrc;
-  saveSrc.Capture = "src";
-  saveValue.Operands.push_back(saveSrc);
-  stateTempRule.Emit.push_back(saveValue);
-
-  dxp::sm5::RecipeInstructionTemplate restoreValue;
-  restoreValue.Opcode = "mov";
-  dxp::sm5::RecipeOperandPattern restoreDst;
-  restoreDst.Capture = "dst";
-  restoreValue.Operands.push_back(restoreDst);
-  dxp::sm5::RecipeOperandPattern restoreSrc;
-  restoreSrc.Type = "temp";
-  restoreSrc.StateTemp = "shared_temp_r";
-  restoreValue.Operands.push_back(restoreSrc);
-  stateTempRule.Emit.push_back(restoreValue);
+    dxp::sm5::RecipeRule stateTempRule =
+      dxp::sm5::RecipeRule{}
+        .RewriteAs(dxp::sm5::RecipeRuleRewriteMode::ReplaceRange)
+        .WithMatch(dxp::sm5::RecipeMatchPattern{}
+               .AddInstruction(
+                 dxp::sm5::RecipeInstructionPattern{}
+                   .WithOpcode("frc")
+                   .CaptureAs("ign_frc"))
+               .AddInstruction(
+                 dxp::sm5::RecipeInstructionPattern{}
+                   .WithOpcode("mul")
+                   .CaptureAs("ign_mul")
+                   .AddOperand(dxp::sm5::RecipeOperandPattern{}
+                           .CaptureAs("dst"))
+                   .AddOperand(dxp::sm5::RecipeOperandPattern{}
+                           .CaptureAs("src"))))
+        .AddEmit(dxp::sm5::RecipeInstructionTemplate{}
+               .WithOpcode("mov")
+               .AddOperand(dxp::sm5::RecipeOperandPattern{}
+                       .WithType("temp")
+                       .WithStateTemp("shared_temp_r"))
+               .AddOperand(
+                 dxp::sm5::RecipeOperandPattern{}.CaptureAs("src")))
+        .AddEmit(dxp::sm5::RecipeInstructionTemplate{}
+               .WithOpcode("mov")
+               .AddOperand(
+                 dxp::sm5::RecipeOperandPattern{}.CaptureAs("dst"))
+               .AddOperand(dxp::sm5::RecipeOperandPattern{}
+                       .WithType("temp")
+                       .WithStateTemp("shared_temp_r")));
 
   dxp::sm5::Recipe recipe;
   recipe.AddStep(dxp::sm5::MakeCustomRecipeStep(

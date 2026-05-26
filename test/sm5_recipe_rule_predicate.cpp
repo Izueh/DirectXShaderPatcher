@@ -1,4 +1,5 @@
 #include "TestSupport.h"
+#include "dxp/sm5/Model.h"
 #include "dxp/sm5/Patch.h"
 #include "dxp/sm5/Recipe.h"
 
@@ -31,30 +32,19 @@ static bool HasDiagnosticContaining(const dxp::sm5::RecipeContext &context,
 }
 
 static dxp::sm5::RecipeRule MakeMovFromMulRule() {
-  dxp::sm5::RecipeRule rule;
-  rule.Match.Opcode = "mul";
-
-  dxp::sm5::RecipeOperandPattern dstCapture;
-  dstCapture.Capture = "dst";
-  rule.Match.Operands.push_back(dstCapture);
-
-  dxp::sm5::RecipeOperandPattern srcCapture;
-  srcCapture.Capture = "src";
-  rule.Match.Operands.push_back(srcCapture);
-
-  dxp::sm5::RecipeInstructionTemplate emitMov;
-  emitMov.Opcode = "mov";
-
-  dxp::sm5::RecipeOperandPattern emitDst;
-  emitDst.Capture = "dst";
-  emitMov.Operands.push_back(emitDst);
-
-  dxp::sm5::RecipeOperandPattern emitSrc;
-  emitSrc.Capture = "src";
-  emitMov.Operands.push_back(emitSrc);
-
-  rule.Emit.push_back(emitMov);
-  return rule;
+  return dxp::sm5::RecipeRule{}
+    .WithMatch(dxp::sm5::RecipeMatchPattern{}
+           .WithOpcode("mul")
+           .AddOperand(
+             dxp::sm5::RecipeOperandPattern{}.CaptureAs("dst"))
+           .AddOperand(
+             dxp::sm5::RecipeOperandPattern{}.CaptureAs("src")))
+    .AddEmit(dxp::sm5::RecipeInstructionTemplate{}
+           .WithOpcode("mov")
+           .AddOperand(
+             dxp::sm5::RecipeOperandPattern{}.CaptureAs("dst"))
+           .AddOperand(
+             dxp::sm5::RecipeOperandPattern{}.CaptureAs("src")));
 }
 
 } // namespace
@@ -86,8 +76,10 @@ int main(int argc, char **argv) {
   }
 
   {
-    dxp::sm5::RecipeRule skipRule = MakeMovFromMulRule();
-    skipRule.Predicate = [](dxp::sm5::RecipeContext &) { return false; };
+    dxp::sm5::RecipeRule skipRule =
+        MakeMovFromMulRule().When([](dxp::sm5::RecipeContext &) {
+          return false;
+        });
 
     dxp::sm5::Recipe skipRecipe;
     skipRecipe.AddStep(dxp::sm5::MakeRewriteRulesStep(
@@ -121,10 +113,10 @@ int main(int argc, char **argv) {
   }
 
   {
-    dxp::sm5::RecipeRule requiredErrorRule = MakeMovFromMulRule();
-    requiredErrorRule.Predicate = [](dxp::sm5::RecipeContext &) -> bool {
-      throw std::runtime_error("predicate failed");
-    };
+    dxp::sm5::RecipeRule requiredErrorRule =
+        MakeMovFromMulRule().When([](dxp::sm5::RecipeContext &) -> bool {
+          throw std::runtime_error("predicate failed");
+        });
 
     dxp::sm5::Recipe requiredErrorRecipe;
     requiredErrorRecipe.AddStep(dxp::sm5::MakeRewriteRulesStep(
@@ -141,10 +133,10 @@ int main(int argc, char **argv) {
   }
 
   {
-    dxp::sm5::RecipeRule optionalErrorRule = MakeMovFromMulRule();
-    optionalErrorRule.Predicate = [](dxp::sm5::RecipeContext &) -> bool {
-      throw std::runtime_error("optional predicate failed");
-    };
+    dxp::sm5::RecipeRule optionalErrorRule =
+        MakeMovFromMulRule().When([](dxp::sm5::RecipeContext &) -> bool {
+          throw std::runtime_error("optional predicate failed");
+        });
 
     dxp::sm5::Recipe optionalErrorRecipe;
     optionalErrorRecipe.AddStep(dxp::sm5::MakeRewriteRulesStep(
@@ -168,7 +160,83 @@ int main(int argc, char **argv) {
     }
   }
 
+  {
+    dxp::sm5::RecipeRule callbackRule = dxp::sm5::RecipeRule{}
+      .WithMatch([](const dxp::sm5::Program &program,
+                    dxp::sm5::RecipeContext &) {
+        std::vector<dxp::sm5::RecipeRuleMatch> matches;
+        for (uint32_t index = 0; index < program.Instructions.size(); ++index) {
+          const auto &instruction = program.Instructions[index];
+          if (instruction.Opcode != dxp::sm5::Opcode{D3D10_SB_OPCODE_MUL} ||
+              instruction.Operands.size() < 2) {
+            continue;
+          }
+
+          dxp::sm5::RecipeRuleMatch match;
+          match.InstructionIndex = index;
+          match.InstructionHandle = &instruction;
+          match.RangeStartIndex = index;
+          match.RangeEndIndex = index;
+          match.CapturedInstructions["mul"] = &instruction;
+          match.CapturedInstructionIndices["mul"] = index;
+          match.CapturedOperands["dst"] = &instruction.Operands[0];
+          match.CapturedOperands["src"] = &instruction.Operands[1];
+          matches.push_back(std::move(match));
+        }
+        return matches;
+      })
+      .Rewrite([](const dxp::sm5::Program &,
+                  const dxp::sm5::RecipeRuleMatch &match,
+                  dxp::sm5::RecipeContext &) {
+        std::vector<dxp::sm5::RecipeRewriteAction> actions;
+
+        const uint32_t *replaceIndex = match.GetCapturedInstructionIndex("mul");
+        if (replaceIndex == nullptr) {
+          return actions;
+        }
+
+        dxp::sm5::RecipeRewriteAction action;
+        action.Kind = dxp::sm5::RecipeRewriteActionKind::ReplaceOne;
+        action.ReplaceIndex = *replaceIndex;
+        action.AddEmit(dxp::sm5::RecipeInstructionTemplate{}
+                           .WithOpcode("mov")
+                           .AddOperand(
+                               dxp::sm5::RecipeOperandPattern{}.CaptureAs("dst"))
+                           .AddOperand(
+                               dxp::sm5::RecipeOperandPattern{}.CaptureAs("src")));
+        actions.push_back(std::move(action));
+        return actions;
+      });
+
+    dxp::sm5::Recipe callbackRecipe;
+    callbackRecipe.AddStep(dxp::sm5::MakeRewriteRulesStep(
+        "callback_match_and_rewrite", {callbackRule},
+        dxp::sm5::RecipeRuleApplicationMode::First, true));
+
+    const auto callbackResult = dxp::sm5::PatchContainer(inputBytes, callbackRecipe);
+    if (!callbackResult.Success) {
+      std::cerr << "Expected callback match/rewrite recipe to succeed, but patch failed: "
+                << callbackResult.Error << "\n";
+      return 1;
+    }
+
+    dxp::sm5::ProgramInspection patchedProgram;
+    if (!dxp::sm5::InspectProgram(callbackResult.OutputBytes, patchedProgram,
+                                  &inspectError)) {
+      std::cerr << "Failed to inspect callback-rewrite patched SM5 program: "
+                << inspectError << "\n";
+      return 1;
+    }
+
+    const auto &instruction =
+        patchedProgram.Instructions[static_cast<size_t>(targetInstructionIndex)];
+    if (instruction.Opcode != D3D10_SB_OPCODE_MOV) {
+      std::cerr << "Expected callback rewrite to replace MUL with MOV.\n";
+      return 1;
+    }
+  }
+
   std::cout << "SM5 rule predicates skip matches on false and fail only "
-               "required steps on predicate exceptions.\n";
+               "required steps on predicate exceptions, and callback match/rewrite works.\n";
   return 0;
 }

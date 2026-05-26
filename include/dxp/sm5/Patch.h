@@ -1,5 +1,6 @@
 #pragma once
 
+#include "dxp/PatchReport.h"
 #include "Recipe.h"
 
 #include <cstddef>
@@ -15,6 +16,10 @@ struct PatchResult {
   std::vector<uint8_t> OutputBytes;
   std::string Error;
   RecipeContext RecipeContext;
+  /// Caller-facing patch report. Use Report.NewBindings for final runtime
+  /// binding requirements and Report.OutputContainer for the emitted DXBC
+  /// envelope. Report.Steps provides optional execution detail.
+  dxp::PatchReport Report;
 };
 
 /// @brief Describes one operand in the inspection-friendly program view.
@@ -51,7 +56,8 @@ struct ProgramInspection {
 /// @param inputContainer Input DXBC container bytes.
 /// @param recipe Recipe to execute.
 /// @param context Initial recipe execution context.
-/// @return The patch result, including output bytes and execution diagnostics.
+/// @return The patch result, including output bytes, final binding requirements,
+/// and execution diagnostics.
 PatchResult PatchContainer(const std::vector<uint8_t> &inputContainer,
                            const Recipe &recipe,
                            const RecipeContext &context = {});
@@ -61,7 +67,8 @@ PatchResult PatchContainer(const std::vector<uint8_t> &inputContainer,
 /// @param inputData Pointer to the input container bytes.
 /// @param inputSize Size of the input container in bytes.
 /// @param context Initial recipe execution context.
-/// @return The patch result, including output bytes and execution diagnostics.
+/// @return The patch result, including output bytes, final binding requirements,
+/// and execution diagnostics.
 PatchResult PatchContainer(const Recipe &recipe, const uint8_t *inputData,
                            size_t inputSize, const RecipeContext &context = {});
 

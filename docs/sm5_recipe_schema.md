@@ -7,7 +7,6 @@ SM5 recipes use schema version `1`.
 ```yaml
 version: 1
 reserved_temps: 0
-prefilters: []
 steps: []
 temp_decls: []
 ```
@@ -21,64 +20,23 @@ Rules:
 
 This schema is specific to `dxp::sm5`. It is separate from the DXIL schema because SM5 patching operates on DXBC token IR.
 
-## Prefilters
-
-Supported prefilter kinds:
-- `check_shader_version`
-- `check_opcode_count`
-- `check_resource_count`
-- `check_pattern_match`
-
-Common fields:
-
-- `kind`
-- `name` optional
-- `required` optional, defaults to `true`
-
-Kind-specific fields:
-
-- `check_shader_version`: `major`, `minor`
-- `check_opcode_count`: `opcode`, `expected_count`
-- `check_resource_count`: `expected_resources`
-- `check_pattern_match`: `match`
-
-Example:
-
-```yaml
-prefilters:
-  - kind: check_shader_version
-    major: <major>
-    minor: <minor>
-  - kind: check_pattern_match
-    name: <prefilter_name>
-    required: true
-    match:
-      sequence:
-        - opcode: <opcode_a>
-        - opcode: <opcode_b>
-```
-
-Notes:
-
-- `expected_count < 0` means at most `abs(expected_count)`.
-- `expected_count == 0` means exactly zero.
-- `expected_count > 0` means at least that many.
-- `check_pattern_match` requires `match.opcode` or `match.sequence`.
-- `match.sequence` cannot be combined with single-instruction match fields in the same pattern.
-
 ## Steps
 
 Supported step fields:
 
 - `kind` optional, defaults to `apply_rules`
 - `name` optional
+- `if.state`, `if.all`, `if.any`, and `if.not` optional condition fields for any step
 - `required` optional, defaults to `true`
-- `mode` only for `apply_rules`
+- `mode` for `apply_rules` and `prefilter`
+- `set` only for `prefilter`
+- `checks` only for `prefilter`
 - `rules` only for `apply_rules`
 
 Supported step kinds:
 
 - `apply_rules`
+- `prefilter`
 - `refresh_resources`
 - `verify_program`
 - `add_input`
@@ -93,12 +51,122 @@ Supported step kinds:
 Step notes:
 
 - `apply_rules` is the default when `kind` is omitted.
-- `apply_rules` is the only step kind that accepts `mode` and `rules`.
-- Non-`apply_rules` steps must not define `mode` or `rules`.
+- `apply_rules` accepts `mode` and `rules`.
+- `prefilter` accepts `mode`, optional `set`, and `checks`.
+- `if` may select one of `state`, `all`, or `any`; `not: true` negates the selected condition result.
+- Other step kinds must not define `mode`, `set`, `checks`, or `rules`.
+
+## Conditional Steps
+
+Every SM5 step may define an `if` guard that reads boolean-like values from
+recipe context state and composes them.
+
+Shape:
+
+- Exactly one of: `state`, `all`, `any`
+- Optional: `not`, defaults to `false`
+
+Example:
+
+```yaml
+steps:
+  - kind: prefilter
+    name: require_expected_shape
+    checks:
+      - kind: check_shader_version
+        major: 5
+        minor: 0
+
+  - kind: add_texture
+    name: add_noise_tex
+    if:
+      all:
+        - state: require_expected_shape
+        - state: optional_probe
+          not: true
+    handle: noise_tex
+    auto_bind: true
+```
+
+Notes:
+
+- `if.state` reads from `RecipeContext::State`.
+- `if.all` requires every nested condition to evaluate to true.
+- `if.any` requires at least one nested condition to evaluate to true.
+- `if.not: true` negates the result of `state`, `all`, or `any`.
+- Missing state values are treated as `false`.
+- `prefilter` steps write a boolean state value for later guards.
+
+## Prefilter Steps
+
+Prefilters are first-class steps in SM5 schema version `1`.
+
+Supported prefilter check kinds:
+
+- `check_shader_version`
+- `check_opcode_count`
+- `check_resource_count`
+- `check_pattern_match`
+
+Supported `prefilter` step fields:
+
+- `name` optional
+- `mode` optional, accepts `all` or `any`, defaults to `all`
+- `set` optional, defaults to the step `name`
+- `checks` required
+
+Supported fields inside `checks[]`:
+
+- `kind`
+- `name` optional
+- `required` optional, parsed for compatibility but ignored by the step executor
+- `major`, `minor` for `check_shader_version`
+- `opcode`, `expected_count` for `check_opcode_count`
+- `expected_resources` for `check_resource_count`
+- `match` for `check_pattern_match`
+
+Example:
+
+```yaml
+steps:
+  - kind: prefilter
+    name: require_expected_shape
+    mode: all
+    set: require_expected_shape
+    checks:
+      - kind: check_shader_version
+        major: <major>
+        minor: <minor>
+      - kind: check_pattern_match
+        match:
+          sequence:
+            - opcode: <opcode_a>
+            - opcode: <opcode_b>
+
+  - kind: add_texture
+    if:
+      state: require_expected_shape
+    handle: <handle>
+    auto_bind: true
+```
+
+Notes:
+
+- `expected_count < 0` means at most `abs(expected_count)`.
+- `expected_count == 0` means exactly zero.
+- `expected_count > 0` means at least that many.
+- `check_pattern_match` requires `match.opcode` or `match.sequence`.
+- `match.sequence` cannot be combined with single-instruction match fields in the same pattern.
+- `prefilter` no longer stops or fails the recipe directly; it publishes a boolean probe result for later `if` guards.
+- Top-level `prefilters` are rejected in schema version `1`; use `steps[].kind: prefilter` instead.
 
 ## Rules
 
 Rules live inside `apply_rules` steps.
+
+This YAML schema only describes declarative rules. Code-built recipes may also
+use callback overloads for rule matching and rewriting, but those callbacks are
+not serializable and therefore have no YAML representation.
 
 ```yaml
 steps:
@@ -122,6 +190,12 @@ Supported rule fields:
 - `emit`
 - `replace`
 - `mode`
+
+Rule field notes:
+
+- `match`, `emit`, and `replace` describe the declarative rule path.
+- Callback-based matching and rewriting are builder-only API features and are
+  intentionally not part of the YAML schema.
 
 `mode` controls how a rule is applied inside the step and accepts:
 
@@ -152,6 +226,8 @@ Rule notes:
 
 - Omitted `match.rewrite_mode` defaults to `Replace`.
 - Rules without `emit` must use `match.rewrite_mode: None`.
+- Declarative rules always match through `match`; they cannot mix declarative
+  `match` and callback-based matching in YAML.
 - `Before` inserts emitted instructions immediately before the matched instruction or named `replace` capture.
 - `After` inserts emitted instructions immediately after the matched instruction or named `replace` capture.
 - `match.sequence` matches a contiguous instruction window.

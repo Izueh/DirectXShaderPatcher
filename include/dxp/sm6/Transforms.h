@@ -159,6 +159,14 @@ struct DxilRewriteEmitCall {
   std::vector<DxilRewriteEmitOperand> operands;
 };
 
+/// @brief Summarizes how one DXIL rewrite rule matched and applied.
+struct DxilRuleApplicationReport {
+  std::string name;
+  unsigned matchCount = 0;
+  unsigned appliedCount = 0;
+  unsigned mutatedCount = 0;
+};
+
 /// @brief Fluent builder for DxilRewriteResult values.
 class DxilRewriteResultBuilder {
 public:
@@ -695,7 +703,8 @@ bool ApplyDxilRewriteRulesMatchAll(llvm::Function &function,
                                    hlsl::DxilModule &dxilModule,
                                    const std::vector<DxilRewriteRule> &rules,
                                    unsigned *appliedRuleCount = nullptr,
-                                   unsigned *mutatedRuleCount = nullptr);
+                                   unsigned *mutatedRuleCount = nullptr,
+                                   std::vector<DxilRuleApplicationReport> *ruleReports = nullptr);
 
 /// @brief Applies the first or last matching rewrite rule once.
 bool ApplyDxilRewriteRulesOnce(llvm::Function &function, llvm::Module &module,
@@ -703,14 +712,16 @@ bool ApplyDxilRewriteRulesOnce(llvm::Function &function, llvm::Module &module,
                                const std::vector<DxilRewriteRule> &rules,
                                bool useLastMatch = false,
                                unsigned *appliedRuleCount = nullptr,
-                               unsigned *mutatedRuleCount = nullptr);
+                               unsigned *mutatedRuleCount = nullptr,
+                               std::vector<DxilRuleApplicationReport> *ruleReports = nullptr);
 
 /// @brief Applies rewrite rules using the default match mode.
 bool ApplyDxilRewriteRules(llvm::Function &function, llvm::Module &module,
                            hlsl::DxilModule &dxilModule,
                            const std::vector<DxilRewriteRule> &rules,
                            unsigned *appliedRuleCount = nullptr,
-                           unsigned *mutatedRuleCount = nullptr);
+                           unsigned *mutatedRuleCount = nullptr,
+                           std::vector<DxilRuleApplicationReport> *ruleReports = nullptr);
 
 /// @brief Prunes instructions reachable from the supplied roots when dead.
 void PruneInstructionRoots(const std::vector<llvm::Instruction *> &roots);

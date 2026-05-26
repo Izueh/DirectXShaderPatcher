@@ -1,27 +1,38 @@
 version: 1
-prefilters:
-  - kind: check_shader_version
-    major: 5
-    minor: 0
 steps:
+  - kind: prefilter
+    name: require_sm5_0
+    checks:
+      - kind: check_shader_version
+        major: 5
+        minor: 0
+
   - kind: add_raw_resource
     name: add_injected_raw_srv
+    if:
+      state: require_sm5_0
     handle: injected_raw_srv
     auto_bind: true
 
   - kind: add_structured_resource
     name: add_injected_structured_srv
+    if:
+      state: require_sm5_0
     handle: injected_structured_srv
     auto_bind: true
     stride: 16
 
   - kind: add_uav
     name: add_injected_raw_uav
+    if:
+      state: require_sm5_0
     handle: injected_raw_uav
     auto_bind: true
     uav_kind: raw
 
   - name: verify_bind_handles_in_emit
+    if:
+      state: require_sm5_0
     rules:
       - match:
           rewrite_mode: ReplaceRange
