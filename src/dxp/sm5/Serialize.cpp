@@ -1,5 +1,7 @@
 #include "dxp/sm5/Serialize.h"
 
+#include "d3d11TokenizedProgramFormat.hpp"
+
 #include <algorithm>
 #include <cstring>
 
@@ -22,6 +24,8 @@ static uint32_t EncodeOperandToken0(const Operand &operand) {
   if (operand.Type == D3D10_SB_OPERAND_TYPE_IMMEDIATE32 ||
       operand.Type == D3D10_SB_OPERAND_TYPE_IMMEDIATE64) {
     indexDims = 0;
+  } else if (!operand.IndexEntries.empty()) {
+    indexDims = std::min(operand.IndexEntries.size(), static_cast<size_t>(3));
   } else {
     indexDims = std::min(operand.Indices.size(), static_cast<size_t>(3));
     if (operand.RelativeOperand) {
@@ -33,19 +37,45 @@ static uint32_t EncodeOperandToken0(const Operand &operand) {
       static_cast<D3D10_SB_OPERAND_INDEX_DIMENSION>(
           static_cast<uint32_t>(indexDims)));
 
-  for (size_t dim = 0; dim < operand.Indices.size() && dim < 3; ++dim) {
-    uint32_t rep = static_cast<uint32_t>(
-        (dim + 1 == operand.Indices.size() && operand.RelativeOperand)
-            ? D3D10_SB_OPERAND_INDEX_IMMEDIATE32_PLUS_RELATIVE
-            : D3D10_SB_OPERAND_INDEX_IMMEDIATE32);
-    token0 |= ENCODE_D3D10_SB_OPERAND_INDEX_REPRESENTATION(
-        static_cast<D3D10_SB_OPERAND_INDEX_DIMENSION>(dim),
-        static_cast<D3D10_SB_OPERAND_INDEX_REPRESENTATION>(rep));
-  }
+  if (!operand.IndexEntries.empty()) {
+    for (size_t dim = 0; dim < indexDims; ++dim) {
+      uint32_t rep = D3D10_SB_OPERAND_INDEX_IMMEDIATE32;
+      switch (operand.IndexEntries[dim].Representation) {
+      case Operand::IndexRepresentation::Immediate32:
+        rep = D3D10_SB_OPERAND_INDEX_IMMEDIATE32;
+        break;
+      case Operand::IndexRepresentation::Immediate64:
+        rep = D3D10_SB_OPERAND_INDEX_IMMEDIATE64;
+        break;
+      case Operand::IndexRepresentation::Relative:
+        rep = D3D10_SB_OPERAND_INDEX_RELATIVE;
+        break;
+      case Operand::IndexRepresentation::Immediate32PlusRelative:
+        rep = D3D10_SB_OPERAND_INDEX_IMMEDIATE32_PLUS_RELATIVE;
+        break;
+      case Operand::IndexRepresentation::Immediate64PlusRelative:
+        rep = D3D10_SB_OPERAND_INDEX_IMMEDIATE64_PLUS_RELATIVE;
+        break;
+      }
+      token0 |= ENCODE_D3D10_SB_OPERAND_INDEX_REPRESENTATION(
+          static_cast<D3D10_SB_OPERAND_INDEX_DIMENSION>(dim),
+          static_cast<D3D10_SB_OPERAND_INDEX_REPRESENTATION>(rep));
+    }
+  } else {
+    for (size_t dim = 0; dim < operand.Indices.size() && dim < 3; ++dim) {
+      uint32_t rep = static_cast<uint32_t>(
+          (dim + 1 == operand.Indices.size() && operand.RelativeOperand)
+              ? D3D10_SB_OPERAND_INDEX_IMMEDIATE32_PLUS_RELATIVE
+              : D3D10_SB_OPERAND_INDEX_IMMEDIATE32);
+      token0 |= ENCODE_D3D10_SB_OPERAND_INDEX_REPRESENTATION(
+          static_cast<D3D10_SB_OPERAND_INDEX_DIMENSION>(dim),
+          static_cast<D3D10_SB_OPERAND_INDEX_REPRESENTATION>(rep));
+    }
 
-  if (operand.RelativeOperand && operand.ImmediateValues.empty()) {
-    token0 |= ENCODE_D3D10_SB_OPERAND_INDEX_REPRESENTATION(
-        D3D10_SB_OPERAND_INDEX_1D, D3D10_SB_OPERAND_INDEX_RELATIVE);
+    if (operand.RelativeOperand && operand.ImmediateValues.empty()) {
+      token0 |= ENCODE_D3D10_SB_OPERAND_INDEX_REPRESENTATION(
+          D3D10_SB_OPERAND_INDEX_1D, D3D10_SB_OPERAND_INDEX_RELATIVE);
+    }
   }
 
   if (operand.Modifier != D3D10_SB_OPERAND_MODIFIER_NONE) {
@@ -100,13 +130,51 @@ static std::vector<uint32_t> EncodeOperandImpl(const Operand &operand) {
     for (uint32_t value : operand.ImmediateValues) {
       encoded.push_back(value);
     }
+  } else if (!operand.IndexEntries.empty()) {
+    for (const Operand::Index &index : operand.IndexEntries) {
+      switch (index.Representation) {
+      case Operand::IndexRepresentation::Immediate32:
+        if (index.HasImmediateLo) {
+          encoded.push_back(index.ImmediateLo);
+        }
+        break;
+      case Operand::IndexRepresentation::Immediate64:
+        if (index.HasImmediateLo) {
+          encoded.push_back(index.ImmediateLo);
+        }
+        if (index.HasImmediateHi) {
+          encoded.push_back(index.ImmediateHi);
+        }
+        break;
+      case Operand::IndexRepresentation::Relative:
+        break;
+      case Operand::IndexRepresentation::Immediate32PlusRelative:
+        if (index.HasImmediateLo) {
+          encoded.push_back(index.ImmediateLo);
+        }
+        break;
+      case Operand::IndexRepresentation::Immediate64PlusRelative:
+        if (index.HasImmediateLo) {
+          encoded.push_back(index.ImmediateLo);
+        }
+        if (index.HasImmediateHi) {
+          encoded.push_back(index.ImmediateHi);
+        }
+        break;
+      }
+
+      if (index.RelativeOperand) {
+        auto relTokens = EncodeOperandImpl(*index.RelativeOperand);
+        encoded.insert(encoded.end(), relTokens.begin(), relTokens.end());
+      }
+    }
   } else {
     for (uint32_t index : operand.Indices) {
       encoded.push_back(index);
     }
   }
 
-  if (operand.RelativeOperand) {
+  if (operand.RelativeOperand && operand.IndexEntries.empty()) {
     auto relTokens = EncodeOperandImpl(*operand.RelativeOperand);
     encoded.insert(encoded.end(), relTokens.begin(), relTokens.end());
   }

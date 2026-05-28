@@ -16,6 +16,8 @@ steps:
             interpolation_mode: linear
             operands:
               - type: temp
-                indices: [0]
+                indices:
+                  - immediate_lo: 0
               - type: temp
-                indices: [1]
+                indices:
+                  - immediate_lo: 1

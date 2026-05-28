@@ -10,8 +10,8 @@ steps:
         emit:
           - opcode: mov
             operands:
-              - { type: temp, indices: [0] }
-              - { type: temp, indices: [0] }
+              - { type: temp, indices: [{ immediate_lo: 0 }] }
+              - { type: temp, indices: [{ immediate_lo: 0 }] }
       - match:
           opcode: mul
           capture: anchor
@@ -20,5 +20,5 @@ steps:
         emit:
           - opcode: mov
             operands:
-              - { type: temp, indices: [0] }
-              - { type: temp, indices: [0] }
+              - { type: temp, indices: [{ immediate_lo: 0 }] }
+              - { type: temp, indices: [{ immediate_lo: 0 }] }

@@ -1,5 +1,7 @@
 #include "dxp/sm5/Model.h"
 
+#include "d3d11TokenizedProgramFormat.hpp"
+
 #include <algorithm>
 #include <cctype>
 

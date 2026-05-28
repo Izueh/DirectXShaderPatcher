@@ -1,7 +1,5 @@
 #pragma once
 
-#include "d3d11TokenizedProgramFormat.hpp"
-
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -10,47 +8,48 @@
 namespace dxp {
 namespace sm5 {
 
-/// @brief Alias for the operand kind enum used by SM5 bytecode.
-using OperandType = D3D10_SB_OPERAND_TYPE;
-/// @brief Alias for the operand modifier enum used by SM5 bytecode.
-using OperandModifier = D3D10_SB_OPERAND_MODIFIER;
-/// @brief Alias for the opcode enum used by SM5 bytecode.
-using OpcodeType = D3D10_SB_OPCODE_TYPE;
-/// @brief Alias for the extended opcode enum used by SM5 bytecode.
-using ExtendedOpcodeType = D3D10_SB_EXTENDED_OPCODE_TYPE;
-/// @brief Alias for the shader program type enum used by SM5 bytecode.
-using ProgramType = D3D10_SB_TOKENIZED_PROGRAM_TYPE;
+using OperandType = uint32_t;
+using OperandModifier = uint32_t;
+using OpcodeType = uint32_t;
+using ExtendedOpcodeType = uint32_t;
+using ProgramType = uint32_t;
+
+// Mirrored SM5 token values used by public API defaults.
+constexpr OperandType kOperandTypeTemp = 0u;
+constexpr OperandType kOperandTypeImmediate32 = 4u;
+constexpr OperandType kOperandTypeImmediate64 = 5u;
+constexpr uint32_t kOperandNumComponents0 = 0u;
+constexpr uint32_t kOperandNumComponents1 = 1u;
+constexpr uint32_t kOperandNumComponents4 = 2u;
+constexpr uint32_t kOperandComponentNoSwizzle = 0xE4u << 4;
+constexpr OperandModifier kOperandModifierNone = 0u;
+constexpr uint32_t kInterpolationModeUndefined = 0u;
+constexpr ProgramType kProgramTypePixelShader = 0u;
+constexpr OpcodeType kOpcodeCustomData = 54u;
 
 /// @brief Wraps an SM5 opcode value with typed conversions.
 struct Opcode {
-  OpcodeType Value = D3D10_SB_OPCODE_ADD;
+  OpcodeType Value = 0u;
 
   Opcode() = default;
-  explicit Opcode(OpcodeType v) : Value(v) {}
-  explicit Opcode(uint32_t v)
-      : Value(static_cast<OpcodeType>(v & D3D10_SB_OPCODE_TYPE_MASK)) {}
+  explicit Opcode(uint32_t v) : Value(v) {}
 
-  explicit operator OpcodeType() const { return Value; }
   explicit operator uint32_t() const { return static_cast<uint32_t>(Value); }
 
   bool operator==(const Opcode &rhs) const { return Value == rhs.Value; }
   bool operator!=(const Opcode &rhs) const { return Value != rhs.Value; }
 
   static Opcode Unknown() { return Opcode{static_cast<uint32_t>(0xFFFFFFFFu)}; }
-  static Opcode CustomData() { return Opcode{D3D10_SB_OPCODE_CUSTOMDATA}; }
+  static Opcode CustomData() { return Opcode{kOpcodeCustomData}; }
 };
 
 /// @brief Wraps an SM5 extended opcode value with typed conversions.
 struct ExtendedOpcode {
-  ExtendedOpcodeType Value = D3D10_SB_EXTENDED_OPCODE_EMPTY;
+  ExtendedOpcodeType Value = 0u;
 
   ExtendedOpcode() = default;
-  explicit ExtendedOpcode(ExtendedOpcodeType v) : Value(v) {}
-  explicit ExtendedOpcode(uint32_t v)
-      : Value(static_cast<ExtendedOpcodeType>(
-            v & D3D10_SB_EXTENDED_OPCODE_TYPE_MASK)) {}
+  explicit ExtendedOpcode(uint32_t v) : Value(v) {}
 
-  explicit operator ExtendedOpcodeType() const { return Value; }
   explicit operator uint32_t() const { return static_cast<uint32_t>(Value); }
 
   bool operator==(const ExtendedOpcode &rhs) const {
@@ -70,19 +69,55 @@ struct OpcodeControls {
   uint32_t ResinfoReturnType = 0;
   uint32_t SyncFlags = 0;
   bool HasInputInterpolationMode = false;
-  uint32_t InputInterpolationMode = D3D10_SB_INTERPOLATION_UNDEFINED;
+  uint32_t InputInterpolationMode = kInterpolationModeUndefined;
   std::vector<ExtendedOpcode> ExtendedOpCodes;
 };
 
 /// @brief Represents one decoded operand from the instruction stream.
 struct Operand {
-  OperandType Type = D3D10_SB_OPERAND_TYPE_TEMP;
-  uint32_t NumComponents = D3D10_SB_OPERAND_4_COMPONENT;
-  uint32_t ComponentMode = D3D10_SB_OPERAND_4_COMPONENT_NOSWIZZLE;
+  /// @brief Encodes how an operand index is represented in the token stream.
+  enum class IndexRepresentation : uint32_t {
+    Immediate32 = 0,             ///< 32-bit immediate value
+    Immediate64 = 1,             ///< 64-bit immediate value (two DWORDs)
+    Relative = 2,                ///< Relative addressing via a sub-operand
+    Immediate32PlusRelative = 3, ///< 32-bit immediate plus relative
+    Immediate64PlusRelative = 4, ///< 64-bit immediate plus relative
+  };
+
+  /// @brief One ordered index slot of a decoded operand.
+  ///
+  /// Operands can carry zero, one, or two index slots depending on operand type
+  /// (e.g., a `temp` has one index for the register number; an
+  /// `indexable_temp` has two). `IndexEntries` holds the authoritative ordered
+  /// list; `Indices` is a flattened immediate-value view used by
+  /// serialization and binding helpers.
+  struct Index {
+    /// Encoding used for this index in the token stream.
+    IndexRepresentation Representation = IndexRepresentation::Immediate32;
+    bool HasImmediateLo = false;
+    uint32_t ImmediateLo = 0; ///< Low 32-bit immediate (e.g., register number)
+    bool HasImmediateHi = false;
+    uint32_t ImmediateHi = 0; ///< High 32-bit immediate for 64-bit indices
+    /// Sub-operand used for relative addressing; null when not relative.
+    std::shared_ptr<Operand> RelativeOperand;
+    /// Non-empty on match templates: stores the matched immediate under this
+    /// name in `MatchResult::CapturedOperandIndexValues`. Corresponds to the
+    /// `capture` field in YAML index objects.
+    std::string CaptureName;
+    /// Non-empty on emit templates: resolves the emitted immediate from a
+    /// previously captured index value of this name. Corresponds to the
+    /// `match_capture` field on emit-side index objects in YAML.
+    std::string MatchCaptureName;
+  };
+
+  OperandType Type = kOperandTypeTemp;
+  uint32_t NumComponents = kOperandNumComponents4;
+  uint32_t ComponentMode = kOperandComponentNoSwizzle;
+  std::vector<Index> IndexEntries;
   std::vector<uint32_t> Indices;
   std::string BindHandle;
   std::string StateTempName;
-  OperandModifier Modifier = D3D10_SB_OPERAND_MODIFIER_NONE;
+  OperandModifier Modifier = kOperandModifierNone;
   std::vector<uint32_t> ImmediateValues;
   std::shared_ptr<Operand> RelativeOperand;
   std::vector<uint32_t> RawTokens;
@@ -150,7 +185,7 @@ struct GlobalFlags {
 
 /// @brief Owns the decoded representation of an SM5 program.
 struct Program {
-  ProgramType ProgramType = D3D10_SB_PIXEL_SHADER;
+  ProgramType ProgramType = kProgramTypePixelShader;
   uint32_t MajorVersion = 0;
   uint32_t MinorVersion = 0;
   uint32_t TotalLengthInDwords = 0;

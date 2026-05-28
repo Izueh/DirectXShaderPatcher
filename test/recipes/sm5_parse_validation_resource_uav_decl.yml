@@ -39,12 +39,14 @@ steps:
           - opcode: mov
             operands:
               - type: temp
-                indices: [0]
+                indices:
+                  - immediate_lo: 0
               - type: resource
                 bind_handle: raw_srv
           - opcode: mov
             operands:
               - type: temp
-                indices: [1]
+                indices:
+                  - immediate_lo: 1
               - type: unordered_access_view
                 bind_handle: raw_uav

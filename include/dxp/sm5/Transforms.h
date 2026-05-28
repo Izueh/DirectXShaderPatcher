@@ -9,13 +9,45 @@
 
 namespace dxp::sm5 {
 
+/// @brief Describes how one ordered index slot of an operand must match.
+///
+/// A rule operand can carry a list of these patterns, one per expected index
+/// slot, checked in order. Fields that are not set are not checked.
+///
+/// Capture workflow:
+///  - `CaptureName` — when set and the slot matches, the immediate value of
+///    this slot is stored in `MatchResult::CapturedOperandIndexValues` under
+///    this name for later reuse.
+///  - `MatchCapture` — when set, the slot's immediate value must equal the
+///    previously captured index value with this name. Used to enforce that two
+///    independently-matched slots carry the same register number.
+struct OperandIndexMatchPattern {
+  /// When `true`, this slot always matches (wildcard). All other fields are
+  /// ignored.
+  bool Any = false;
+  /// When `true`, `Representation` is checked against the operand's index
+  /// encoding.
+  bool HasRepresentation = false;
+  Operand::IndexRepresentation Representation =
+      Operand::IndexRepresentation::Immediate32;
+  bool HasImmediateLo = false;
+  uint32_t ImmediateLo = 0; ///< Expected low 32-bit immediate value
+  bool HasImmediateHi = false;
+  uint32_t ImmediateHi = 0;         ///< Expected high 32-bit immediate value
+  std::string CaptureName;          ///< Capture key for the matched immediate
+  std::string MatchCapture;         ///< Capture key to compare against
+};
+
 /// @brief Describes how a declarative rule matches one operand.
 struct OperandMatch {
+  bool Any;
+
   OperandType MatchType;
   bool HasTypeMatch;
 
-  std::vector<int32_t> MatchIndices;
-  bool HasIndexMatch;
+  /// Ordered set of per-slot match patterns, evaluated in order against the
+  /// candidate operand's index slots.
+  std::vector<OperandIndexMatchPattern> MatchIndexPatterns;
 
   uint32_t MatchComponentMode;
   bool HasComponentMatch;
@@ -78,6 +110,10 @@ struct MatchResult {
   std::unordered_map<std::string, const dxp::sm5::Instruction *>
       CapturedInstructions;
   std::unordered_map<std::string, uint32_t> CapturedInstructionIndices;
+  /// Index immediate values captured during matching via
+  /// `OperandIndexMatchPattern::CaptureName`. Keys are capture names; values
+  /// are the matched 32-bit immediate from the corresponding index slot.
+  std::unordered_map<std::string, uint32_t> CapturedOperandIndexValues;
 
   /// @brief Looks up a captured operand by name.
   /// @param name Capture name to resolve.
@@ -94,6 +130,12 @@ struct MatchResult {
   /// @param name Capture name to resolve.
   /// @return Pointer to the captured index, or `nullptr` when absent.
   const uint32_t *GetCapturedInstructionIndex(const std::string &name) const;
+
+  /// @brief Looks up a captured operand index immediate value by name.
+  /// @param name Capture name set on an `OperandIndexMatchPattern`.
+  /// @return Pointer to the 32-bit immediate, or `nullptr` when absent.
+  const uint32_t *
+  GetCapturedOperandIndexValue(const std::string &name) const;
 };
 
 /// @brief Collects all instructions that match a pattern.

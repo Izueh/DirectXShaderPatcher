@@ -1,5 +1,6 @@
 #include "dxp/sm5/RecipeParse.h"
 
+#include "d3d11TokenizedProgramFormat.hpp"
 #include "dxp/sm5/Model.h"
 
 #include <cstring>

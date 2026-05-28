@@ -1,5 +1,7 @@
 #include "dxp/sm5/RecipeParse.h"
 
+#include "d3d11TokenizedProgramFormat.hpp"
+
 #include "dxp/sm5/Model.h"
 #include "dxp/sm5/Transforms.h"
 
@@ -114,9 +116,19 @@ struct YamlComponentSelector {
   std::string value;
 };
 
+struct YamlOperandIndex {
+  bool any = false;
+  std::string representation;
+  int64_t immediate_lo = -1;
+  int64_t immediate_hi = -1;
+  std::string capture;
+  std::string match_capture;
+};
+
 struct YamlOperand {
+  bool any = false;
   std::string type;
-  std::vector<uint32_t> indices;
+  std::vector<YamlOperandIndex> indices;
   std::string bind_handle;
   std::string state_temp;
   YamlComponentSelector components;
@@ -275,6 +287,7 @@ struct YamlRecipeDocument {
 
 LLVM_YAML_IS_SEQUENCE_VECTOR(uint32_t)
 LLVM_YAML_IS_SEQUENCE_VECTOR(float)
+LLVM_YAML_IS_SEQUENCE_VECTOR(YamlOperandIndex)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlOperand)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlInstructionMatch)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlEmitInstruction)
@@ -304,6 +317,7 @@ template <> struct MappingTraits<YamlComponentSelector> {
 
 template <> struct MappingTraits<YamlOperand> {
   static void mapping(IO &io, YamlOperand &operand) {
+    io.mapOptional("any", operand.any, false);
     io.mapOptional("type", operand.type);
     io.mapOptional("indices", operand.indices);
     io.mapOptional("bind_handle", operand.bind_handle);
@@ -319,6 +333,17 @@ template <> struct MappingTraits<YamlOperand> {
     io.mapOptional("capture", operand.capture);
     io.mapOptional("match_capture", operand.match_capture);
     io.mapOptional("scratch", operand.scratch);
+  }
+};
+
+template <> struct MappingTraits<YamlOperandIndex> {
+  static void mapping(IO &io, YamlOperandIndex &index) {
+    io.mapOptional("any", index.any, false);
+    io.mapOptional("representation", index.representation);
+    io.mapOptional("immediate_lo", index.immediate_lo, static_cast<int64_t>(-1));
+    io.mapOptional("immediate_hi", index.immediate_hi, static_cast<int64_t>(-1));
+    io.mapOptional("capture", index.capture);
+    io.mapOptional("match_capture", index.match_capture);
   }
 };
 
@@ -786,6 +811,75 @@ static bool ParseOperandModifier(const std::string &value,
   return false;
 }
 
+static bool ParseOperandIndexRepresentationToken(
+    const std::string &value, RecipeOperandIndexRepresentation &representation,
+    std::string &error) {
+  const std::string lowered = Lowercase(value);
+  if (lowered.empty() || lowered == "immediate32") {
+    representation = RecipeOperandIndexRepresentation::Immediate32;
+    return true;
+  }
+  if (lowered == "immediate64") {
+    representation = RecipeOperandIndexRepresentation::Immediate64;
+    return true;
+  }
+  if (lowered == "relative") {
+    representation = RecipeOperandIndexRepresentation::Relative;
+    return true;
+  }
+  if (lowered == "immediate32_plus_relative") {
+    representation = RecipeOperandIndexRepresentation::Immediate32PlusRelative;
+    return true;
+  }
+  if (lowered == "immediate64_plus_relative") {
+    representation = RecipeOperandIndexRepresentation::Immediate64PlusRelative;
+    return true;
+  }
+
+  error = "unsupported SM5 operand index representation: " + value;
+  return false;
+}
+
+static bool DecodeOperandIndexPatterns(
+    const std::vector<YamlOperandIndex> &yamlIndices,
+  std::vector<RecipeOperandIndexPattern> &indexPatterns, bool allowAny,
+  std::string &error) {
+  indexPatterns.clear();
+  indexPatterns.reserve(yamlIndices.size());
+
+  for (const YamlOperandIndex &yamlIndex : yamlIndices) {
+    RecipeOperandIndexPattern indexPattern;
+    indexPattern.Any = yamlIndex.any;
+
+    if (yamlIndex.any && !allowAny) {
+      error = "SM5 emit operand indices cannot use any wildcard";
+      return false;
+    }
+
+    if (!ParseOperandIndexRepresentationToken(yamlIndex.representation,
+                                              indexPattern.Representation,
+                                              error)) {
+      return false;
+    }
+
+    if (yamlIndex.immediate_lo >= 0) {
+      indexPattern.HasImmediateLo = true;
+      indexPattern.ImmediateLo = static_cast<uint32_t>(yamlIndex.immediate_lo);
+    }
+    if (yamlIndex.immediate_hi >= 0) {
+      indexPattern.HasImmediateHi = true;
+      indexPattern.ImmediateHi = static_cast<uint32_t>(yamlIndex.immediate_hi);
+    }
+
+    indexPattern.Capture = yamlIndex.capture;
+    indexPattern.MatchCapture = yamlIndex.match_capture;
+
+    indexPatterns.push_back(std::move(indexPattern));
+  }
+
+  return true;
+}
+
 static bool TryParseComponentChar(char ch, D3D10_SB_4_COMPONENT_NAME &component,
                                   std::string &error) {
   switch (static_cast<char>(std::tolower(static_cast<unsigned char>(ch)))) {
@@ -1025,7 +1119,43 @@ static bool ParseEmitOperand(const YamlOperand &operandModel, Operand &operand,
     return false;
   }
 
-  operand.Indices = operandModel.indices;
+  std::vector<RecipeOperandIndexPattern> indexPatterns;
+  if (!DecodeOperandIndexPatterns(operandModel.indices, indexPatterns, false,
+                                  error)) {
+    return false;
+  }
+
+  operand.IndexEntries.clear();
+  operand.IndexEntries.reserve(indexPatterns.size());
+  for (const RecipeOperandIndexPattern &indexPattern : indexPatterns) {
+    Operand::Index indexEntry;
+    switch (indexPattern.Representation) {
+    case RecipeOperandIndexRepresentation::Immediate32:
+      indexEntry.Representation = Operand::IndexRepresentation::Immediate32;
+      break;
+    case RecipeOperandIndexRepresentation::Immediate64:
+      indexEntry.Representation = Operand::IndexRepresentation::Immediate64;
+      break;
+    case RecipeOperandIndexRepresentation::Relative:
+      indexEntry.Representation = Operand::IndexRepresentation::Relative;
+      break;
+    case RecipeOperandIndexRepresentation::Immediate32PlusRelative:
+      indexEntry.Representation =
+          Operand::IndexRepresentation::Immediate32PlusRelative;
+      break;
+    case RecipeOperandIndexRepresentation::Immediate64PlusRelative:
+      indexEntry.Representation =
+          Operand::IndexRepresentation::Immediate64PlusRelative;
+      break;
+    }
+    indexEntry.HasImmediateLo = indexPattern.HasImmediateLo;
+    indexEntry.ImmediateLo = indexPattern.ImmediateLo;
+    indexEntry.HasImmediateHi = indexPattern.HasImmediateHi;
+    indexEntry.ImmediateHi = indexPattern.ImmediateHi;
+    indexEntry.MatchCaptureName = indexPattern.MatchCapture;
+    operand.IndexEntries.push_back(std::move(indexEntry));
+  }
+
   operand.BindHandle = operandModel.bind_handle;
   operand.StateTempName = operandModel.state_temp;
   operand.ScratchName = operandModel.scratch;
@@ -1045,6 +1175,12 @@ static bool ParseEmitOperand(const YamlOperand &operandModel, Operand &operand,
 static bool ParseMatchOperand(const YamlOperand &operandModel,
                               OperandMatch &operandMatch, std::string &error) {
   operandMatch = OperandMatch{};
+  operandMatch.Any = operandModel.any;
+
+  if (operandMatch.Any && !operandModel.match_capture.empty()) {
+    error = "SM5 any operand cannot use match_capture";
+    return false;
+  }
 
   if (!operandModel.type.empty()) {
     if (!ParseOperandType(operandModel.type, operandMatch.MatchType, error)) {
@@ -1054,9 +1190,46 @@ static bool ParseMatchOperand(const YamlOperand &operandModel,
   }
 
   if (!operandModel.indices.empty()) {
-    operandMatch.MatchIndices.assign(operandModel.indices.begin(),
-                                     operandModel.indices.end());
-    operandMatch.HasIndexMatch = true;
+    std::vector<RecipeOperandIndexPattern> indexPatterns;
+    if (!DecodeOperandIndexPatterns(operandModel.indices, indexPatterns, true,
+                                    error)) {
+      return false;
+    }
+
+    operandMatch.MatchIndexPatterns.clear();
+    for (const RecipeOperandIndexPattern &indexPattern : indexPatterns) {
+      OperandIndexMatchPattern matchIndexPattern;
+      matchIndexPattern.Any = indexPattern.Any;
+      matchIndexPattern.HasRepresentation = true;
+      switch (indexPattern.Representation) {
+      case RecipeOperandIndexRepresentation::Immediate32:
+        matchIndexPattern.Representation =
+            Operand::IndexRepresentation::Immediate32;
+        break;
+      case RecipeOperandIndexRepresentation::Immediate64:
+        matchIndexPattern.Representation =
+            Operand::IndexRepresentation::Immediate64;
+        break;
+      case RecipeOperandIndexRepresentation::Relative:
+        matchIndexPattern.Representation = Operand::IndexRepresentation::Relative;
+        break;
+      case RecipeOperandIndexRepresentation::Immediate32PlusRelative:
+        matchIndexPattern.Representation =
+            Operand::IndexRepresentation::Immediate32PlusRelative;
+        break;
+      case RecipeOperandIndexRepresentation::Immediate64PlusRelative:
+        matchIndexPattern.Representation =
+            Operand::IndexRepresentation::Immediate64PlusRelative;
+        break;
+      }
+      matchIndexPattern.HasImmediateLo = indexPattern.HasImmediateLo;
+      matchIndexPattern.ImmediateLo = indexPattern.ImmediateLo;
+      matchIndexPattern.HasImmediateHi = indexPattern.HasImmediateHi;
+      matchIndexPattern.ImmediateHi = indexPattern.ImmediateHi;
+      matchIndexPattern.CaptureName = indexPattern.Capture;
+      matchIndexPattern.MatchCapture = indexPattern.MatchCapture;
+      operandMatch.MatchIndexPatterns.push_back(std::move(matchIndexPattern));
+    }
   }
 
   OperandType componentType = operandMatch.HasTypeMatch
@@ -1088,9 +1261,11 @@ static bool ParseMatchOperand(const YamlOperand &operandModel,
 
   if (!operandModel.immediates_u32.empty() ||
       !operandModel.immediates_f32.empty()) {
-    operandMatch.MatchImmediates = operandModel.immediates_u32;
     for (float immediateValue : operandModel.immediates_f32) {
       operandMatch.MatchImmediates.push_back(FloatAsUint(immediateValue));
+    }
+    for (uint32_t immediateValue : operandModel.immediates_u32) {
+      operandMatch.MatchImmediates.push_back(immediateValue);
     }
     operandMatch.HasImmediateMatch = true;
   }
@@ -1103,9 +1278,16 @@ static bool ParseMatchOperand(const YamlOperand &operandModel,
 static bool FillRecipeOperandPattern(const YamlOperand &operandModel,
                                      RecipeOperandPattern &operandPattern,
                                      std::string &error) {
+  std::vector<RecipeOperandIndexPattern> indexPatterns;
+  if (!DecodeOperandIndexPatterns(operandModel.indices, indexPatterns, true,
+                                  error)) {
+    return false;
+  }
+
   operandPattern = RecipeOperandPattern{}
+                       .WithAny(operandModel.any)
                        .WithType(operandModel.type)
-                       .WithIndices(operandModel.indices)
+                       .WithIndexPatterns(std::move(indexPatterns))
                        .WithBindHandle(operandModel.bind_handle)
                        .WithStateTemp(operandModel.state_temp)
                        .WithNumComponents(operandModel.num_components)

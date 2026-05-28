@@ -1,12 +1,13 @@
 #include "dxp/sm5/Transforms.h"
 
+#include "d3d11TokenizedProgramFormat.hpp"
+
 #include <algorithm>
 
 namespace dxp::sm5 {
 
 OperandMatch::OperandMatch()
-    : MatchType(D3D10_SB_OPERAND_TYPE_TEMP), HasTypeMatch(false),
-      HasIndexMatch(false),
+  : Any(false), MatchType(D3D10_SB_OPERAND_TYPE_TEMP), HasTypeMatch(false),
       MatchComponentMode(D3D10_SB_OPERAND_4_COMPONENT_NOSWIZZLE),
       HasComponentMatch(false), MatchNumComponents(0),
       HasNumComponentsMatch(false),
@@ -38,14 +39,88 @@ MatchResult::GetCapturedInstructionIndex(const std::string &name) const {
   return it == CapturedInstructionIndices.end() ? nullptr : &it->second;
 }
 
+const uint32_t *
+MatchResult::GetCapturedOperandIndexValue(const std::string &name) const {
+  const auto it = CapturedOperandIndexValues.find(name);
+  return it == CapturedOperandIndexValues.end() ? nullptr : &it->second;
+}
+
 namespace {
+
+static std::vector<Operand::Index>
+BuildComparableIndexEntries(const Operand &operand) {
+  if (!operand.IndexEntries.empty()) {
+    return operand.IndexEntries;
+  }
+
+  std::vector<Operand::Index> indexEntries;
+  indexEntries.reserve(operand.Indices.size());
+  for (uint32_t value : operand.Indices) {
+    Operand::Index index;
+    index.Representation = Operand::IndexRepresentation::Immediate32;
+    index.HasImmediateLo = true;
+    index.ImmediateLo = value;
+    indexEntries.push_back(std::move(index));
+  }
+  return indexEntries;
+}
+
+static const uint32_t *FindCapturedOperandIndexValue(
+    const std::unordered_map<std::string, uint32_t> &capturedInInstruction,
+    const std::unordered_map<std::string, uint32_t> &capturedInSequence,
+    const std::string &name) {
+  const auto inInstruction = capturedInInstruction.find(name);
+  if (inInstruction != capturedInInstruction.end()) {
+    return &inInstruction->second;
+  }
+
+  const auto inSequence = capturedInSequence.find(name);
+  if (inSequence != capturedInSequence.end()) {
+    return &inSequence->second;
+  }
+
+  return nullptr;
+}
+
+static const uint32_t *IndexValueForCapture(const Operand::Index &index) {
+  if (index.HasImmediateLo) {
+    return &index.ImmediateLo;
+  }
+  if (index.HasImmediateHi) {
+    return &index.ImmediateHi;
+  }
+  return nullptr;
+}
 
 static bool OperandsEqual(const Operand &lhs, const Operand &rhs) {
   if (lhs.Type != rhs.Type || lhs.NumComponents != rhs.NumComponents ||
       lhs.ComponentMode != rhs.ComponentMode || lhs.Modifier != rhs.Modifier ||
-      lhs.Indices != rhs.Indices ||
+      lhs.Indices != rhs.Indices || lhs.IndexEntries.size() != rhs.IndexEntries.size() ||
       lhs.ImmediateValues != rhs.ImmediateValues) {
     return false;
+  }
+
+  for (size_t index = 0; index < lhs.IndexEntries.size(); ++index) {
+    const Operand::Index &lhsIndex = lhs.IndexEntries[index];
+    const Operand::Index &rhsIndex = rhs.IndexEntries[index];
+    if (lhsIndex.Representation != rhsIndex.Representation ||
+        lhsIndex.HasImmediateLo != rhsIndex.HasImmediateLo ||
+        lhsIndex.HasImmediateHi != rhsIndex.HasImmediateHi ||
+        lhsIndex.ImmediateLo != rhsIndex.ImmediateLo ||
+        lhsIndex.ImmediateHi != rhsIndex.ImmediateHi) {
+      return false;
+    }
+
+    if (static_cast<bool>(lhsIndex.RelativeOperand) !=
+        static_cast<bool>(rhsIndex.RelativeOperand)) {
+      return false;
+    }
+
+    if (lhsIndex.RelativeOperand && rhsIndex.RelativeOperand) {
+      if (!OperandsEqual(*lhsIndex.RelativeOperand, *rhsIndex.RelativeOperand)) {
+        return false;
+      }
+    }
   }
 
   if (static_cast<bool>(lhs.RelativeOperand) !=
@@ -61,6 +136,9 @@ static bool OperandsEqual(const Operand &lhs, const Operand &rhs) {
 }
 
 bool MatchesOperand(const Operand &operand, const OperandMatch &pattern) {
+  if (pattern.Any)
+    return true;
+
   if (pattern.HasTypeMatch && operand.Type != pattern.MatchType)
     return false;
 
@@ -90,13 +168,38 @@ bool MatchesOperand(const Operand &operand, const OperandMatch &pattern) {
       return false;
   }
 
-  if (pattern.HasIndexMatch && !pattern.MatchIndices.empty()) {
-    if (operand.Indices.size() != pattern.MatchIndices.size())
+  if (!pattern.MatchIndexPatterns.empty()) {
+    const std::vector<Operand::Index> indexEntries =
+        BuildComparableIndexEntries(operand);
+    if (indexEntries.size() != pattern.MatchIndexPatterns.size()) {
       return false;
-    for (size_t index = 0; index < pattern.MatchIndices.size(); ++index) {
-      if (operand.Indices[index] !=
-          static_cast<uint32_t>(pattern.MatchIndices[index]))
+    }
+
+    for (size_t index = 0; index < pattern.MatchIndexPatterns.size(); ++index) {
+      const OperandIndexMatchPattern &matchIndex =
+          pattern.MatchIndexPatterns[index];
+      const Operand::Index &operandIndex = indexEntries[index];
+
+      if (matchIndex.Any) {
+        continue;
+      }
+
+      if (matchIndex.HasRepresentation &&
+          operandIndex.Representation != matchIndex.Representation) {
         return false;
+      }
+
+      if (matchIndex.HasImmediateLo &&
+          (!operandIndex.HasImmediateLo ||
+           operandIndex.ImmediateLo != matchIndex.ImmediateLo)) {
+        return false;
+      }
+
+      if (matchIndex.HasImmediateHi &&
+          (!operandIndex.HasImmediateHi ||
+           operandIndex.ImmediateHi != matchIndex.ImmediateHi)) {
+        return false;
+      }
     }
   }
 
@@ -105,14 +208,56 @@ bool MatchesOperand(const Operand &operand, const OperandMatch &pattern) {
 
 } // namespace
 
-static bool MatchOperand(const Operand &operand, const OperandMatch &pattern) {
-  return MatchesOperand(operand, pattern);
+static bool MatchOperand(
+    const Operand &operand, const OperandMatch &pattern,
+    std::unordered_map<std::string, uint32_t> &capturedOperandIndexValues,
+    const std::unordered_map<std::string, uint32_t>
+        &existingCapturedOperandIndexValues) {
+  if (!MatchesOperand(operand, pattern)) {
+    return false;
+  }
+
+  if (pattern.MatchIndexPatterns.empty()) {
+    return true;
+  }
+
+  const std::vector<Operand::Index> indexEntries =
+      BuildComparableIndexEntries(operand);
+  for (size_t index = 0; index < pattern.MatchIndexPatterns.size(); ++index) {
+    const OperandIndexMatchPattern &matchIndex =
+        pattern.MatchIndexPatterns[index];
+    const Operand::Index &operandIndex = indexEntries[index];
+
+    if (!matchIndex.MatchCapture.empty()) {
+      const uint32_t *capturedIndexValue = FindCapturedOperandIndexValue(
+          capturedOperandIndexValues, existingCapturedOperandIndexValues,
+          matchIndex.MatchCapture);
+      const uint32_t *currentValue = IndexValueForCapture(operandIndex);
+      if (capturedIndexValue == nullptr || currentValue == nullptr ||
+          *capturedIndexValue != *currentValue) {
+        return false;
+      }
+    }
+
+    if (!matchIndex.CaptureName.empty()) {
+      const uint32_t *currentValue = IndexValueForCapture(operandIndex);
+      if (currentValue == nullptr) {
+        return false;
+      }
+      capturedOperandIndexValues[matchIndex.CaptureName] = *currentValue;
+    }
+  }
+
+  return true;
 }
 
 static bool MatchInstruction(
     const Instruction &instruction, const InstructionMatch &pattern,
     std::unordered_map<std::string, const Operand *> &capturedOperands,
-    const std::unordered_map<std::string, const Operand *> &existingCaptures) {
+    std::unordered_map<std::string, uint32_t> &capturedOperandIndexValues,
+    const std::unordered_map<std::string, const Operand *> &existingCaptures,
+    const std::unordered_map<std::string, uint32_t>
+        &existingCapturedOperandIndexValues) {
   if (pattern.HasOpcode && instruction.Opcode != pattern.Opcode)
     return false;
 
@@ -140,7 +285,8 @@ static bool MatchInstruction(
     const auto &operandPattern = pattern.OperandPatterns[index];
     const auto &operand = instruction.Operands[index];
 
-    if (!MatchesOperand(operand, operandPattern))
+    if (!MatchOperand(operand, operandPattern, capturedOperandIndexValues,
+                      existingCapturedOperandIndexValues))
       return false;
 
     if (!operandPattern.MatchAgainstCapture.empty()) {
@@ -174,8 +320,10 @@ std::vector<MatchResult> CollectMatches(const Program &program,
   std::vector<MatchResult> matches;
   for (uint32_t index = 0; index < program.Instructions.size(); ++index) {
     std::unordered_map<std::string, const Operand *> capturedOperands;
+    std::unordered_map<std::string, uint32_t> capturedOperandIndexValues;
     if (!MatchInstruction(program.Instructions[index], pattern,
-                          capturedOperands, {}))
+                          capturedOperands, capturedOperandIndexValues, {},
+                          {}))
       continue;
 
     MatchResult result;
@@ -184,6 +332,8 @@ std::vector<MatchResult> CollectMatches(const Program &program,
     result.RangeStartIndex = index;
     result.RangeEndIndex = index;
     result.CapturedOperands = std::move(capturedOperands);
+    result.CapturedOperandIndexValues =
+      std::move(capturedOperandIndexValues);
     if (!pattern.CaptureName.empty()) {
       result.CapturedInstructions[pattern.CaptureName] =
           &program.Instructions[index];
@@ -206,6 +356,7 @@ CollectSequenceMatches(const Program &program,
       static_cast<uint32_t>(program.Instructions.size() - patterns.size() + 1);
   for (uint32_t startIndex = 0; startIndex < limit; ++startIndex) {
     std::unordered_map<std::string, const Operand *> capturedOperands;
+    std::unordered_map<std::string, uint32_t> capturedOperandIndexValues;
     std::unordered_map<std::string, const Instruction *> capturedInstructions;
     std::unordered_map<std::string, uint32_t> capturedInstructionIndices;
     bool matched = true;
@@ -217,14 +368,20 @@ CollectSequenceMatches(const Program &program,
       const InstructionMatch &pattern = patterns[patternIndex];
 
       std::unordered_map<std::string, const Operand *> stepCapturedOperands;
+      std::unordered_map<std::string, uint32_t> stepCapturedOperandIndexValues;
       if (!MatchInstruction(instruction, pattern, stepCapturedOperands,
-                            capturedOperands)) {
+                            stepCapturedOperandIndexValues, capturedOperands,
+                            capturedOperandIndexValues)) {
         matched = false;
         break;
       }
 
       for (const auto &entry : stepCapturedOperands) {
         capturedOperands[entry.first] = entry.second;
+      }
+
+      for (const auto &entry : stepCapturedOperandIndexValues) {
+        capturedOperandIndexValues[entry.first] = entry.second;
       }
 
       if (!pattern.CaptureName.empty()) {
@@ -244,6 +401,8 @@ CollectSequenceMatches(const Program &program,
     result.RangeEndIndex =
         startIndex + static_cast<uint32_t>(patterns.size() - 1);
     result.CapturedOperands = std::move(capturedOperands);
+    result.CapturedOperandIndexValues =
+      std::move(capturedOperandIndexValues);
     result.CapturedInstructions = std::move(capturedInstructions);
     result.CapturedInstructionIndices = std::move(capturedInstructionIndices);
     matches.push_back(std::move(result));

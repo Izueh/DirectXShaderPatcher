@@ -1,5 +1,7 @@
 #include "dxp/sm5/Patch.h"
 
+#include "d3d11TokenizedProgramFormat.hpp"
+
 #include "dxp/sm5/Container.h"
 #include "dxp/sm5/Model.h"
 #include "dxp/sm5/Parse.h"

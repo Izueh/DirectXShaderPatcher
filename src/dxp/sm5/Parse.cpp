@@ -1,5 +1,7 @@
 #include "dxp/sm5/Parse.h"
 
+#include "d3d11TokenizedProgramFormat.hpp"
+
 #include <algorithm>
 #include <cstring>
 
@@ -142,10 +144,16 @@ static Operand ParseOperand(const uint8_t *data, uint32_t totalDwords,
         DECODE_D3D10_SB_OPERAND_INDEX_REPRESENTATION(
             static_cast<D3D10_SB_OPERAND_INDEX_DIMENSION>(dim), token0));
 
+    Operand::Index indexEntry;
+
     if (indexRep == D3D10_SB_OPERAND_INDEX_IMMEDIATE32) {
       const uint32_t imm = ReadDword(data, cursor * 4);
+      indexEntry.Representation = Operand::IndexRepresentation::Immediate32;
+      indexEntry.HasImmediateLo = true;
+      indexEntry.ImmediateLo = imm;
       operand.Indices.push_back(imm);
       operand.RawTokens.push_back(imm);
+      operand.IndexEntries.push_back(std::move(indexEntry));
       ++cursor;
       continue;
     }
@@ -154,10 +162,16 @@ static Operand ParseOperand(const uint8_t *data, uint32_t totalDwords,
         (cursor + 1) < instructionEnd) {
       const uint32_t lo = ReadDword(data, cursor * 4);
       const uint32_t hi = ReadDword(data, (cursor + 1) * 4);
+      indexEntry.Representation = Operand::IndexRepresentation::Immediate64;
+      indexEntry.HasImmediateLo = true;
+      indexEntry.ImmediateLo = lo;
+      indexEntry.HasImmediateHi = true;
+      indexEntry.ImmediateHi = hi;
       operand.Indices.push_back(lo);
       operand.Indices.push_back(hi);
       operand.RawTokens.push_back(lo);
       operand.RawTokens.push_back(hi);
+      operand.IndexEntries.push_back(std::move(indexEntry));
       cursor += 2;
       continue;
     }
@@ -165,9 +179,21 @@ static Operand ParseOperand(const uint8_t *data, uint32_t totalDwords,
     if (indexRep == D3D10_SB_OPERAND_INDEX_RELATIVE ||
         indexRep == D3D10_SB_OPERAND_INDEX_IMMEDIATE32_PLUS_RELATIVE ||
         indexRep == D3D10_SB_OPERAND_INDEX_IMMEDIATE64_PLUS_RELATIVE) {
+      if (indexRep == D3D10_SB_OPERAND_INDEX_RELATIVE) {
+        indexEntry.Representation = Operand::IndexRepresentation::Relative;
+      } else if (indexRep == D3D10_SB_OPERAND_INDEX_IMMEDIATE32_PLUS_RELATIVE) {
+        indexEntry.Representation =
+            Operand::IndexRepresentation::Immediate32PlusRelative;
+      } else {
+        indexEntry.Representation =
+            Operand::IndexRepresentation::Immediate64PlusRelative;
+      }
+
       if (indexRep == D3D10_SB_OPERAND_INDEX_IMMEDIATE32_PLUS_RELATIVE &&
           cursor < instructionEnd) {
         const uint32_t imm = ReadDword(data, cursor * 4);
+        indexEntry.HasImmediateLo = true;
+        indexEntry.ImmediateLo = imm;
         operand.Indices.push_back(imm);
         operand.RawTokens.push_back(imm);
         ++cursor;
@@ -175,6 +201,10 @@ static Operand ParseOperand(const uint8_t *data, uint32_t totalDwords,
                  (cursor + 1) < instructionEnd) {
         const uint32_t lo = ReadDword(data, cursor * 4);
         const uint32_t hi = ReadDword(data, (cursor + 1) * 4);
+        indexEntry.HasImmediateLo = true;
+        indexEntry.ImmediateLo = lo;
+        indexEntry.HasImmediateHi = true;
+        indexEntry.ImmediateHi = hi;
         operand.Indices.push_back(lo);
         operand.Indices.push_back(hi);
         operand.RawTokens.push_back(lo);
@@ -183,8 +213,16 @@ static Operand ParseOperand(const uint8_t *data, uint32_t totalDwords,
       }
 
       Operand rel = ParseOperand(data, totalDwords, instructionEnd, cursor);
-      operand.RelativeOperand = std::make_shared<Operand>(std::move(rel));
+      auto relativePtr = std::make_shared<Operand>(std::move(rel));
+      indexEntry.RelativeOperand = relativePtr;
+      operand.RelativeOperand = relativePtr;
+      operand.IndexEntries.push_back(std::move(indexEntry));
+      continue;
     }
+
+    // Keep operand scanning monotonic if an unknown index representation is
+    // encountered by skipping index-entry population for this dimension.
+    operand.IndexEntries.push_back(std::move(indexEntry));
   }
 
   if (operand.Type == D3D10_SB_OPERAND_TYPE_IMMEDIATE32) {

@@ -1,5 +1,7 @@
 #include "dxp/sm5/Recipe.h"
 
+#include "d3d11TokenizedProgramFormat.hpp"
+
 #include "dxp/PatchReport.h"
 #include "dxp/sm5/Serialize.h"
 #include "dxp/sm5/Transforms.h"
@@ -176,6 +178,7 @@ static MatchResult ToRuntimeMatchResult(const RecipeRuleMatch &match) {
   runtimeMatch.CapturedOperands = match.CapturedOperands;
   runtimeMatch.CapturedInstructions = match.CapturedInstructions;
   runtimeMatch.CapturedInstructionIndices = match.CapturedInstructionIndices;
+  runtimeMatch.CapturedOperandIndexValues = match.CapturedOperandIndexValues;
   return runtimeMatch;
 }
 
@@ -566,6 +569,11 @@ static bool CompileEmitOperand(const RecipeOperandPattern &operandModel,
                                Operand &operand, std::string &error) {
   operand = Operand{};
 
+  if (operandModel.Any) {
+    error = "SM5 emit operand cannot use any wildcard";
+    return false;
+  }
+
   if (!operandModel.Capture.empty() && !operandModel.BindHandle.empty()) {
     error = "SM5 emit operand cannot use both capture and bind_handle";
     return false;
@@ -647,7 +655,70 @@ static bool CompileEmitOperand(const RecipeOperandPattern &operandModel,
     return false;
   }
 
-  operand.Indices = operandModel.Indices;
+  operand.IndexEntries.clear();
+  if (!operandModel.IndexPatterns.empty()) {
+    operand.Indices.clear();
+    operand.IndexEntries.reserve(operandModel.IndexPatterns.size());
+    for (const RecipeOperandIndexPattern &indexPattern :
+         operandModel.IndexPatterns) {
+      if (indexPattern.Any) {
+        error = "SM5 emit operand indices cannot use any wildcard";
+        return false;
+      }
+
+      if (!indexPattern.Capture.empty()) {
+        error = "SM5 emit operand index cannot use capture";
+        return false;
+      }
+
+      Operand::Index indexEntry;
+      switch (indexPattern.Representation) {
+      case RecipeOperandIndexRepresentation::Immediate32:
+        indexEntry.Representation = Operand::IndexRepresentation::Immediate32;
+        break;
+      case RecipeOperandIndexRepresentation::Immediate64:
+        indexEntry.Representation = Operand::IndexRepresentation::Immediate64;
+        break;
+      case RecipeOperandIndexRepresentation::Relative:
+        indexEntry.Representation = Operand::IndexRepresentation::Relative;
+        break;
+      case RecipeOperandIndexRepresentation::Immediate32PlusRelative:
+        indexEntry.Representation =
+            Operand::IndexRepresentation::Immediate32PlusRelative;
+        break;
+      case RecipeOperandIndexRepresentation::Immediate64PlusRelative:
+        indexEntry.Representation =
+            Operand::IndexRepresentation::Immediate64PlusRelative;
+        break;
+      }
+
+      indexEntry.HasImmediateLo = indexPattern.HasImmediateLo;
+      indexEntry.ImmediateLo = indexPattern.ImmediateLo;
+      indexEntry.HasImmediateHi = indexPattern.HasImmediateHi;
+      indexEntry.ImmediateHi = indexPattern.ImmediateHi;
+      indexEntry.MatchCaptureName = indexPattern.MatchCapture;
+
+      if (indexPattern.RelativeOperand) {
+        Operand relativeOperand;
+        if (!CompileEmitOperand(*indexPattern.RelativeOperand, relativeOperand,
+                                error)) {
+          return false;
+        }
+        indexEntry.RelativeOperand =
+            std::make_shared<Operand>(std::move(relativeOperand));
+      }
+
+      if (indexEntry.HasImmediateLo) {
+        operand.Indices.push_back(indexEntry.ImmediateLo);
+      }
+      if (indexEntry.HasImmediateHi) {
+        operand.Indices.push_back(indexEntry.ImmediateHi);
+      }
+
+      operand.IndexEntries.push_back(std::move(indexEntry));
+    }
+  }
+
   operand.BindHandle = operandModel.BindHandle;
   operand.StateTempName = operandModel.StateTemp;
   operand.ScratchName = operandModel.Scratch;
@@ -669,6 +740,12 @@ static bool CompileMatchOperand(const RecipeOperandPattern &operandModel,
                                 OperandMatch &operandMatch,
                                 std::string &error) {
   operandMatch = OperandMatch{};
+  operandMatch.Any = operandModel.Any;
+
+  if (operandModel.Any && !operandModel.MatchCapture.empty()) {
+    error = "SM5 any operand cannot use match_capture";
+    return false;
+  }
 
   if (!operandModel.Type.empty()) {
     if (!ParseOperandTypeToken(operandModel.Type, operandMatch.MatchType,
@@ -678,10 +755,42 @@ static bool CompileMatchOperand(const RecipeOperandPattern &operandModel,
     operandMatch.HasTypeMatch = true;
   }
 
-  if (!operandModel.Indices.empty()) {
-    operandMatch.MatchIndices.assign(operandModel.Indices.begin(),
-                                     operandModel.Indices.end());
-    operandMatch.HasIndexMatch = true;
+  if (!operandModel.IndexPatterns.empty()) {
+    operandMatch.MatchIndexPatterns.clear();
+    for (const RecipeOperandIndexPattern &indexPattern :
+         operandModel.IndexPatterns) {
+      OperandIndexMatchPattern matchIndexPattern;
+      matchIndexPattern.Any = indexPattern.Any;
+      matchIndexPattern.HasRepresentation = true;
+      switch (indexPattern.Representation) {
+      case RecipeOperandIndexRepresentation::Immediate32:
+        matchIndexPattern.Representation =
+            Operand::IndexRepresentation::Immediate32;
+        break;
+      case RecipeOperandIndexRepresentation::Immediate64:
+        matchIndexPattern.Representation =
+            Operand::IndexRepresentation::Immediate64;
+        break;
+      case RecipeOperandIndexRepresentation::Relative:
+        matchIndexPattern.Representation = Operand::IndexRepresentation::Relative;
+        break;
+      case RecipeOperandIndexRepresentation::Immediate32PlusRelative:
+        matchIndexPattern.Representation =
+            Operand::IndexRepresentation::Immediate32PlusRelative;
+        break;
+      case RecipeOperandIndexRepresentation::Immediate64PlusRelative:
+        matchIndexPattern.Representation =
+            Operand::IndexRepresentation::Immediate64PlusRelative;
+        break;
+      }
+      matchIndexPattern.HasImmediateLo = indexPattern.HasImmediateLo;
+      matchIndexPattern.ImmediateLo = indexPattern.ImmediateLo;
+      matchIndexPattern.HasImmediateHi = indexPattern.HasImmediateHi;
+      matchIndexPattern.ImmediateHi = indexPattern.ImmediateHi;
+      matchIndexPattern.CaptureName = indexPattern.Capture;
+      matchIndexPattern.MatchCapture = indexPattern.MatchCapture;
+      operandMatch.MatchIndexPatterns.push_back(std::move(matchIndexPattern));
+    }
   }
 
   const OperandType componentType = operandMatch.HasTypeMatch
@@ -998,6 +1107,7 @@ static bool EvaluateRuleRewriteCallback(const RuntimeRule &rule,
     publicMatch.CapturedOperands = match.CapturedOperands;
     publicMatch.CapturedInstructions = match.CapturedInstructions;
     publicMatch.CapturedInstructionIndices = match.CapturedInstructionIndices;
+    publicMatch.CapturedOperandIndexValues = match.CapturedOperandIndexValues;
 
     const auto callbackActions = rule.RewriteCallback(program, publicMatch, context);
     actions.reserve(callbackActions.size());
@@ -1448,6 +1558,51 @@ static bool InstantiateOperand(const Operand &operandTemplate,
       operand.Indices.push_back(*resolvedTempIndex);
     } else {
       operand.Indices[0] = *resolvedTempIndex;
+    }
+  }
+
+  if (!operand.IndexEntries.empty()) {
+    size_t immediateCursor = 0;
+    for (Operand::Index &indexEntry : operand.IndexEntries) {
+      if (!indexEntry.MatchCaptureName.empty()) {
+        const uint32_t *capturedOperandIndex =
+            match.GetCapturedOperandIndexValue(indexEntry.MatchCaptureName);
+        if (capturedOperandIndex == nullptr) {
+          error = "missing captured operand index '" +
+                  indexEntry.MatchCaptureName + "'";
+          return false;
+        }
+        indexEntry.HasImmediateLo = true;
+        indexEntry.ImmediateLo = *capturedOperandIndex;
+      }
+
+      if (indexEntry.HasImmediateLo && immediateCursor < operand.Indices.size()) {
+        indexEntry.ImmediateLo = operand.Indices[immediateCursor++];
+      }
+      if (indexEntry.HasImmediateHi && immediateCursor < operand.Indices.size()) {
+        indexEntry.ImmediateHi = operand.Indices[immediateCursor++];
+      }
+
+      if (indexEntry.RelativeOperand) {
+        Operand instantiatedRelative;
+        if (!InstantiateOperand(*indexEntry.RelativeOperand, match,
+                                scratchState, context, instantiatedRelative,
+                                error)) {
+          return false;
+        }
+        indexEntry.RelativeOperand =
+            std::make_shared<Operand>(std::move(instantiatedRelative));
+      }
+    }
+
+    // Binding resolution can append legacy indices (for example CB range index).
+    // Preserve those values in IndexEntries so serialization keeps operands intact.
+    while (immediateCursor < operand.Indices.size()) {
+      Operand::Index appendedIndex;
+      appendedIndex.Representation = Operand::IndexRepresentation::Immediate32;
+      appendedIndex.HasImmediateLo = true;
+      appendedIndex.ImmediateLo = operand.Indices[immediateCursor++];
+      operand.IndexEntries.push_back(std::move(appendedIndex));
     }
   }
 

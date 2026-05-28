@@ -1,11 +1,12 @@
 #pragma once
 
 #include "dxp/PatchReport.h"
-#include "d3d11TokenizedProgramFormat.hpp"
+#include "dxp/sm5/Model.h"
 
 #include <any>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -124,7 +125,7 @@ enum class RecipePrefilterMode {
 /// @brief Declares a texture binding to add or reference in a recipe.
 struct RecipeTextureDecl {
   uint32_t BindPoint = 0;
-  uint32_t Dimension = D3D10_SB_RESOURCE_DIMENSION_TEXTURE2D;
+  uint32_t Dimension = 3u;
   std::string Handle;
   bool AutoBind = false;
 
@@ -187,7 +188,7 @@ struct RecipeTempDecl {
 /// @brief Declares an input signature binding to add or reference.
 struct RecipeInputDecl {
   uint32_t BindPoint = 0;
-  uint32_t InterpolationMode = D3D10_SB_INTERPOLATION_LINEAR;
+  uint32_t InterpolationMode = 2u;
   std::string Handle;
   bool AutoBind = false;
 
@@ -273,7 +274,7 @@ struct RecipeOutputDecl {
 struct RecipeCBufferDecl {
   uint32_t BindPoint = 0;
   uint32_t Elements = 1;
-  uint32_t AccessPattern = D3D10_SB_CONSTANT_BUFFER_IMMEDIATE_INDEXED;
+  uint32_t AccessPattern = 0u;
   std::string Handle;
   bool AutoBind = false;
 
@@ -331,7 +332,7 @@ struct RecipeCBufferDecl {
 /// @brief Declares a sampler binding to add or reference.
 struct RecipeSamplerDecl {
   uint32_t BindPoint = 0;
-  uint32_t Mode = D3D10_SB_SAMPLER_MODE_DEFAULT;
+  uint32_t Mode = 0u;
   std::string Handle;
   bool AutoBind = false;
 
@@ -472,7 +473,7 @@ enum class RecipeUavKind {
 struct RecipeUavDecl {
   uint32_t BindPoint = 0;
   RecipeUavKind Kind = RecipeUavKind::Typed;
-  uint32_t Dimension = D3D10_SB_RESOURCE_DIMENSION_TEXTURE2D;
+  uint32_t Dimension = 3u;
   uint32_t StructureStride = 16;
   bool GloballyCoherent = false;
   bool HasOrderPreservingCounter = false;
@@ -560,10 +561,162 @@ struct RecipeUavDecl {
   }
 };
 
+/// @brief Encoding used for one index slot in a recipe operand pattern.
+///
+/// Corresponds directly to `Operand::IndexRepresentation` in the decoded
+/// model. Both match and emit patterns record this to allow precise
+/// representation filtering during matching and correct token serialization
+/// during emit.
+enum class RecipeOperandIndexRepresentation {
+  Immediate32,             ///< 32-bit immediate index
+  Immediate64,             ///< 64-bit immediate index (two DWORDs)
+  Relative,                ///< Relative addressing via a sub-operand
+  Immediate32PlusRelative, ///< 32-bit immediate plus relative
+  Immediate64PlusRelative, ///< 64-bit immediate plus relative
+};
+
+struct RecipeOperandPattern;
+
+/// @brief Describes one ordered index slot in a recipe operand pattern.
+///
+/// Both `match` operands and `emit` operand templates carry an ordered list of
+/// these objects, one per expected index slot. The lists are evaluated and
+/// instantiated in order.
+///
+/// **Match semantics** (used in `RecipeMatchPattern::Operands[].IndexPatterns`):
+///  - `Any = true`            — wildcard; the slot is accepted without checks.
+///  - `Representation`        — when present, the encoded index type must match.
+///  - `ImmediateLo/Hi`        — when set, the immediate value must equal.
+///  - `Capture`               — on a successful match, the slot's immediate is
+///                             stored in `CapturedOperandIndexValues` under this
+///                             name for use in later operands or emit templates.
+///  - `MatchCapture`          — the slot's immediate must equal the value
+///                             previously stored under this capture name.
+///
+/// **Emit semantics** (used in `RecipeInstructionTemplate::Operands[].IndexPatterns`):
+///  - `ImmediateLo/Hi`        — constant immediate value to write.
+///  - `MatchCapture`          — resolves the immediate from a captured index
+///                             value, overriding `ImmediateLo`.
+///  - `Any` and `Capture`     — invalid on emit entries; rejected at compile time.
+struct RecipeOperandIndexPattern {
+  /// When `true`, this slot is a wildcard (match only). All value fields are
+  /// ignored. Invalid on emit entries.
+  bool Any = false;
+  /// Encoding for this index slot. Defaults to `Immediate32`.
+  RecipeOperandIndexRepresentation Representation =
+      RecipeOperandIndexRepresentation::Immediate32;
+  bool HasImmediateLo = false;
+  uint32_t ImmediateLo = 0; ///< Low 32-bit immediate value
+  bool HasImmediateHi = false;
+  uint32_t ImmediateHi = 0;    ///< High 32-bit immediate (64-bit indices)
+  /// Sub-operand for relative addressing; null when not relative.
+  std::shared_ptr<RecipeOperandPattern> RelativeOperand;
+  /// Match only: capture key for the matched immediate value. Invalid on emit.
+  std::string Capture;
+  /// Match: compare against a previously captured index value.
+  /// Emit: resolve the emitted immediate from a previously captured value.
+  std::string MatchCapture;
+};
+
+/// @brief Fluent builder for `RecipeOperandIndexPattern`.
+///
+/// Used when constructing recipe rules in code. The resulting pattern is added
+/// to a `RecipeOperandPattern` via `AddIndexPattern` or `WithIndexPatterns`.
+///
+/// Example — capture a temp register number and match it again later:
+/// @code
+/// auto matchIdx = RecipeOperandIndexPatternBuilder{}
+///     .WithRepresentation(RecipeOperandIndexRepresentation::Immediate32)
+///     .CaptureAs("my_reg")
+///     .Build();
+///
+/// auto emitIdx = RecipeOperandIndexPatternBuilder{}
+///     .WithRepresentation(RecipeOperandIndexRepresentation::Immediate32)
+///     .WithMatchCapture("my_reg")
+///     .Build();
+/// @endcode
+class RecipeOperandIndexPatternBuilder {
+public:
+  RecipeOperandIndexPatternBuilder() = default;
+  explicit RecipeOperandIndexPatternBuilder(RecipeOperandIndexPattern pattern)
+      : pattern_(std::move(pattern)) {}
+
+  /// Sets the wildcard flag. Valid on match patterns only.
+  RecipeOperandIndexPatternBuilder &WithAny(bool any = true) {
+    pattern_.Any = any;
+    return *this;
+  }
+
+  /// Sets the expected index encoding for this slot.
+  RecipeOperandIndexPatternBuilder &
+  WithRepresentation(RecipeOperandIndexRepresentation representation) {
+    pattern_.Representation = representation;
+    return *this;
+  }
+
+  /// Requires (match) or emits (emit) this 32-bit immediate value.
+  RecipeOperandIndexPatternBuilder &WithImmediateLo(uint32_t value) {
+    pattern_.HasImmediateLo = true;
+    pattern_.ImmediateLo = value;
+    return *this;
+  }
+
+  /// Requires (match) or emits (emit) this high 32-bit immediate value.
+  RecipeOperandIndexPatternBuilder &WithImmediateHi(uint32_t value) {
+    pattern_.HasImmediateHi = true;
+    pattern_.ImmediateHi = value;
+    return *this;
+  }
+
+  /// Sets a relative sub-operand for relative-addressing index slots.
+  RecipeOperandIndexPatternBuilder &
+  WithRelativeOperand(RecipeOperandPattern relativeOperand);
+
+  /// Stores the matched immediate in `CapturedOperandIndexValues` under
+  /// `capture`. Valid on match patterns only; rejected on emit patterns.
+  RecipeOperandIndexPatternBuilder &CaptureAs(std::string capture) {
+    pattern_.Capture = std::move(capture);
+    return *this;
+  }
+
+  /// Match: requires the slot's immediate to equal the captured value named
+  /// `matchCapture`. Emit: resolves the emitted immediate from that capture.
+  RecipeOperandIndexPatternBuilder &WithMatchCapture(std::string matchCapture) {
+    pattern_.MatchCapture = std::move(matchCapture);
+    return *this;
+  }
+
+  RecipeOperandIndexPattern Build() const { return pattern_; }
+
+  operator RecipeOperandIndexPattern() const { return Build(); }
+
+private:
+  RecipeOperandIndexPattern pattern_;
+};
+
 /// @brief Describes one operand in a declarative recipe pattern or template.
+///
+/// Used for both match-side patterns (inside `RecipeInstructionPattern`) and
+/// emit-side templates (inside `RecipeInstructionTemplate`). Which fields are
+/// valid depends on context:
+///
+/// **Match fields**: `Any`, `Type`, `IndexPatterns`, `Capture`, `MatchCapture`,
+/// `Mask/Swizzle/Select`, `NumComponents`, `Modifier`, `ImmediateU32/F32`.
+///
+/// **Emit fields**: `Capture` (copy a captured operand wholesale), `Scratch`,
+/// `BindHandle`, `StateTemp`, `Type`, `IndexPatterns`, `Mask/Swizzle/Select`,
+/// `NumComponents`, `Modifier`, `ImmediateU32/F32`.
+///
+/// `IndexPatterns` carries an ordered list of `RecipeOperandIndexPattern`
+/// objects, one per expected index slot.
 struct RecipeOperandPattern {
+  /// When `true`, this operand is a wildcard (match only) and all other fields
+  /// are ignored. Invalid on emit operands.
+  bool Any = false;
+  /// Token name for the operand type (e.g., `"temp"`, `"resource"`).
   std::string Type;
-  std::vector<uint32_t> Indices;
+  /// Ordered per-slot index patterns.
+  std::vector<RecipeOperandIndexPattern> IndexPatterns;
   std::string BindHandle;
   std::string StateTemp;
   std::string Mask;
@@ -577,6 +730,16 @@ struct RecipeOperandPattern {
   std::string MatchCapture;
   std::string Scratch;
 
+  RecipeOperandPattern &WithAny(bool any = true) & {
+    Any = any;
+    return *this;
+  }
+
+  RecipeOperandPattern &&WithAny(bool any = true) && {
+    Any = any;
+    return std::move(*this);
+  }
+
   RecipeOperandPattern &WithType(std::string type) & {
     Type = std::move(type);
     return *this;
@@ -587,13 +750,25 @@ struct RecipeOperandPattern {
     return std::move(*this);
   }
 
-  RecipeOperandPattern &WithIndices(std::vector<uint32_t> indices) & {
-    Indices = std::move(indices);
+  RecipeOperandPattern &
+  WithIndexPatterns(std::vector<RecipeOperandIndexPattern> indexPatterns) & {
+    IndexPatterns = std::move(indexPatterns);
     return *this;
   }
 
-  RecipeOperandPattern &&WithIndices(std::vector<uint32_t> indices) && {
-    Indices = std::move(indices);
+  RecipeOperandPattern &&
+  WithIndexPatterns(std::vector<RecipeOperandIndexPattern> indexPatterns) && {
+    IndexPatterns = std::move(indexPatterns);
+    return std::move(*this);
+  }
+
+  RecipeOperandPattern &AddIndexPattern(RecipeOperandIndexPattern pattern) & {
+    IndexPatterns.push_back(std::move(pattern));
+    return *this;
+  }
+
+  RecipeOperandPattern &&AddIndexPattern(RecipeOperandIndexPattern pattern) && {
+    IndexPatterns.push_back(std::move(pattern));
     return std::move(*this);
   }
 
@@ -716,6 +891,104 @@ struct RecipeOperandPattern {
     Scratch = std::move(scratch);
     return std::move(*this);
   }
+};
+
+inline RecipeOperandIndexPatternBuilder &
+RecipeOperandIndexPatternBuilder::WithRelativeOperand(
+    RecipeOperandPattern relativeOperand) {
+  pattern_.RelativeOperand =
+      std::make_shared<RecipeOperandPattern>(std::move(relativeOperand));
+  return *this;
+}
+
+class RecipeOperandPatternBuilder {
+public:
+  RecipeOperandPatternBuilder() = default;
+  explicit RecipeOperandPatternBuilder(RecipeOperandPattern pattern)
+      : pattern_(std::move(pattern)) {}
+
+  RecipeOperandPatternBuilder &WithAny(bool any = true) {
+    pattern_.Any = any;
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &WithType(std::string type) {
+    pattern_.Type = std::move(type);
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &
+  AddIndex(RecipeOperandIndexPattern indexPattern) {
+    pattern_.IndexPatterns.push_back(std::move(indexPattern));
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &WithBindHandle(std::string bindHandle) {
+    pattern_.BindHandle = std::move(bindHandle);
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &WithStateTemp(std::string stateTemp) {
+    pattern_.StateTemp = std::move(stateTemp);
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &WithMask(std::string mask) {
+    pattern_.Mask = std::move(mask);
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &WithSwizzle(std::string swizzle) {
+    pattern_.Swizzle = std::move(swizzle);
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &WithSelect(std::string select) {
+    pattern_.Select = std::move(select);
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &WithNumComponents(int32_t numComponents) {
+    pattern_.NumComponents = numComponents;
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &WithModifier(std::string modifier) {
+    pattern_.Modifier = std::move(modifier);
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &WithImmediateU32(std::vector<uint32_t> values) {
+    pattern_.ImmediateU32 = std::move(values);
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &WithImmediateF32(std::vector<float> values) {
+    pattern_.ImmediateF32 = std::move(values);
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &CaptureAs(std::string capture) {
+    pattern_.Capture = std::move(capture);
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &WithMatchCapture(std::string matchCapture) {
+    pattern_.MatchCapture = std::move(matchCapture);
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &WithScratch(std::string scratch) {
+    pattern_.Scratch = std::move(scratch);
+    return *this;
+  }
+
+  RecipeOperandPattern Build() const { return pattern_; }
+
+  operator RecipeOperandPattern() const { return Build(); }
+
+private:
+  RecipeOperandPattern pattern_;
 };
 
 /// @brief Describes one instruction pattern for rule matching.
@@ -1028,9 +1301,16 @@ struct RecipeRuleMatch {
   const Instruction *InstructionHandle = nullptr;
   uint32_t RangeStartIndex = 0;
   uint32_t RangeEndIndex = 0;
+  /// Operands captured by name during matching or supplied by the callback.
   std::unordered_map<std::string, const Operand *> CapturedOperands;
+  /// Instructions captured by name (used with sequence matches).
   std::unordered_map<std::string, const Instruction *> CapturedInstructions;
+  /// Program-relative indices for captured instructions.
   std::unordered_map<std::string, uint32_t> CapturedInstructionIndices;
+  /// Per-slot index immediate values captured via
+  /// `RecipeOperandIndexPattern::Capture` during declarative matching.
+  /// Keys are capture names; values are 32-bit immediates from the matched slot.
+  std::unordered_map<std::string, uint32_t> CapturedOperandIndexValues;
 
   const Operand *GetCapturedOperand(const std::string &name) const {
     const auto it = CapturedOperands.find(name);
@@ -1045,6 +1325,14 @@ struct RecipeRuleMatch {
   const uint32_t *GetCapturedInstructionIndex(const std::string &name) const {
     const auto it = CapturedInstructionIndices.find(name);
     return it == CapturedInstructionIndices.end() ? nullptr : &it->second;
+  }
+
+  /// @brief Looks up a per-slot index immediate captured during matching.
+  /// @param name Capture name set on a `RecipeOperandIndexPattern`.
+  /// @return Pointer to the 32-bit immediate, or `nullptr` when absent.
+  const uint32_t *GetCapturedOperandIndexValue(const std::string &name) const {
+    const auto it = CapturedOperandIndexValues.find(name);
+    return it == CapturedOperandIndexValues.end() ? nullptr : &it->second;
   }
 };
 

@@ -250,6 +250,7 @@ Rule notes:
 
 Supported fields in `match.operands[]`:
 
+- `any`
 - `type`
 - `indices`
 - `components.kind`
@@ -263,6 +264,7 @@ Supported fields in `match.operands[]`:
 
 Supported fields in `emit[].operands[]`:
 
+- `any` (unsupported for emit; validation error)
 - `capture`
 - `scratch`
 - `bind_handle`
@@ -291,6 +293,71 @@ Operand notes:
 - `bind_handle` requires an explicit `type` and a matching declaration handle.
 - `match_capture` requires the operand to match an earlier captured operand exactly.
 - `immediates_f32` are encoded as raw SM5 immediate float tokens.
+
+`indices` is an ordered list of index objects. Scalar index lists are not
+supported.
+
+Index object fields:
+
+- `any` optional wildcard for a single ordered index slot
+- `representation` optional; one of:
+  - `immediate32`
+  - `immediate64`
+  - `relative`
+  - `immediate32_plus_relative`
+  - `immediate64_plus_relative`
+- `immediate_lo` optional immediate value for low 32 bits
+- `immediate_hi` optional immediate value for high 32 bits
+- `capture` optional (match only): captures the current matched index immediate value
+- `match_capture` optional:
+  - in `match`: compares the current index immediate value with a previously captured index value
+  - in `emit`: resolves the emitted index immediate value from a previously captured index value
+
+Index notes:
+
+- Index entries are matched and emitted in list order.
+- `capture` on emit index entries is invalid.
+- `any` on emit index entries is invalid.
+- If `representation` is omitted, `immediate32` is assumed.
+- `capture` and `match_capture` are independent; an entry may set both to capture
+  a value and simultaneously compare it against an earlier capture.
+
+Index capture round-trip example — rewrite `mul r0.xyzw, r0.xyzw, r1.xyzw` to
+`mov r0.xyzw, r1.xyzw` while preserving the exact temp register number:
+
+```yaml
+steps:
+  - name: mul_to_mov
+    rules:
+      - match:
+          opcode: mul
+          operands:
+            - type: temp
+              capture: dst
+              indices:
+                - representation: immediate32
+                  capture: dst_reg   # stores r0's register number
+            - capture: src
+        emit:
+          - opcode: mov
+            operands:
+              - capture: dst         # replay captured destination operand
+              - capture: src         # replay captured source operand
+```
+
+To reconstruct the destination from its captured index instead of replaying the
+entire operand (useful when the component mask must differ):
+
+```yaml
+        emit:
+          - opcode: mov
+            operands:
+              - type: temp
+                indices:
+                  - representation: immediate32
+                    match_capture: dst_reg   # resolved from captured index
+              - capture: src
+```
 
 ## Declaration Steps
 

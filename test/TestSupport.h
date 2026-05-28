@@ -8,6 +8,7 @@
 
 #include <atlbase.h>
 
+#include "d3d11TokenizedProgramFormat.hpp"
 #include "dxc/DXIL/DxilModule.h"
 #include "dxc/DXIL/DxilResource.h"
 #include "dxp/sm6/Patch.h"

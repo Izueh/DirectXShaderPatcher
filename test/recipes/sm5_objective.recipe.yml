@@ -49,7 +49,8 @@ steps:
                   value: z
               - type: constant_buffer
                 bind_handle: frame_constants
-                indices: [0]
+                indices:
+                  - immediate_lo: 0
                 components:
                   kind: select
                   value: x

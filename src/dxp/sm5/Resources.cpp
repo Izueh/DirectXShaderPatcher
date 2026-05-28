@@ -1,5 +1,7 @@
 #include "dxp/sm5/Recipe.h"
 
+#include "d3d11TokenizedProgramFormat.hpp"
+
 #include "dxp/sm5/Serialize.h"
 #include "dxp/sm5/Transforms.h"
 

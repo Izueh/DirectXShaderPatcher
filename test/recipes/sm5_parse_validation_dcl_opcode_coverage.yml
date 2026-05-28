@@ -15,11 +15,13 @@ steps:
           - opcode: dcl_output_siv
             operands:
               - type: output
-                indices: [1]
+                indices:
+                  - immediate_lo: 1
           - opcode: dcl_resource_structured
             operands:
               - type: resource
-                indices: [3]
+                indices:
+                  - immediate_lo: 3
           - opcode: dcl_thread_group_shared_memory_raw
             operands:
               - type: immediate32

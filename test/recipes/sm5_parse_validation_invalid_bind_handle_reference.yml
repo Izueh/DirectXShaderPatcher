@@ -22,6 +22,7 @@ steps:
               - type: resource
                 bind_handle: missing_texture
               - type: sampler
-                indices: [0]
+                indices:
+                  - immediate_lo: 0
               - type: immediate32
                 immediates_f32: [0.0]
