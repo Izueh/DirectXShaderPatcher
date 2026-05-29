@@ -1,0 +1,22 @@
+# Intentionally malformed emit fixture for runtime/serialization failure tests.
+# This recipe emits an index slot declared as immediate32_plus_relative
+# but omits the required relative operand.
+version: 1
+steps:
+  - name: emit_malformed_index_repr
+    kind: apply_rules
+    mode: first
+    rules:
+      - match:
+          opcode: frc
+          operands:
+            - capture: dst
+            - capture: src
+        emit:
+          - opcode: mov
+            operands:
+              - capture: dst
+              - type: temp
+                indices:
+                  - representation: immediate32_plus_relative
+                    immediate_lo: 0

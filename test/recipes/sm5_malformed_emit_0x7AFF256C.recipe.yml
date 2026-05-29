@@ -1,0 +1,23 @@
+# Shader-specific malformed emit recipe for test/shaders/0x7AFF256C.ps_5_0.cso
+# Derived from disassembly: shader contains multiple frc instructions.
+# Intentional fault: emitted source operand uses immediate32_plus_relative
+# index representation but omits the required relative operand.
+version: 1
+steps:
+  - name: malformed_emit_0x7AFF256C
+    kind: apply_rules
+    mode: first
+    rules:
+      - match:
+          opcode: frc
+          operands:
+            - capture: dst
+            - capture: src
+        emit:
+          - opcode: mov
+            operands:
+              - capture: dst
+              - type: temp
+                indices:
+                  - representation: immediate32_plus_relative
+                    immediate_lo: 0

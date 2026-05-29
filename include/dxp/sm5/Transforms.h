@@ -70,6 +70,17 @@ struct OperandMatch {
   /// @brief Name of a previously captured operand to compare against.
   std::string MatchAgainstCapture;
 
+  bool MatchCaptureType = false;
+  bool MatchCaptureComponents = false;
+  bool MatchCaptureModifier = false;
+  bool MatchCaptureIndices = false;
+  bool MatchCaptureImmediates = false;
+
+  bool HasMatchCaptureProjection() const {
+    return MatchCaptureType || MatchCaptureComponents || MatchCaptureModifier ||
+           MatchCaptureIndices || MatchCaptureImmediates;
+  }
+
   OperandMatch();
 };
 

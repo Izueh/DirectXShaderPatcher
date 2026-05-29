@@ -1,0 +1,22 @@
+version: 1
+steps:
+  - kind: apply_rules
+    name: replay_object_index_lo
+    rules:
+      - match:
+          opcode: mul
+          operands:
+            - type: temp
+              capture: dst
+              indices:
+                - representation: immediate32
+                  capture: dst_reg
+            - capture: src
+        emit:
+          - opcode: mov
+            operands:
+              - type: temp
+                indices:
+                  - representation: immediate32
+                    immediate_lo: { from: dst_reg }
+              - capture: src

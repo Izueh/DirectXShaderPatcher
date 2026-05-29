@@ -123,6 +123,16 @@ struct Operand {
   uint32_t SourceOffset = 0;
   uint32_t SourceLength = 0;
   std::string CaptureName;
+  bool CaptureType = false;
+  bool CaptureComponents = false;
+  bool CaptureModifier = false;
+  bool CaptureIndices = false;
+  bool CaptureImmediates = false;
+
+  bool HasCaptureFieldProjection() const {
+    return CaptureType || CaptureComponents || CaptureModifier ||
+           CaptureIndices || CaptureImmediates;
+  }
 };
 
 /// @brief Represents one decoded instruction from the instruction stream.

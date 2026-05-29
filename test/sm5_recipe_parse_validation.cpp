@@ -151,6 +151,66 @@ int main() {
 
   {
     dxp::sm5::RecipeParseResult parseResult;
+    if (!ParseFixture(
+            "test/recipes/sm5_parse_validation_replay_object_index_lo.yml",
+            parseResult)) {
+      std::cerr << "Expected replay object immediate_lo syntax to parse: "
+                << parseResult.Error << "\n";
+      return 1;
+    }
+  }
+
+  {
+    dxp::sm5::RecipeParseResult parseResult;
+    if (!ParseFixture(
+            "test/recipes/sm5_parse_validation_replay_object_capture_refs.yml",
+            parseResult)) {
+      std::cerr << "Expected replay object capture/match_capture/replace "
+                   "syntax to parse: "
+                << parseResult.Error << "\n";
+      return 1;
+    }
+  }
+
+  {
+    dxp::sm5::RecipeParseResult parseResult;
+    if (ParseFixture(
+            "test/recipes/"
+            "sm5_parse_validation_invalid_replay_object_index_hi.yml",
+            parseResult)) {
+      std::cerr << "Expected replay object immediate_hi syntax to fail "
+                   "parsing.\n";
+      return 1;
+    }
+
+    if (!Contains(parseResult.Error,
+                  "index immediate_hi replay object is unsupported")) {
+      std::cerr << "Expected replay object immediate_hi validation error.\n";
+      return 1;
+    }
+  }
+
+  {
+    dxp::sm5::RecipeParseResult parseResult;
+    if (ParseFixture(
+            "test/recipes/"
+            "sm5_parse_validation_invalid_replay_object_capture_empty_from.yml",
+            parseResult)) {
+      std::cerr << "Expected replay object capture with empty from to fail "
+                   "parsing.\n";
+      return 1;
+    }
+
+    if (!Contains(parseResult.Error,
+                  "capture replay object requires non-empty from")) {
+      std::cerr << "Expected replay object capture empty-from validation "
+                   "error.\n";
+      return 1;
+    }
+  }
+
+  {
+    dxp::sm5::RecipeParseResult parseResult;
         if (ParseFixture(
           "test/recipes/sm5_parse_validation_invalid_interpolation_mode.yml",
             parseResult)) {

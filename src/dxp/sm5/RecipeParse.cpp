@@ -8,6 +8,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <fstream>
+#include <regex>
 #include <sstream>
 #include <unordered_set>
 
@@ -21,6 +22,122 @@ static std::string Lowercase(const std::string &value) {
     ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
   }
   return lowered;
+}
+
+static std::string Trim(const std::string &value) {
+  size_t start = 0;
+  while (start < value.size() &&
+         std::isspace(static_cast<unsigned char>(value[start]))) {
+    ++start;
+  }
+
+  size_t end = value.size();
+  while (end > start &&
+         std::isspace(static_cast<unsigned char>(value[end - 1]))) {
+    --end;
+  }
+
+  return value.substr(start, end - start);
+}
+
+static std::string StripOptionalQuotes(const std::string &value) {
+  if (value.size() >= 2 &&
+      ((value.front() == '"' && value.back() == '"') ||
+       (value.front() == '\'' && value.back() == '\''))) {
+    return value.substr(1, value.size() - 2);
+  }
+  return value;
+}
+
+static bool TryNormalizeReplayFromLine(const std::string &line,
+                                       const std::string &sourceField,
+                                       const std::string &targetField,
+                                       std::string &normalizedLine,
+                                       std::string &captureName) {
+  const std::string fieldPattern =
+      sourceField == "immediate_hi"
+      ? R"(^([\t ]*(?:- [\t ]*)?)immediate_hi:[\t ]*\{[\t ]*from:[\t ]*([^}]+)[\t ]*\}[\t ]*$)"
+      : sourceField == "immediate_lo"
+    ? R"(^([\t ]*(?:- [\t ]*)?)immediate_lo:[\t ]*\{[\t ]*from:[\t ]*([^}]+)[\t ]*\}[\t ]*$)"
+            : sourceField == "capture"
+      ? R"(^([\t ]*(?:- [\t ]*)?)capture:[\t ]*\{[\t ]*from:[\t ]*([^}]+)[\t ]*\}[\t ]*$)"
+                  : sourceField == "match_capture"
+        ? R"(^([\t ]*(?:- [\t ]*)?)match_capture:[\t ]*\{[\t ]*from:[\t ]*([^}]+)[\t ]*\}[\t ]*$)"
+        : R"(^([\t ]*(?:- [\t ]*)?)replace:[\t ]*\{[\t ]*from:[\t ]*([^}]+)[\t ]*\}[\t ]*$)";
+
+  const std::regex pattern(fieldPattern);
+  std::smatch match;
+  if (!std::regex_match(line, match, pattern)) {
+    normalizedLine.clear();
+    captureName.clear();
+    return false;
+  }
+
+  captureName = StripOptionalQuotes(Trim(match[2].str()));
+  normalizedLine = match[1].str() + targetField + ": " + captureName;
+  return true;
+}
+
+static bool NormalizeReplayObjectSyntax(llvm::StringRef recipeText,
+                                        std::string &normalizedText,
+                                        std::string &error) {
+  normalizedText.clear();
+  error.clear();
+
+  std::istringstream stream(recipeText.str());
+  std::string line;
+  uint32_t lineNumber = 0;
+  while (std::getline(stream, line)) {
+    ++lineNumber;
+    std::string normalizedLine;
+    std::string captureName;
+    if (TryNormalizeReplayFromLine(line, "immediate_lo", "match_capture",
+                                   normalizedLine, captureName)) {
+      if (captureName.empty()) {
+        error = "line " + std::to_string(lineNumber) +
+                ": index immediate_lo replay object requires non-empty from";
+        return false;
+      }
+      line = std::move(normalizedLine);
+    } else if (TryNormalizeReplayFromLine(line, "immediate_hi",
+                                          "immediate_hi", normalizedLine,
+                                          captureName)) {
+      error = "line " + std::to_string(lineNumber) +
+              ": SM5 index immediate_hi replay object is unsupported; use "
+              "literal immediate_hi";
+      return false;
+    } else if (TryNormalizeReplayFromLine(line, "capture", "capture",
+                                          normalizedLine, captureName)) {
+      if (captureName.empty()) {
+        error = "line " + std::to_string(lineNumber) +
+                ": capture replay object requires non-empty from";
+        return false;
+      }
+      line = std::move(normalizedLine);
+    } else if (TryNormalizeReplayFromLine(line, "match_capture",
+                                          "match_capture", normalizedLine,
+                                          captureName)) {
+      if (captureName.empty()) {
+        error = "line " + std::to_string(lineNumber) +
+                ": match_capture replay object requires non-empty from";
+        return false;
+      }
+      line = std::move(normalizedLine);
+    } else if (TryNormalizeReplayFromLine(line, "replace", "replace",
+                                          normalizedLine, captureName)) {
+      if (captureName.empty()) {
+        error = "line " + std::to_string(lineNumber) +
+                ": replace replay object requires non-empty from";
+        return false;
+      }
+      line = std::move(normalizedLine);
+    }
+
+    normalizedText += line;
+    normalizedText.push_back('\n');
+  }
+
+  return true;
 }
 
 static dxp::sm5::RecipeRuleApplicationMode
@@ -125,6 +242,14 @@ struct YamlOperandIndex {
   std::string match_capture;
 };
 
+struct YamlOperandCaptureFields {
+  bool type = false;
+  bool components = false;
+  bool modifier = false;
+  bool indices = false;
+  bool immediates = false;
+};
+
 struct YamlOperand {
   bool any = false;
   std::string type;
@@ -139,6 +264,8 @@ struct YamlOperand {
   std::string modifier;
   std::string capture;
   std::string match_capture;
+  YamlOperandCaptureFields capture_fields;
+  YamlOperandCaptureFields match_capture_fields;
   std::string scratch;
 };
 
@@ -313,6 +440,16 @@ template <> struct MappingTraits<YamlComponentSelector> {
   }
 };
 
+template <> struct MappingTraits<YamlOperandCaptureFields> {
+  static void mapping(IO &io, YamlOperandCaptureFields &fields) {
+    io.mapOptional("type", fields.type, false);
+    io.mapOptional("components", fields.components, false);
+    io.mapOptional("modifier", fields.modifier, false);
+    io.mapOptional("indices", fields.indices, false);
+    io.mapOptional("immediates", fields.immediates, false);
+  }
+};
+
 template <> struct MappingTraits<YamlOperand> {
   static void mapping(IO &io, YamlOperand &operand) {
     io.mapOptional("any", operand.any, false);
@@ -328,6 +465,8 @@ template <> struct MappingTraits<YamlOperand> {
     io.mapOptional("modifier", operand.modifier);
     io.mapOptional("capture", operand.capture);
     io.mapOptional("match_capture", operand.match_capture);
+    io.mapOptional("capture_fields", operand.capture_fields);
+    io.mapOptional("match_capture_fields", operand.match_capture_fields);
     io.mapOptional("scratch", operand.scratch);
   }
 };
@@ -1238,6 +1377,7 @@ static bool ParseEmitOperand(const YamlOperand &operandModel, Operand &operand,
   operand = Operand{};
 
   const std::string &captureRef = operandModel.capture;
+  const bool hasCaptureReference = !captureRef.empty();
 
   if (!operandModel.scratch.empty()) {
     error = "SM5 scratch is unsupported; declare temp_decls and use bind_handle"
@@ -1250,12 +1390,26 @@ static bool ParseEmitOperand(const YamlOperand &operandModel, Operand &operand,
     return false;
   }
 
-  if (!captureRef.empty()) {
-    operand.CaptureName = captureRef;
-    return true;
+  const bool hasCaptureFields = operandModel.capture_fields.type ||
+                                operandModel.capture_fields.components ||
+                                operandModel.capture_fields.modifier ||
+                                operandModel.capture_fields.indices ||
+                                operandModel.capture_fields.immediates;
+  if (operandModel.capture.empty() && hasCaptureFields) {
+    error = "SM5 capture_fields requires emit operand capture";
+    return false;
   }
 
-  if (operandModel.type.empty()) {
+  if (hasCaptureReference) {
+    operand.CaptureName = captureRef;
+    operand.CaptureType = operandModel.capture_fields.type;
+    operand.CaptureComponents = operandModel.capture_fields.components;
+    operand.CaptureModifier = operandModel.capture_fields.modifier;
+    operand.CaptureIndices = operandModel.capture_fields.indices;
+    operand.CaptureImmediates = operandModel.capture_fields.immediates;
+  }
+
+  if (!hasCaptureReference && operandModel.type.empty()) {
     error = "literal SM5 emit operands require type or capture";
     return false;
   }
@@ -1267,14 +1421,22 @@ static bool ParseEmitOperand(const YamlOperand &operandModel, Operand &operand,
     }
   }
 
-  if (!ParseOperandType(operandModel.type, operand.Type, error)) {
-    return false;
+  if (!operandModel.type.empty()) {
+    if (!ParseOperandType(operandModel.type, operand.Type, error)) {
+      return false;
+    }
   }
 
-  if (!ParseOperandComponentMode(operandModel, operand.Type,
-                                 operand.NumComponents, operand.ComponentMode,
-                                 error)) {
-    return false;
+  const bool hasLiteralComponentSpec =
+      !operandModel.components.kind.empty() ||
+      !operandModel.components.value.empty() || operandModel.num_components >= 0;
+  if (!hasCaptureReference || !operandModel.type.empty() ||
+      hasLiteralComponentSpec) {
+    if (!ParseOperandComponentMode(operandModel, operand.Type,
+                                   operand.NumComponents,
+                                   operand.ComponentMode, error)) {
+      return false;
+    }
   }
 
   std::vector<RecipeOperandIndexPattern> indexPatterns;
@@ -1346,6 +1508,17 @@ static bool ParseMatchOperand(const YamlOperand &operandModel,
 
   if (operandMatch.Any && !operandModel.match_capture.empty()) {
     error = "SM5 any operand cannot use match_capture";
+    return false;
+  }
+
+  const bool hasMatchCaptureFields =
+      operandModel.match_capture_fields.type ||
+      operandModel.match_capture_fields.components ||
+      operandModel.match_capture_fields.modifier ||
+      operandModel.match_capture_fields.indices ||
+      operandModel.match_capture_fields.immediates;
+  if (operandModel.match_capture.empty() && hasMatchCaptureFields) {
+    error = "SM5 match_capture_fields requires operand match_capture";
     return false;
   }
 
@@ -1444,7 +1617,25 @@ static bool ParseMatchOperand(const YamlOperand &operandModel,
 
   operandMatch.CaptureName = operandModel.capture;
   operandMatch.MatchAgainstCapture = operandModel.match_capture;
+  operandMatch.MatchCaptureType = operandModel.match_capture_fields.type;
+  operandMatch.MatchCaptureComponents =
+      operandModel.match_capture_fields.components;
+  operandMatch.MatchCaptureModifier = operandModel.match_capture_fields.modifier;
+  operandMatch.MatchCaptureIndices = operandModel.match_capture_fields.indices;
+  operandMatch.MatchCaptureImmediates =
+      operandModel.match_capture_fields.immediates;
   return true;
+}
+
+static RecipeOperandCaptureFields BuildCaptureFields(
+    const YamlOperandCaptureFields &yamlFields) {
+  RecipeOperandCaptureFields fields;
+  fields.Type = yamlFields.type;
+  fields.Components = yamlFields.components;
+  fields.Modifier = yamlFields.modifier;
+  fields.Indices = yamlFields.indices;
+  fields.Immediates = yamlFields.immediates;
+  return fields;
 }
 
 static bool FillRecipeOperandPattern(const YamlOperand &operandModel,
@@ -1474,7 +1665,11 @@ static bool FillRecipeOperandPattern(const YamlOperand &operandModel,
                        .WithBindHandle(operandModel.bind_handle)
                        .WithNumComponents(operandModel.num_components)
                        .WithModifier(operandModel.modifier)
+                         .WithCaptureFields(
+                           BuildCaptureFields(operandModel.capture_fields))
                        .WithMatchCapture(operandModel.match_capture)
+                         .WithMatchCaptureFields(BuildCaptureFields(
+                           operandModel.match_capture_fields))
                        .CaptureAs(operandModel.capture);
 
   if (!operandModel.mask.empty() || !operandModel.swizzle.empty() ||
@@ -2372,8 +2567,16 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
                      llvm::StringRef sourceName) {
   result = RecipeParseResult{};
 
+  std::string normalizedRecipeText;
+  std::string normalizationError;
+  if (!NormalizeReplayObjectSyntax(recipeText, normalizedRecipeText,
+                                   normalizationError)) {
+    result.Error = sourceName.str() + ": " + normalizationError;
+    return false;
+  }
+
   YamlRecipeDocument document;
-  llvm::yaml::Input input(recipeText);
+  llvm::yaml::Input input(normalizedRecipeText);
   input >> document;
   if (input.error()) {
     result.Error = sourceName.str() + ": " + input.error().message();

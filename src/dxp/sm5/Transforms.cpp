@@ -135,6 +135,78 @@ static bool OperandsEqual(const Operand &lhs, const Operand &rhs) {
   return true;
 }
 
+static bool OperandIndexEntriesEqual(const Operand &lhs, const Operand &rhs) {
+  if (lhs.Indices != rhs.Indices ||
+      lhs.IndexEntries.size() != rhs.IndexEntries.size()) {
+    return false;
+  }
+
+  for (size_t index = 0; index < lhs.IndexEntries.size(); ++index) {
+    const Operand::Index &lhsIndex = lhs.IndexEntries[index];
+    const Operand::Index &rhsIndex = rhs.IndexEntries[index];
+    if (lhsIndex.Representation != rhsIndex.Representation ||
+        lhsIndex.HasImmediateLo != rhsIndex.HasImmediateLo ||
+        lhsIndex.HasImmediateHi != rhsIndex.HasImmediateHi ||
+        lhsIndex.ImmediateLo != rhsIndex.ImmediateLo ||
+        lhsIndex.ImmediateHi != rhsIndex.ImmediateHi) {
+      return false;
+    }
+
+    if (static_cast<bool>(lhsIndex.RelativeOperand) !=
+        static_cast<bool>(rhsIndex.RelativeOperand)) {
+      return false;
+    }
+
+    if (lhsIndex.RelativeOperand && rhsIndex.RelativeOperand) {
+      if (!OperandsEqual(*lhsIndex.RelativeOperand, *rhsIndex.RelativeOperand)) {
+        return false;
+      }
+    }
+  }
+
+  if (static_cast<bool>(lhs.RelativeOperand) !=
+      static_cast<bool>(rhs.RelativeOperand)) {
+    return false;
+  }
+
+  if (lhs.RelativeOperand && rhs.RelativeOperand) {
+    return OperandsEqual(*lhs.RelativeOperand, *rhs.RelativeOperand);
+  }
+
+  return true;
+}
+
+static bool OperandsEqualProjected(const Operand &lhs, const Operand &rhs,
+                                   const OperandMatch &pattern) {
+  if (!pattern.HasMatchCaptureProjection()) {
+    return OperandsEqual(lhs, rhs);
+  }
+
+  if (pattern.MatchCaptureType && lhs.Type != rhs.Type) {
+    return false;
+  }
+
+  if (pattern.MatchCaptureComponents &&
+      (lhs.NumComponents != rhs.NumComponents ||
+       lhs.ComponentMode != rhs.ComponentMode)) {
+    return false;
+  }
+
+  if (pattern.MatchCaptureModifier && lhs.Modifier != rhs.Modifier) {
+    return false;
+  }
+
+  if (pattern.MatchCaptureIndices && !OperandIndexEntriesEqual(lhs, rhs)) {
+    return false;
+  }
+
+  if (pattern.MatchCaptureImmediates && lhs.ImmediateValues != rhs.ImmediateValues) {
+    return false;
+  }
+
+  return true;
+}
+
 bool MatchesOperand(const Operand &operand, const OperandMatch &pattern) {
   if (pattern.Any)
     return true;
@@ -303,7 +375,8 @@ static bool MatchInstruction(
         }
       }
 
-      if (captured == nullptr || !OperandsEqual(operand, *captured)) {
+      if (captured == nullptr || !OperandsEqualProjected(operand, *captured,
+                                                        operandPattern)) {
         return false;
       }
     }

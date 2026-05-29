@@ -1,0 +1,13 @@
+version: 1
+steps:
+  - kind: apply_rules
+    name: invalid_replay_object_capture_empty
+    rules:
+      - match:
+          opcode: mul
+          operands:
+            - capture: dst
+        emit:
+          - opcode: mov
+            operands:
+              - capture: { from: "" }

@@ -577,6 +577,114 @@ enum class RecipeOperandIndexRepresentation {
 
 struct RecipeOperandPattern;
 
+/// @brief Selects which fields of a captured operand participate in
+/// projected match/replay operations.
+///
+/// When all fields are false, operations fall back to full operand semantics.
+/// These helpers mirror the YAML `capture_fields` and `match_capture_fields`
+/// replay-object forms.
+struct RecipeOperandCaptureFields {
+  bool Type = false;
+  bool Components = false;
+  bool Modifier = false;
+  bool Indices = false;
+  bool Immediates = false;
+
+  RecipeOperandCaptureFields &WithType(bool enabled = true) & {
+    Type = enabled;
+    return *this;
+  }
+
+  RecipeOperandCaptureFields &&WithType(bool enabled = true) && {
+    Type = enabled;
+    return std::move(*this);
+  }
+
+  RecipeOperandCaptureFields &WithComponents(bool enabled = true) & {
+    Components = enabled;
+    return *this;
+  }
+
+  RecipeOperandCaptureFields &&WithComponents(bool enabled = true) && {
+    Components = enabled;
+    return std::move(*this);
+  }
+
+  RecipeOperandCaptureFields &WithModifier(bool enabled = true) & {
+    Modifier = enabled;
+    return *this;
+  }
+
+  RecipeOperandCaptureFields &&WithModifier(bool enabled = true) && {
+    Modifier = enabled;
+    return std::move(*this);
+  }
+
+  RecipeOperandCaptureFields &WithIndices(bool enabled = true) & {
+    Indices = enabled;
+    return *this;
+  }
+
+  RecipeOperandCaptureFields &&WithIndices(bool enabled = true) && {
+    Indices = enabled;
+    return std::move(*this);
+  }
+
+  RecipeOperandCaptureFields &WithImmediates(bool enabled = true) & {
+    Immediates = enabled;
+    return *this;
+  }
+
+  RecipeOperandCaptureFields &&WithImmediates(bool enabled = true) && {
+    Immediates = enabled;
+    return std::move(*this);
+  }
+
+  bool AnySelected() const {
+    return Type || Components || Modifier || Indices || Immediates;
+  }
+};
+
+class RecipeOperandCaptureFieldsBuilder {
+public:
+  RecipeOperandCaptureFieldsBuilder() = default;
+  explicit RecipeOperandCaptureFieldsBuilder(
+      RecipeOperandCaptureFields fields)
+      : fields_(std::move(fields)) {}
+
+  RecipeOperandCaptureFieldsBuilder &WithType(bool enabled = true) {
+    fields_.Type = enabled;
+    return *this;
+  }
+
+  RecipeOperandCaptureFieldsBuilder &WithComponents(bool enabled = true) {
+    fields_.Components = enabled;
+    return *this;
+  }
+
+  RecipeOperandCaptureFieldsBuilder &WithModifier(bool enabled = true) {
+    fields_.Modifier = enabled;
+    return *this;
+  }
+
+  RecipeOperandCaptureFieldsBuilder &WithIndices(bool enabled = true) {
+    fields_.Indices = enabled;
+    return *this;
+  }
+
+  RecipeOperandCaptureFieldsBuilder &WithImmediates(bool enabled = true) {
+    fields_.Immediates = enabled;
+    return *this;
+  }
+
+  RecipeOperandCaptureFields Build() const { return fields_; }
+
+  operator RecipeOperandCaptureFields() const { return Build(); }
+
+private:
+  RecipeOperandCaptureFields fields_;
+};
+
 /// @brief Describes one ordered index slot in a recipe operand pattern.
 ///
 /// Both `match` operands and `emit` operand templates carry an ordered list of
@@ -723,8 +831,12 @@ struct RecipeOperandPattern {
   std::string Select;
   int32_t NumComponents = -1;
   std::string Modifier;
+  /// YAML replay-object shorthand: `capture: { from: ... }`.
   std::string Capture;
+  /// YAML replay-object shorthand: `match_capture: { from: ... }`.
   std::string MatchCapture;
+  RecipeOperandCaptureFields CaptureFields;
+  RecipeOperandCaptureFields MatchCaptureFields;
 
   RecipeOperandPattern &WithAny(bool any = true) & {
     Any = any;
@@ -848,6 +960,93 @@ struct RecipeOperandPattern {
     return std::move(*this);
   }
 
+  RecipeOperandPattern &WithCaptureFields(
+      RecipeOperandCaptureFields captureFields) & {
+    CaptureFields = captureFields;
+    return *this;
+  }
+
+  RecipeOperandPattern &&WithCaptureFields(
+      RecipeOperandCaptureFields captureFields) && {
+    CaptureFields = captureFields;
+    return std::move(*this);
+  }
+
+  RecipeOperandPattern &ReplayTypeFrom(std::string capture) & {
+    Capture = std::move(capture);
+    CaptureFields.Type = true;
+    return *this;
+  }
+
+  RecipeOperandPattern &&ReplayTypeFrom(std::string capture) && {
+    Capture = std::move(capture);
+    CaptureFields.Type = true;
+    return std::move(*this);
+  }
+
+  RecipeOperandPattern &ReplayComponentsFrom(std::string capture) & {
+    Capture = std::move(capture);
+    CaptureFields.Components = true;
+    return *this;
+  }
+
+  RecipeOperandPattern &&ReplayComponentsFrom(std::string capture) && {
+    Capture = std::move(capture);
+    CaptureFields.Components = true;
+    return std::move(*this);
+  }
+
+  RecipeOperandPattern &ReplayModifierFrom(std::string capture) & {
+    Capture = std::move(capture);
+    CaptureFields.Modifier = true;
+    return *this;
+  }
+
+  RecipeOperandPattern &&ReplayModifierFrom(std::string capture) && {
+    Capture = std::move(capture);
+    CaptureFields.Modifier = true;
+    return std::move(*this);
+  }
+
+  RecipeOperandPattern &ReplayIndicesFrom(std::string capture) & {
+    Capture = std::move(capture);
+    CaptureFields.Indices = true;
+    return *this;
+  }
+
+  RecipeOperandPattern &&ReplayIndicesFrom(std::string capture) && {
+    Capture = std::move(capture);
+    CaptureFields.Indices = true;
+    return std::move(*this);
+  }
+
+  RecipeOperandPattern &ReplayImmediatesFrom(std::string capture) & {
+    Capture = std::move(capture);
+    CaptureFields.Immediates = true;
+    return *this;
+  }
+
+  RecipeOperandPattern &&ReplayImmediatesFrom(std::string capture) && {
+    Capture = std::move(capture);
+    CaptureFields.Immediates = true;
+    return std::move(*this);
+  }
+
+  RecipeOperandPattern &WithMatchCaptureFields(
+      RecipeOperandCaptureFields matchCaptureFields) & {
+    MatchCaptureFields = matchCaptureFields;
+    return *this;
+  }
+
+  /// Compare only selected fields against the named capture. This is the
+  /// fluent API equivalent of the YAML `match_capture: { from: ... }` form.
+
+  RecipeOperandPattern &&WithMatchCaptureFields(
+      RecipeOperandCaptureFields matchCaptureFields) && {
+    MatchCaptureFields = matchCaptureFields;
+    return std::move(*this);
+  }
+
 };
 
 inline RecipeOperandIndexPatternBuilder &
@@ -917,6 +1116,103 @@ public:
 
   RecipeOperandPatternBuilder &WithMatchCapture(std::string matchCapture) {
     pattern_.MatchCapture = std::move(matchCapture);
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &WithCaptureFields(
+      RecipeOperandCaptureFields captureFields) {
+    pattern_.CaptureFields = captureFields;
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &WithCaptureFieldType(bool enabled = true) {
+    pattern_.CaptureFields.Type = enabled;
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &WithCaptureFieldComponents(bool enabled = true) {
+    pattern_.CaptureFields.Components = enabled;
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &WithCaptureFieldModifier(bool enabled = true) {
+    pattern_.CaptureFields.Modifier = enabled;
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &WithCaptureFieldIndices(bool enabled = true) {
+    pattern_.CaptureFields.Indices = enabled;
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &WithCaptureFieldImmediates(bool enabled = true) {
+    pattern_.CaptureFields.Immediates = enabled;
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &ReplayTypeFrom(std::string capture) {
+    pattern_.Capture = std::move(capture);
+    pattern_.CaptureFields.Type = true;
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &ReplayComponentsFrom(std::string capture) {
+    pattern_.Capture = std::move(capture);
+    pattern_.CaptureFields.Components = true;
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &ReplayModifierFrom(std::string capture) {
+    pattern_.Capture = std::move(capture);
+    pattern_.CaptureFields.Modifier = true;
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &ReplayIndicesFrom(std::string capture) {
+    pattern_.Capture = std::move(capture);
+    pattern_.CaptureFields.Indices = true;
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &ReplayImmediatesFrom(std::string capture) {
+    pattern_.Capture = std::move(capture);
+    pattern_.CaptureFields.Immediates = true;
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &WithMatchCaptureFields(
+      RecipeOperandCaptureFields matchCaptureFields) {
+    pattern_.MatchCaptureFields = matchCaptureFields;
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &
+  WithMatchCaptureFieldType(bool enabled = true) {
+    pattern_.MatchCaptureFields.Type = enabled;
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &
+  WithMatchCaptureFieldComponents(bool enabled = true) {
+    pattern_.MatchCaptureFields.Components = enabled;
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &
+  WithMatchCaptureFieldModifier(bool enabled = true) {
+    pattern_.MatchCaptureFields.Modifier = enabled;
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &
+  WithMatchCaptureFieldIndices(bool enabled = true) {
+    pattern_.MatchCaptureFields.Indices = enabled;
+    return *this;
+  }
+
+  RecipeOperandPatternBuilder &
+  WithMatchCaptureFieldImmediates(bool enabled = true) {
+    pattern_.MatchCaptureFields.Immediates = enabled;
     return *this;
   }
 
