@@ -218,6 +218,58 @@ int main() {
 
   {
     dxp::sm5::RecipeParseResult parseResult;
+    if (ParseFixture("test/recipes/"
+                     "sm5_parse_validation_invalid_index_immediate_string.yml",
+                     parseResult)) {
+      std::cerr << "Expected string index immediate value to fail parsing.\n";
+      return 1;
+    }
+
+    if (!Contains(parseResult.Error,
+                  "index immediate_lo only accepts integer literals")) {
+      std::cerr << "Expected integer-only index immediate validation error.\n";
+      return 1;
+    }
+  }
+
+  {
+    dxp::sm5::RecipeParseResult parseResult;
+    if (ParseFixture(
+            "test/recipes/"
+            "sm5_parse_validation_invalid_operand_match_capture_kind.yml",
+            parseResult)) {
+      std::cerr << "Expected operand match_capture kind mismatch to fail parsing.\n";
+      return 1;
+    }
+
+    if (!Contains(parseResult.Error,
+                  "operand match_capture 'op_tok' expects operand capture but "
+                  "found instruction capture")) {
+      std::cerr << "Expected operand match_capture kind validation error.\n";
+      return 1;
+    }
+  }
+
+  {
+    dxp::sm5::RecipeParseResult parseResult;
+    if (ParseFixture(
+            "test/recipes/"
+            "sm5_parse_validation_invalid_index_match_capture_kind.yml",
+            parseResult)) {
+      std::cerr << "Expected index match_capture kind mismatch to fail parsing.\n";
+      return 1;
+    }
+
+    if (!Contains(parseResult.Error,
+                  "index match_capture 'dst' expects index capture but found "
+                  "operand capture")) {
+      std::cerr << "Expected index match_capture kind validation error.\n";
+      return 1;
+    }
+  }
+
+  {
+    dxp::sm5::RecipeParseResult parseResult;
         if (ParseFixture(
           "test/recipes/sm5_parse_validation_invalid_legacy_selector.yml",
             parseResult)) {

@@ -9,8 +9,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
-#include <cstring>
 #include <exception>
+#include <unordered_set>
 
 namespace dxp::sm5 {
 
@@ -81,12 +81,6 @@ static bool ResolveOpcodeAndTestBoolean(const std::string &opcodeName,
   }
 
   return true;
-}
-
-static uint32_t FloatAsUint(float value) {
-  uint32_t bits = 0;
-  std::memcpy(&bits, &value, sizeof(bits));
-  return bits;
 }
 
 static dxp::PatchSideEffect MakeAddedBindingSideEffect(
@@ -167,6 +161,180 @@ static bool HasDeclarativeMatchPattern(const RecipeMatchPattern &match) {
 static bool HasDeclarativeRewritePlan(const RecipeRule &rule) {
   return !rule.Emit.empty() || !rule.Replace.empty() ||
          rule.RewriteMode != RecipeRuleRewriteMode::Replace;
+}
+
+struct CaptureNameTables {
+  std::unordered_set<std::string> Instructions;
+  std::unordered_set<std::string> Operands;
+  std::unordered_set<std::string> OperandIndices;
+};
+
+static void CollectOperandCaptures(const RecipeOperandPattern &operand,
+                                   CaptureNameTables &captures) {
+  if (!operand.Capture.empty()) {
+    captures.Operands.insert(operand.Capture);
+  }
+
+  for (const RecipeOperandIndexPattern &indexPattern : operand.IndexPatterns) {
+    if (!indexPattern.Capture.empty()) {
+      captures.OperandIndices.insert(indexPattern.Capture);
+    }
+    if (indexPattern.RelativeOperand) {
+      CollectOperandCaptures(*indexPattern.RelativeOperand, captures);
+    }
+  }
+}
+
+static void CollectInstructionCaptures(const RecipeInstructionPattern &instruction,
+                                       CaptureNameTables &captures) {
+  if (!instruction.Capture.empty()) {
+    captures.Instructions.insert(instruction.Capture);
+  }
+
+  for (const RecipeOperandPattern &operand : instruction.Operands) {
+    CollectOperandCaptures(operand, captures);
+  }
+}
+
+static void CollectMatchCaptures(const RecipeMatchPattern &match,
+                                 CaptureNameTables &captures) {
+  if (!match.Capture.empty()) {
+    captures.Instructions.insert(match.Capture);
+  }
+
+  for (const RecipeOperandPattern &operand : match.Operands) {
+    CollectOperandCaptures(operand, captures);
+  }
+
+  for (const RecipeInstructionPattern &instruction : match.Sequence) {
+    CollectInstructionCaptures(instruction, captures);
+  }
+}
+
+static bool DescribeCaptureKind(const CaptureNameTables &captures,
+                                const std::string &capture,
+                                std::string &kindDescription) {
+  if (captures.Operands.find(capture) != captures.Operands.end()) {
+    kindDescription = "operand";
+    return true;
+  }
+  if (captures.OperandIndices.find(capture) != captures.OperandIndices.end()) {
+    kindDescription = "index";
+    return true;
+  }
+  if (captures.Instructions.find(capture) != captures.Instructions.end()) {
+    kindDescription = "instruction";
+    return true;
+  }
+  kindDescription.clear();
+  return false;
+}
+
+static bool ValidateCaptureReference(const CaptureNameTables &captures,
+                                     const std::string &capture,
+                                     const char *expectedKind,
+                                     const std::unordered_set<std::string> &expectedSet,
+                                     const char *referenceSite,
+                                     std::string &error) {
+  if (capture.empty()) {
+    return true;
+  }
+
+  if (expectedSet.find(capture) != expectedSet.end()) {
+    return true;
+  }
+
+  std::string actualKind;
+  if (DescribeCaptureKind(captures, capture, actualKind)) {
+    error = std::string("SM5 ") + referenceSite + " '" + capture +
+            "' expects " + expectedKind + " capture but found " +
+            actualKind + " capture";
+    return false;
+  }
+
+  error = std::string("SM5 ") + referenceSite + " '" + capture +
+          "' references an unknown capture";
+  return false;
+}
+
+static bool ValidateOperandCaptureReferences(const RecipeOperandPattern &operand,
+                                             const CaptureNameTables &captures,
+                                             bool emitOperand,
+                                             std::string &error) {
+  if (!operand.MatchCapture.empty()) {
+    if (!ValidateCaptureReference(captures, operand.MatchCapture, "operand",
+                                  captures.Operands, "operand match_capture",
+                                  error)) {
+      return false;
+    }
+  }
+
+  if (emitOperand && !operand.Capture.empty()) {
+    if (!ValidateCaptureReference(captures, operand.Capture, "operand",
+                                  captures.Operands, "emit operand capture",
+                                  error)) {
+      return false;
+    }
+  }
+
+  for (const RecipeOperandIndexPattern &indexPattern : operand.IndexPatterns) {
+    if (!indexPattern.MatchCapture.empty()) {
+      const char *referenceSite =
+          emitOperand ? "emit index match_capture" : "index match_capture";
+      if (!ValidateCaptureReference(captures, indexPattern.MatchCapture,
+                                    "index", captures.OperandIndices,
+                                    referenceSite, error)) {
+        return false;
+      }
+    }
+
+    if (indexPattern.RelativeOperand) {
+      if (!ValidateOperandCaptureReferences(*indexPattern.RelativeOperand,
+                                            captures, emitOperand, error)) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+static bool ValidateRuleCaptureReferences(const RecipeRule &rule,
+                                          std::string &error) {
+  CaptureNameTables captures;
+  CollectMatchCaptures(rule.Match, captures);
+
+  if (!rule.Replace.empty()) {
+    if (!ValidateCaptureReference(captures, rule.Replace, "instruction",
+                                  captures.Instructions, "replace capture",
+                                  error)) {
+      return false;
+    }
+  }
+
+  for (const RecipeOperandPattern &operand : rule.Match.Operands) {
+    if (!ValidateOperandCaptureReferences(operand, captures, false, error)) {
+      return false;
+    }
+  }
+
+  for (const RecipeInstructionPattern &instruction : rule.Match.Sequence) {
+    for (const RecipeOperandPattern &operand : instruction.Operands) {
+      if (!ValidateOperandCaptureReferences(operand, captures, false, error)) {
+        return false;
+      }
+    }
+  }
+
+  for (const RecipeInstructionTemplate &instruction : rule.Emit) {
+    for (const RecipeOperandPattern &operand : instruction.Operands) {
+      if (!ValidateOperandCaptureReferences(operand, captures, true, error)) {
+        return false;
+      }
+    }
+  }
+
+  return true;
 }
 
 static MatchResult ToRuntimeMatchResult(const RecipeRuleMatch &match) {
@@ -488,8 +656,7 @@ static bool ParseOperandComponentMode(const RecipeOperandPattern &operandModel,
     numComponents = D3D10_SB_OPERAND_0_COMPONENT;
   } else if (operandType == D3D10_SB_OPERAND_TYPE_IMMEDIATE32 ||
              operandType == D3D10_SB_OPERAND_TYPE_IMMEDIATE64) {
-    numComponents = operandModel.ImmediateU32.size() > 1 ||
-                            operandModel.ImmediateF32.size() > 1
+    numComponents = operandModel.IndexPatterns.size() > 1
                         ? D3D10_SB_OPERAND_4_COMPONENT
                         : D3D10_SB_OPERAND_1_COMPONENT;
   } else {
@@ -579,25 +746,13 @@ static bool CompileEmitOperand(const RecipeOperandPattern &operandModel,
     return false;
   }
 
-  if (!operandModel.Capture.empty() && !operandModel.Scratch.empty()) {
-    error = "SM5 emit operand cannot use both capture and scratch";
-    return false;
-  }
-
-  if (!operandModel.Capture.empty() && !operandModel.StateTemp.empty()) {
-    error = "SM5 emit operand cannot use both capture and state_temp";
-    return false;
-  }
-
   if (!operandModel.Capture.empty()) {
     operand.CaptureName = operandModel.Capture;
     return true;
   }
 
-  if (operandModel.Type.empty() && operandModel.Scratch.empty() &&
-      operandModel.StateTemp.empty()) {
-    error = "literal SM5 emit operands require type, capture, scratch, or "
-            "state_temp";
+  if (operandModel.Type.empty()) {
+    error = "literal SM5 emit operands require type or capture";
     return false;
   }
 
@@ -606,47 +761,8 @@ static bool CompileEmitOperand(const RecipeOperandPattern &operandModel,
     return false;
   }
 
-  if (!operandModel.BindHandle.empty() && !operandModel.Scratch.empty()) {
-    error = "SM5 emit operand cannot use both bind_handle and scratch";
+  if (!ParseOperandTypeToken(operandModel.Type, operand.Type, error)) {
     return false;
-  }
-
-  if (!operandModel.StateTemp.empty() && !operandModel.Scratch.empty()) {
-    error = "SM5 emit operand cannot use both state_temp and scratch";
-    return false;
-  }
-
-  if (!operandModel.StateTemp.empty() && !operandModel.BindHandle.empty()) {
-    error = "SM5 emit operand cannot use both state_temp and bind_handle";
-    return false;
-  }
-
-  if (!operandModel.Scratch.empty() || !operandModel.StateTemp.empty()) {
-    operand.Type = D3D10_SB_OPERAND_TYPE_TEMP;
-  } else if (!ParseOperandTypeToken(operandModel.Type, operand.Type, error)) {
-    return false;
-  }
-
-  if (!operandModel.Scratch.empty() && !operandModel.Type.empty()) {
-    OperandType parsedType = D3D10_SB_OPERAND_TYPE_TEMP;
-    if (!ParseOperandTypeToken(operandModel.Type, parsedType, error)) {
-      return false;
-    }
-    if (parsedType != D3D10_SB_OPERAND_TYPE_TEMP) {
-      error = "SM5 scratch operands must use temp type";
-      return false;
-    }
-  }
-
-  if (!operandModel.StateTemp.empty() && !operandModel.Type.empty()) {
-    OperandType parsedType = D3D10_SB_OPERAND_TYPE_TEMP;
-    if (!ParseOperandTypeToken(operandModel.Type, parsedType, error)) {
-      return false;
-    }
-    if (parsedType != D3D10_SB_OPERAND_TYPE_TEMP) {
-      error = "SM5 state_temp operands must use temp type";
-      return false;
-    }
   }
 
   if (!ParseOperandComponentMode(operandModel, operand.Type,
@@ -708,24 +824,26 @@ static bool CompileEmitOperand(const RecipeOperandPattern &operandModel,
             std::make_shared<Operand>(std::move(relativeOperand));
       }
 
-      if (indexEntry.HasImmediateLo) {
-        operand.Indices.push_back(indexEntry.ImmediateLo);
-      }
-      if (indexEntry.HasImmediateHi) {
-        operand.Indices.push_back(indexEntry.ImmediateHi);
-      }
-
       operand.IndexEntries.push_back(std::move(indexEntry));
     }
   }
 
-  operand.BindHandle = operandModel.BindHandle;
-  operand.StateTempName = operandModel.StateTemp;
-  operand.ScratchName = operandModel.Scratch;
-  operand.ImmediateValues = operandModel.ImmediateU32;
-  for (float immediateValue : operandModel.ImmediateF32) {
-    operand.ImmediateValues.push_back(FloatAsUint(immediateValue));
+  for (const Operand::Index &indexEntry : operand.IndexEntries) {
+    if (indexEntry.HasImmediateLo) {
+      operand.Indices.push_back(indexEntry.ImmediateLo);
+    }
+    if (indexEntry.HasImmediateHi) {
+      operand.Indices.push_back(indexEntry.ImmediateHi);
+    }
   }
+
+  if (operand.Type == D3D10_SB_OPERAND_TYPE_IMMEDIATE32 ||
+      operand.Type == D3D10_SB_OPERAND_TYPE_IMMEDIATE64) {
+    operand.ImmediateValues = operand.Indices;
+    operand.Indices.clear();
+  }
+
+  operand.BindHandle = operandModel.BindHandle;
 
   if (!operandModel.Modifier.empty() &&
       !ParseOperandModifierToken(operandModel.Modifier, operand.Modifier,
@@ -789,6 +907,7 @@ static bool CompileMatchOperand(const RecipeOperandPattern &operandModel,
       matchIndexPattern.ImmediateHi = indexPattern.ImmediateHi;
       matchIndexPattern.CaptureName = indexPattern.Capture;
       matchIndexPattern.MatchCapture = indexPattern.MatchCapture;
+
       operandMatch.MatchIndexPatterns.push_back(std::move(matchIndexPattern));
     }
   }
@@ -818,11 +937,18 @@ static bool CompileMatchOperand(const RecipeOperandPattern &operandModel,
     operandMatch.HasModifierMatch = true;
   }
 
-  if (!operandModel.ImmediateU32.empty() ||
-      !operandModel.ImmediateF32.empty()) {
-    operandMatch.MatchImmediates = operandModel.ImmediateU32;
-    for (float immediateValue : operandModel.ImmediateF32) {
-      operandMatch.MatchImmediates.push_back(FloatAsUint(immediateValue));
+  if (operandMatch.HasTypeMatch &&
+      (operandMatch.MatchType == D3D10_SB_OPERAND_TYPE_IMMEDIATE32 ||
+       operandMatch.MatchType == D3D10_SB_OPERAND_TYPE_IMMEDIATE64) &&
+      !operandMatch.MatchIndexPatterns.empty()) {
+    for (const OperandIndexMatchPattern &indexPattern :
+         operandMatch.MatchIndexPatterns) {
+      if (indexPattern.HasImmediateLo) {
+        operandMatch.MatchImmediates.push_back(indexPattern.ImmediateLo);
+      }
+      if (indexPattern.HasImmediateHi) {
+        operandMatch.MatchImmediates.push_back(indexPattern.ImmediateHi);
+      }
     }
     operandMatch.HasImmediateMatch = true;
   }
@@ -986,6 +1112,10 @@ static bool CompileRule(const RecipeRule &ruleModel,
       return false;
     }
     rule.Emit.push_back(std::move(instruction));
+  }
+
+  if (!ValidateRuleCaptureReferences(ruleModel, error)) {
+    return false;
   }
 
   rule.Predicate = ruleModel.Predicate;
@@ -1216,12 +1346,6 @@ static Instruction FinalizeInstruction(Instruction instruction) {
   return instruction;
 }
 
-struct ScratchAllocationState {
-  uint32_t NextTempIndex = 0;
-  uint32_t RequiredTempCount = 0;
-  std::unordered_map<std::string, uint32_t> ScratchTemps;
-};
-
 static bool IsDeclarationInstruction(const Instruction &instruction) {
   const char *opcodeName = GetOpcodeName(instruction.Opcode);
   return opcodeName != nullptr && std::strncmp(opcodeName, "dcl_", 4) == 0;
@@ -1437,7 +1561,6 @@ static bool ResolveRangeReplacement(const RuntimeRule &rule,
 
 static bool InstantiateOperand(const Operand &operandTemplate,
                                const MatchResult &match,
-                               ScratchAllocationState &scratchState,
                                RecipeContext &context, Operand &operand,
                                std::string &error) {
   if (!operandTemplate.CaptureName.empty()) {
@@ -1452,19 +1575,6 @@ static bool InstantiateOperand(const Operand &operandTemplate,
   }
 
   operand = operandTemplate;
-  if (!operand.ScratchName.empty()) {
-    auto scratchIt = scratchState.ScratchTemps.find(operand.ScratchName);
-    if (scratchIt == scratchState.ScratchTemps.end()) {
-      const uint32_t allocatedIndex = scratchState.NextTempIndex++;
-      scratchState.RequiredTempCount =
-          std::max(scratchState.RequiredTempCount, allocatedIndex + 1);
-      scratchIt =
-          scratchState.ScratchTemps.emplace(operand.ScratchName, allocatedIndex)
-              .first;
-    }
-    operand.Indices = {scratchIt->second};
-  }
-
   if (!operand.BindHandle.empty()) {
     const uint32_t *resolvedBindPoint = nullptr;
     if (operand.Type == D3D10_SB_OPERAND_TYPE_TEMP) {
@@ -1541,26 +1651,6 @@ static bool InstantiateOperand(const Operand &operandTemplate,
     }
   }
 
-  if (!operand.StateTempName.empty()) {
-    const uint32_t *resolvedTempIndex =
-        context.FindState<uint32_t>(operand.StateTempName);
-    if (resolvedTempIndex == nullptr) {
-      error = "missing SM5 state_temp value '" + operand.StateTempName + "'";
-      return false;
-    }
-
-    if (operand.Type != D3D10_SB_OPERAND_TYPE_TEMP) {
-      error = "SM5 state_temp operands must use temp type";
-      return false;
-    }
-
-    if (operand.Indices.empty()) {
-      operand.Indices.push_back(*resolvedTempIndex);
-    } else {
-      operand.Indices[0] = *resolvedTempIndex;
-    }
-  }
-
   if (!operand.IndexEntries.empty()) {
     size_t immediateCursor = 0;
     for (Operand::Index &indexEntry : operand.IndexEntries) {
@@ -1585,9 +1675,8 @@ static bool InstantiateOperand(const Operand &operandTemplate,
 
       if (indexEntry.RelativeOperand) {
         Operand instantiatedRelative;
-        if (!InstantiateOperand(*indexEntry.RelativeOperand, match,
-                                scratchState, context, instantiatedRelative,
-                                error)) {
+        if (!InstantiateOperand(*indexEntry.RelativeOperand, match, context,
+                                instantiatedRelative, error)) {
           return false;
         }
         indexEntry.RelativeOperand =
@@ -1608,8 +1697,8 @@ static bool InstantiateOperand(const Operand &operandTemplate,
 
   if (operand.RelativeOperand) {
     Operand instantiatedRelative;
-    if (!InstantiateOperand(*operand.RelativeOperand, match, scratchState,
-                            context, instantiatedRelative, error)) {
+    if (!InstantiateOperand(*operand.RelativeOperand, match, context,
+                            instantiatedRelative, error)) {
       return false;
     }
     operand.RelativeOperand =
@@ -1620,7 +1709,6 @@ static bool InstantiateOperand(const Operand &operandTemplate,
 
 static bool InstantiateInstruction(const Instruction &instructionTemplate,
                                    const MatchResult &match,
-                                   ScratchAllocationState &scratchState,
                                    RecipeContext &context,
                                    Instruction &instruction,
                                    std::string &error) {
@@ -1631,8 +1719,7 @@ static bool InstantiateInstruction(const Instruction &instructionTemplate,
 
   for (const Operand &operandTemplate : instructionTemplate.Operands) {
     Operand operand;
-    if (!InstantiateOperand(operandTemplate, match, scratchState, context,
-                            operand, error)) {
+    if (!InstantiateOperand(operandTemplate, match, context, operand, error)) {
       return false;
     }
     instruction.Operands.push_back(std::move(operand));
@@ -1649,20 +1736,18 @@ static bool BuildRewriteInstructions(const std::vector<Instruction> &templates,
                                      std::vector<Instruction> &instructions,
                                      uint32_t &requiredTempCount,
                                      std::string &error) {
+  (void)baseTempCount;
   instructions.clear();
   instructions.reserve(templates.size());
-  ScratchAllocationState scratchState;
-  scratchState.NextTempIndex = baseTempCount;
-  scratchState.RequiredTempCount = baseTempCount;
   for (const Instruction &instructionTemplate : templates) {
     Instruction instruction;
-    if (!InstantiateInstruction(instructionTemplate, match, scratchState,
-                                context, instruction, error)) {
+    if (!InstantiateInstruction(instructionTemplate, match, context,
+                                instruction, error)) {
       return false;
     }
     instructions.push_back(std::move(instruction));
   }
-  requiredTempCount = scratchState.RequiredTempCount;
+  requiredTempCount = baseTempCount;
   return true;
 }
 

@@ -62,5 +62,10 @@ steps:
             operands:
               - { type: output, bind_handle: screen_uv_out, components: { kind: mask, value: xy } }
               - { type: temp, bind_handle: screen_uv_temp, components: { kind: swizzle, value: xyxx } }
-              - { type: immediate32, immediates_f32: [0.5, -0.5, 0.0, 0.0] }
+              - type: immediate32
+                indices:
+                  - { immediate_lo: 0x3F000000 }
+                  - { immediate_lo: 0xBF000000 }
+                  - { immediate_lo: 0x00000000 }
+                  - { immediate_lo: 0x00000000 }
           - opcode: ret

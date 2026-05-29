@@ -116,7 +116,6 @@ struct Operand {
   std::vector<Index> IndexEntries;
   std::vector<uint32_t> Indices;
   std::string BindHandle;
-  std::string StateTempName;
   OperandModifier Modifier = kOperandModifierNone;
   std::vector<uint32_t> ImmediateValues;
   std::shared_ptr<Operand> RelativeOperand;
@@ -124,7 +123,6 @@ struct Operand {
   uint32_t SourceOffset = 0;
   uint32_t SourceLength = 0;
   std::string CaptureName;
-  std::string ScratchName;
 };
 
 /// @brief Represents one decoded instruction from the instruction stream.

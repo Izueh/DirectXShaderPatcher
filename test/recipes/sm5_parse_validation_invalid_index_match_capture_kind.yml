@@ -1,0 +1,18 @@
+version: 1
+steps:
+  - kind: apply_rules
+    rules:
+      - match:
+          opcode: mov
+          operands:
+            - type: temp
+              capture: dst
+              indices:
+                - representation: immediate32
+                  match_capture: dst
+            - capture: src
+        emit:
+          - opcode: mov
+            operands:
+              - capture: dst
+              - capture: src

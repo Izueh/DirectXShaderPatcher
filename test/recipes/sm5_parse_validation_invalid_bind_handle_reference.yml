@@ -25,4 +25,5 @@ steps:
                 indices:
                   - immediate_lo: 0
               - type: immediate32
-                immediates_f32: [0.0]
+                indices:
+                  - immediate_lo: 0x00000000

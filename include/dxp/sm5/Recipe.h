@@ -596,7 +596,7 @@ struct RecipeOperandPattern;
 /// **Emit semantics** (used in `RecipeInstructionTemplate::Operands[].IndexPatterns`):
 ///  - `ImmediateLo/Hi`        — constant immediate value to write.
 ///  - `MatchCapture`          — resolves the immediate from a captured index
-///                             value, overriding `ImmediateLo`.
+///                             value.
 ///  - `Any` and `Capture`     — invalid on emit entries; rejected at compile time.
 struct RecipeOperandIndexPattern {
   /// When `true`, this slot is a wildcard (match only). All value fields are
@@ -701,11 +701,11 @@ private:
 /// valid depends on context:
 ///
 /// **Match fields**: `Any`, `Type`, `IndexPatterns`, `Capture`, `MatchCapture`,
-/// `Mask/Swizzle/Select`, `NumComponents`, `Modifier`, `ImmediateU32/F32`.
+/// `Mask/Swizzle/Select`, `NumComponents`, `Modifier`.
 ///
-/// **Emit fields**: `Capture` (copy a captured operand wholesale), `Scratch`,
-/// `BindHandle`, `StateTemp`, `Type`, `IndexPatterns`, `Mask/Swizzle/Select`,
-/// `NumComponents`, `Modifier`, `ImmediateU32/F32`.
+/// **Emit fields**: `Capture` (copy a captured operand wholesale),
+/// `BindHandle`, `Type`, `IndexPatterns`, `Mask/Swizzle/Select`,
+/// `NumComponents`, `Modifier`.
 ///
 /// `IndexPatterns` carries an ordered list of `RecipeOperandIndexPattern`
 /// objects, one per expected index slot.
@@ -718,17 +718,13 @@ struct RecipeOperandPattern {
   /// Ordered per-slot index patterns.
   std::vector<RecipeOperandIndexPattern> IndexPatterns;
   std::string BindHandle;
-  std::string StateTemp;
   std::string Mask;
   std::string Swizzle;
   std::string Select;
   int32_t NumComponents = -1;
   std::string Modifier;
-  std::vector<uint32_t> ImmediateU32;
-  std::vector<float> ImmediateF32;
   std::string Capture;
   std::string MatchCapture;
-  std::string Scratch;
 
   RecipeOperandPattern &WithAny(bool any = true) & {
     Any = any;
@@ -782,16 +778,6 @@ struct RecipeOperandPattern {
     return std::move(*this);
   }
 
-  RecipeOperandPattern &WithStateTemp(std::string stateTemp) & {
-    StateTemp = std::move(stateTemp);
-    return *this;
-  }
-
-  RecipeOperandPattern &&WithStateTemp(std::string stateTemp) && {
-    StateTemp = std::move(stateTemp);
-    return std::move(*this);
-  }
-
   RecipeOperandPattern &WithMask(std::string mask) & {
     Mask = std::move(mask);
     return *this;
@@ -842,26 +828,6 @@ struct RecipeOperandPattern {
     return std::move(*this);
   }
 
-  RecipeOperandPattern &WithImmediateU32(std::vector<uint32_t> immediateU32) & {
-    ImmediateU32 = std::move(immediateU32);
-    return *this;
-  }
-
-  RecipeOperandPattern &&WithImmediateU32(std::vector<uint32_t> immediateU32) && {
-    ImmediateU32 = std::move(immediateU32);
-    return std::move(*this);
-  }
-
-  RecipeOperandPattern &WithImmediateF32(std::vector<float> immediateF32) & {
-    ImmediateF32 = std::move(immediateF32);
-    return *this;
-  }
-
-  RecipeOperandPattern &&WithImmediateF32(std::vector<float> immediateF32) && {
-    ImmediateF32 = std::move(immediateF32);
-    return std::move(*this);
-  }
-
   RecipeOperandPattern &CaptureAs(std::string capture) & {
     Capture = std::move(capture);
     return *this;
@@ -882,15 +848,6 @@ struct RecipeOperandPattern {
     return std::move(*this);
   }
 
-  RecipeOperandPattern &WithScratch(std::string scratch) & {
-    Scratch = std::move(scratch);
-    return *this;
-  }
-
-  RecipeOperandPattern &&WithScratch(std::string scratch) && {
-    Scratch = std::move(scratch);
-    return std::move(*this);
-  }
 };
 
 inline RecipeOperandIndexPatternBuilder &
@@ -928,11 +885,6 @@ public:
     return *this;
   }
 
-  RecipeOperandPatternBuilder &WithStateTemp(std::string stateTemp) {
-    pattern_.StateTemp = std::move(stateTemp);
-    return *this;
-  }
-
   RecipeOperandPatternBuilder &WithMask(std::string mask) {
     pattern_.Mask = std::move(mask);
     return *this;
@@ -958,16 +910,6 @@ public:
     return *this;
   }
 
-  RecipeOperandPatternBuilder &WithImmediateU32(std::vector<uint32_t> values) {
-    pattern_.ImmediateU32 = std::move(values);
-    return *this;
-  }
-
-  RecipeOperandPatternBuilder &WithImmediateF32(std::vector<float> values) {
-    pattern_.ImmediateF32 = std::move(values);
-    return *this;
-  }
-
   RecipeOperandPatternBuilder &CaptureAs(std::string capture) {
     pattern_.Capture = std::move(capture);
     return *this;
@@ -975,11 +917,6 @@ public:
 
   RecipeOperandPatternBuilder &WithMatchCapture(std::string matchCapture) {
     pattern_.MatchCapture = std::move(matchCapture);
-    return *this;
-  }
-
-  RecipeOperandPatternBuilder &WithScratch(std::string scratch) {
-    pattern_.Scratch = std::move(scratch);
     return *this;
   }
 

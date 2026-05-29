@@ -7,9 +7,9 @@
 
 #include <cctype>
 #include <cstdlib>
-#include <cstring>
 #include <fstream>
 #include <sstream>
+#include <unordered_set>
 
 #include "llvm/Support/YAMLTraits.h"
 
@@ -119,8 +119,8 @@ struct YamlComponentSelector {
 struct YamlOperandIndex {
   bool any = false;
   std::string representation;
-  int64_t immediate_lo = -1;
-  int64_t immediate_hi = -1;
+  std::string immediate_lo;
+  std::string immediate_hi;
   std::string capture;
   std::string match_capture;
 };
@@ -137,8 +137,6 @@ struct YamlOperand {
   std::string select;
   int32_t num_components = -1;
   std::string modifier;
-  std::vector<uint32_t> immediates_u32;
-  std::vector<float> immediates_f32;
   std::string capture;
   std::string match_capture;
   std::string scratch;
@@ -328,8 +326,6 @@ template <> struct MappingTraits<YamlOperand> {
     io.mapOptional("select", operand.select);
     io.mapOptional("num_components", operand.num_components, -1);
     io.mapOptional("modifier", operand.modifier);
-    io.mapOptional("immediates_u32", operand.immediates_u32);
-    io.mapOptional("immediates_f32", operand.immediates_f32);
     io.mapOptional("capture", operand.capture);
     io.mapOptional("match_capture", operand.match_capture);
     io.mapOptional("scratch", operand.scratch);
@@ -340,8 +336,8 @@ template <> struct MappingTraits<YamlOperandIndex> {
   static void mapping(IO &io, YamlOperandIndex &index) {
     io.mapOptional("any", index.any, false);
     io.mapOptional("representation", index.representation);
-    io.mapOptional("immediate_lo", index.immediate_lo, static_cast<int64_t>(-1));
-    io.mapOptional("immediate_hi", index.immediate_hi, static_cast<int64_t>(-1));
+    io.mapOptional("immediate_lo", index.immediate_lo);
+    io.mapOptional("immediate_hi", index.immediate_hi);
     io.mapOptional("capture", index.capture);
     io.mapOptional("match_capture", index.match_capture);
   }
@@ -721,12 +717,6 @@ static bool ParseInterpolationModeToken(const std::string &value,
   return false;
 }
 
-static uint32_t FloatAsUint(float value) {
-  uint32_t bits = 0;
-  std::memcpy(&bits, &value, sizeof(bits));
-  return bits;
-}
-
 static bool ParseOperandType(const std::string &value, OperandType &type,
                              std::string &error) {
   const std::string lowered = Lowercase(value);
@@ -840,6 +830,34 @@ static bool ParseOperandIndexRepresentationToken(
   return false;
 }
 
+static bool ParseIndexImmediateScalar(const std::string &token,
+                                      const char *fieldName,
+                                      bool &hasImmediate,
+                                      uint32_t &immediate,
+                                      std::string &error) {
+  hasImmediate = false;
+  immediate = 0;
+  if (token.empty()) {
+    return true;
+  }
+
+  char *end = nullptr;
+  const unsigned long long parsed = std::strtoull(token.c_str(), &end, 0);
+  if (end != nullptr && *end == '\0') {
+    if (parsed > 0xFFFFFFFFull) {
+      error = std::string("SM5 ") + fieldName + " is out of uint32 range";
+      return false;
+    }
+    hasImmediate = true;
+    immediate = static_cast<uint32_t>(parsed);
+    return true;
+  }
+
+  error = std::string("SM5 ") + fieldName +
+          " only accepts integer literals";
+  return false;
+}
+
 static bool DecodeOperandIndexPatterns(
     const std::vector<YamlOperandIndex> &yamlIndices,
   std::vector<RecipeOperandIndexPattern> &indexPatterns, bool allowAny,
@@ -862,19 +880,200 @@ static bool DecodeOperandIndexPatterns(
       return false;
     }
 
-    if (yamlIndex.immediate_lo >= 0) {
-      indexPattern.HasImmediateLo = true;
-      indexPattern.ImmediateLo = static_cast<uint32_t>(yamlIndex.immediate_lo);
+    if (!ParseIndexImmediateScalar(yamlIndex.immediate_lo,
+                                   "index immediate_lo",
+                                   indexPattern.HasImmediateLo,
+                                   indexPattern.ImmediateLo, error)) {
+      return false;
     }
-    if (yamlIndex.immediate_hi >= 0) {
-      indexPattern.HasImmediateHi = true;
-      indexPattern.ImmediateHi = static_cast<uint32_t>(yamlIndex.immediate_hi);
+    if (!ParseIndexImmediateScalar(yamlIndex.immediate_hi,
+                                   "index immediate_hi",
+                                   indexPattern.HasImmediateHi,
+                                   indexPattern.ImmediateHi, error)) {
+      return false;
     }
 
     indexPattern.Capture = yamlIndex.capture;
     indexPattern.MatchCapture = yamlIndex.match_capture;
 
     indexPatterns.push_back(std::move(indexPattern));
+  }
+
+  return true;
+}
+
+struct CaptureNameTables {
+  std::unordered_set<std::string> Instructions;
+  std::unordered_set<std::string> Operands;
+  std::unordered_set<std::string> OperandIndices;
+};
+
+static void CollectOperandCaptures(const dxp::sm5::RecipeOperandPattern &operand,
+                                   CaptureNameTables &captures) {
+  if (!operand.Capture.empty()) {
+    captures.Operands.insert(operand.Capture);
+  }
+
+  for (const dxp::sm5::RecipeOperandIndexPattern &indexPattern :
+       operand.IndexPatterns) {
+    if (!indexPattern.Capture.empty()) {
+      captures.OperandIndices.insert(indexPattern.Capture);
+    }
+    if (indexPattern.RelativeOperand) {
+      CollectOperandCaptures(*indexPattern.RelativeOperand, captures);
+    }
+  }
+}
+
+static void CollectInstructionCaptures(
+    const dxp::sm5::RecipeInstructionPattern &instruction,
+    CaptureNameTables &captures) {
+  if (!instruction.Capture.empty()) {
+    captures.Instructions.insert(instruction.Capture);
+  }
+
+  for (const dxp::sm5::RecipeOperandPattern &operand : instruction.Operands) {
+    CollectOperandCaptures(operand, captures);
+  }
+}
+
+static void CollectMatchCaptures(const dxp::sm5::RecipeMatchPattern &match,
+                                 CaptureNameTables &captures) {
+  if (!match.Capture.empty()) {
+    captures.Instructions.insert(match.Capture);
+  }
+
+  for (const dxp::sm5::RecipeOperandPattern &operand : match.Operands) {
+    CollectOperandCaptures(operand, captures);
+  }
+
+  for (const dxp::sm5::RecipeInstructionPattern &instruction : match.Sequence) {
+    CollectInstructionCaptures(instruction, captures);
+  }
+}
+
+static bool DescribeCaptureKind(const CaptureNameTables &captures,
+                                const std::string &capture,
+                                std::string &kindDescription) {
+  if (captures.Operands.find(capture) != captures.Operands.end()) {
+    kindDescription = "operand";
+    return true;
+  }
+  if (captures.OperandIndices.find(capture) != captures.OperandIndices.end()) {
+    kindDescription = "index";
+    return true;
+  }
+  if (captures.Instructions.find(capture) != captures.Instructions.end()) {
+    kindDescription = "instruction";
+    return true;
+  }
+  kindDescription.clear();
+  return false;
+}
+
+static bool ValidateCaptureReference(const CaptureNameTables &captures,
+                                     const std::string &capture,
+                                     const char *expectedKind,
+                                     const std::unordered_set<std::string> &expectedSet,
+                                     const char *referenceSite,
+                                     std::string &error) {
+  if (capture.empty()) {
+    return true;
+  }
+
+  if (expectedSet.find(capture) != expectedSet.end()) {
+    return true;
+  }
+
+  std::string actualKind;
+  if (DescribeCaptureKind(captures, capture, actualKind)) {
+    error = std::string("SM5 ") + referenceSite + " '" + capture +
+            "' expects " + expectedKind + " capture but found " +
+            actualKind + " capture";
+    return false;
+  }
+
+  error = std::string("SM5 ") + referenceSite + " '" + capture +
+          "' references an unknown capture";
+  return false;
+}
+
+static bool ValidateOperandCaptureReferences(
+    const dxp::sm5::RecipeOperandPattern &operand,
+    const CaptureNameTables &captures, bool emitOperand, std::string &error) {
+  if (!operand.MatchCapture.empty()) {
+    if (!ValidateCaptureReference(captures, operand.MatchCapture, "operand",
+                                  captures.Operands, "operand match_capture",
+                                  error)) {
+      return false;
+    }
+  }
+
+  if (emitOperand && !operand.Capture.empty()) {
+    if (!ValidateCaptureReference(captures, operand.Capture, "operand",
+                                  captures.Operands, "emit operand capture",
+                                  error)) {
+      return false;
+    }
+  }
+
+  for (const dxp::sm5::RecipeOperandIndexPattern &indexPattern :
+       operand.IndexPatterns) {
+    if (!indexPattern.MatchCapture.empty()) {
+      const char *referenceSite =
+          emitOperand ? "emit index match_capture" : "index match_capture";
+      if (!ValidateCaptureReference(captures, indexPattern.MatchCapture,
+                                    "index", captures.OperandIndices,
+                                    referenceSite, error)) {
+        return false;
+      }
+    }
+
+    if (indexPattern.RelativeOperand) {
+      if (!ValidateOperandCaptureReferences(*indexPattern.RelativeOperand,
+                                            captures, emitOperand, error)) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+static bool ValidateRuleCaptureReferences(const dxp::sm5::RecipeRule &rule,
+                                          std::string &error) {
+  CaptureNameTables captures;
+  CollectMatchCaptures(rule.Match, captures);
+
+  if (!rule.Replace.empty()) {
+    if (!ValidateCaptureReference(captures, rule.Replace, "instruction",
+                                  captures.Instructions, "replace capture",
+                                  error)) {
+      return false;
+    }
+  }
+
+  for (const dxp::sm5::RecipeOperandPattern &operand : rule.Match.Operands) {
+    if (!ValidateOperandCaptureReferences(operand, captures, false, error)) {
+      return false;
+    }
+  }
+
+  for (const dxp::sm5::RecipeInstructionPattern &instruction :
+       rule.Match.Sequence) {
+    for (const dxp::sm5::RecipeOperandPattern &operand : instruction.Operands) {
+      if (!ValidateOperandCaptureReferences(operand, captures, false, error)) {
+        return false;
+      }
+    }
+  }
+
+  for (const dxp::sm5::RecipeInstructionTemplate &instruction : rule.Emit) {
+    for (const dxp::sm5::RecipeOperandPattern &operand : instruction.Operands) {
+      if (!ValidateOperandCaptureReferences(operand, captures, true, error)) {
+        return false;
+      }
+    }
   }
 
   return true;
@@ -1020,8 +1219,7 @@ static bool ParseOperandComponentMode(const YamlOperand &operandModel,
     numComponents = D3D10_SB_OPERAND_0_COMPONENT;
   } else if (operandType == D3D10_SB_OPERAND_TYPE_IMMEDIATE32 ||
              operandType == D3D10_SB_OPERAND_TYPE_IMMEDIATE64) {
-    numComponents = operandModel.immediates_u32.size() > 1 ||
-                            operandModel.immediates_f32.size() > 1
+    numComponents = operandModel.indices.size() > 1
                         ? D3D10_SB_OPERAND_4_COMPONENT
                         : D3D10_SB_OPERAND_1_COMPONENT;
   } else {
@@ -1041,13 +1239,14 @@ static bool ParseEmitOperand(const YamlOperand &operandModel, Operand &operand,
 
   const std::string &captureRef = operandModel.capture;
 
-  if (!captureRef.empty() && !operandModel.scratch.empty()) {
-    error = "SM5 emit operand cannot use both capture and scratch";
+  if (!operandModel.scratch.empty()) {
+    error = "SM5 scratch is unsupported; declare temp_decls and use bind_handle"
+            " on type: temp operands";
     return false;
   }
 
-  if (!captureRef.empty() && !operandModel.state_temp.empty()) {
-    error = "SM5 emit operand cannot use both capture and state_temp";
+  if (!operandModel.state_temp.empty()) {
+    error = "SM5 state_temp is unsupported; use callback-driven emit logic";
     return false;
   }
 
@@ -1056,15 +1255,8 @@ static bool ParseEmitOperand(const YamlOperand &operandModel, Operand &operand,
     return true;
   }
 
-  if (operandModel.type.empty() && operandModel.scratch.empty() &&
-      operandModel.state_temp.empty()) {
-    error = "literal SM5 emit operands require type, capture, scratch, or "
-            "state_temp";
-    return false;
-  }
-
-  if (!operandModel.bind_handle.empty() && !operandModel.scratch.empty()) {
-    error = "SM5 emit operand cannot use both bind_handle and scratch";
+  if (operandModel.type.empty()) {
+    error = "literal SM5 emit operands require type or capture";
     return false;
   }
 
@@ -1075,42 +1267,8 @@ static bool ParseEmitOperand(const YamlOperand &operandModel, Operand &operand,
     }
   }
 
-  if (!operandModel.state_temp.empty() && !operandModel.scratch.empty()) {
-    error = "SM5 emit operand cannot use both state_temp and scratch";
+  if (!ParseOperandType(operandModel.type, operand.Type, error)) {
     return false;
-  }
-
-  if (!operandModel.state_temp.empty() && !operandModel.bind_handle.empty()) {
-    error = "SM5 emit operand cannot use both state_temp and bind_handle";
-    return false;
-  }
-
-  if (!operandModel.scratch.empty() || !operandModel.state_temp.empty()) {
-    operand.Type = D3D10_SB_OPERAND_TYPE_TEMP;
-  } else if (!ParseOperandType(operandModel.type, operand.Type, error)) {
-    return false;
-  }
-
-  if (!operandModel.scratch.empty() && !operandModel.type.empty()) {
-    OperandType parsedType = D3D10_SB_OPERAND_TYPE_TEMP;
-    if (!ParseOperandType(operandModel.type, parsedType, error)) {
-      return false;
-    }
-    if (parsedType != D3D10_SB_OPERAND_TYPE_TEMP) {
-      error = "SM5 scratch operands must use temp type";
-      return false;
-    }
-  }
-
-  if (!operandModel.state_temp.empty() && !operandModel.type.empty()) {
-    OperandType parsedType = D3D10_SB_OPERAND_TYPE_TEMP;
-    if (!ParseOperandType(operandModel.type, parsedType, error)) {
-      return false;
-    }
-    if (parsedType != D3D10_SB_OPERAND_TYPE_TEMP) {
-      error = "SM5 state_temp operands must use temp type";
-      return false;
-    }
   }
 
   if (!ParseOperandComponentMode(operandModel, operand.Type,
@@ -1156,13 +1314,22 @@ static bool ParseEmitOperand(const YamlOperand &operandModel, Operand &operand,
     operand.IndexEntries.push_back(std::move(indexEntry));
   }
 
-  operand.BindHandle = operandModel.bind_handle;
-  operand.StateTempName = operandModel.state_temp;
-  operand.ScratchName = operandModel.scratch;
-  operand.ImmediateValues = operandModel.immediates_u32;
-  for (float immediateValue : operandModel.immediates_f32) {
-    operand.ImmediateValues.push_back(FloatAsUint(immediateValue));
+  for (const Operand::Index &indexEntry : operand.IndexEntries) {
+    if (indexEntry.HasImmediateLo) {
+      operand.Indices.push_back(indexEntry.ImmediateLo);
+    }
+    if (indexEntry.HasImmediateHi) {
+      operand.Indices.push_back(indexEntry.ImmediateHi);
+    }
   }
+
+  if (operand.Type == D3D10_SB_OPERAND_TYPE_IMMEDIATE32 ||
+      operand.Type == D3D10_SB_OPERAND_TYPE_IMMEDIATE64) {
+    operand.ImmediateValues = operand.Indices;
+    operand.Indices.clear();
+  }
+
+  operand.BindHandle = operandModel.bind_handle;
 
   if (!operandModel.modifier.empty() &&
       !ParseOperandModifier(operandModel.modifier, operand.Modifier, error)) {
@@ -1259,13 +1426,18 @@ static bool ParseMatchOperand(const YamlOperand &operandModel,
     operandMatch.HasModifierMatch = true;
   }
 
-  if (!operandModel.immediates_u32.empty() ||
-      !operandModel.immediates_f32.empty()) {
-    for (float immediateValue : operandModel.immediates_f32) {
-      operandMatch.MatchImmediates.push_back(FloatAsUint(immediateValue));
-    }
-    for (uint32_t immediateValue : operandModel.immediates_u32) {
-      operandMatch.MatchImmediates.push_back(immediateValue);
+  if (operandMatch.HasTypeMatch &&
+      (operandMatch.MatchType == D3D10_SB_OPERAND_TYPE_IMMEDIATE32 ||
+       operandMatch.MatchType == D3D10_SB_OPERAND_TYPE_IMMEDIATE64) &&
+      !operandMatch.MatchIndexPatterns.empty()) {
+    for (const OperandIndexMatchPattern &indexPattern :
+         operandMatch.MatchIndexPatterns) {
+      if (indexPattern.HasImmediateLo) {
+        operandMatch.MatchImmediates.push_back(indexPattern.ImmediateLo);
+      }
+      if (indexPattern.HasImmediateHi) {
+        operandMatch.MatchImmediates.push_back(indexPattern.ImmediateHi);
+      }
     }
     operandMatch.HasImmediateMatch = true;
   }
@@ -1278,6 +1450,17 @@ static bool ParseMatchOperand(const YamlOperand &operandModel,
 static bool FillRecipeOperandPattern(const YamlOperand &operandModel,
                                      RecipeOperandPattern &operandPattern,
                                      std::string &error) {
+  if (!operandModel.scratch.empty()) {
+    error = "SM5 scratch is unsupported; declare temp_decls and use bind_handle"
+            " on type: temp operands";
+    return false;
+  }
+
+  if (!operandModel.state_temp.empty()) {
+    error = "SM5 state_temp is unsupported; use callback-driven emit logic";
+    return false;
+  }
+
   std::vector<RecipeOperandIndexPattern> indexPatterns;
   if (!DecodeOperandIndexPatterns(operandModel.indices, indexPatterns, true,
                                   error)) {
@@ -1289,13 +1472,9 @@ static bool FillRecipeOperandPattern(const YamlOperand &operandModel,
                        .WithType(operandModel.type)
                        .WithIndexPatterns(std::move(indexPatterns))
                        .WithBindHandle(operandModel.bind_handle)
-                       .WithStateTemp(operandModel.state_temp)
                        .WithNumComponents(operandModel.num_components)
                        .WithModifier(operandModel.modifier)
-                       .WithImmediateU32(operandModel.immediates_u32)
-                       .WithImmediateF32(operandModel.immediates_f32)
                        .WithMatchCapture(operandModel.match_capture)
-                       .WithScratch(operandModel.scratch)
                        .CaptureAs(operandModel.capture);
 
   if (!operandModel.mask.empty() || !operandModel.swizzle.empty() ||
@@ -1637,6 +1816,10 @@ static bool ParseRule(const YamlRule &ruleModel,
       emitInstruction.AddOperand(std::move(operandPattern));
     }
     rule.AddEmit(std::move(emitInstruction));
+  }
+
+  if (!ValidateRuleCaptureReferences(rule, error)) {
+    return false;
   }
 
   return true;

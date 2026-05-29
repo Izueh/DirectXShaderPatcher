@@ -1,4 +1,7 @@
 version: 1
+temp_decls:
+  - handle: raw_probe
+  - handle: uav_probe
 steps:
   - kind: prefilter
     name: require_sm5_0
@@ -48,11 +51,13 @@ steps:
               - capture: src
           - opcode: mov
             operands:
-              - scratch: raw_probe
+              - type: temp
+                bind_handle: raw_probe
               - type: resource
                 bind_handle: injected_raw_srv
           - opcode: mov
             operands:
-              - scratch: uav_probe
+              - type: temp
+                bind_handle: uav_probe
               - type: unordered_access_view
                 bind_handle: injected_raw_uav

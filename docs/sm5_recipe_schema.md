@@ -257,8 +257,6 @@ Supported fields in `match.operands[]`:
 - `components.value`
 - `num_components`
 - `modifier`
-- `immediates_u32`
-- `immediates_f32`
 - `capture`
 - `match_capture`
 
@@ -266,17 +264,13 @@ Supported fields in `emit[].operands[]`:
 
 - `any` (unsupported for emit; validation error)
 - `capture`
-- `scratch`
 - `bind_handle`
-- `state_temp`
 - `type`
 - `indices`
 - `components.kind`
 - `components.value`
 - `num_components`
 - `modifier`
-- `immediates_u32`
-- `immediates_f32`
 
 Component selector kinds:
 
@@ -287,12 +281,12 @@ Component selector kinds:
 Operand notes:
 
 - Emit `capture` copies a previously captured operand.
-- `scratch` allocates a temporary register for emitted intermediates and reuses it by name.
-- `state_temp` resolves a temp register index from recipe runtime state.
 - `bind_handle` resolves declaration handles from `temp_decls` and `add_*` declaration steps.
 - `bind_handle` requires an explicit `type` and a matching declaration handle.
 - `match_capture` requires the operand to match an earlier captured operand exactly.
-- `immediates_f32` are encoded as raw SM5 immediate float tokens.
+- For `type: immediate32` and `type: immediate64`, literal payload words are provided via ordered `indices` entries (`immediate_lo`/`immediate_hi`).
+- Immediate float payloads are expressed as their raw IEEE-754 bit patterns in `immediate_lo`.
+- `scratch` and `state_temp` are unsupported and rejected.
 
 `indices` is an ordered list of index objects. Scalar index lists are not
 supported.
@@ -308,6 +302,7 @@ Index object fields:
   - `immediate64_plus_relative`
 - `immediate_lo` optional immediate value for low 32 bits
 - `immediate_hi` optional immediate value for high 32 bits
+- `immediate_lo` and `immediate_hi` accept integer literals only (decimal or hex)
 - `capture` optional (match only): captures the current matched index immediate value
 - `match_capture` optional:
   - in `match`: compares the current index immediate value with a previously captured index value
@@ -319,8 +314,13 @@ Index notes:
 - `capture` on emit index entries is invalid.
 - `any` on emit index entries is invalid.
 - If `representation` is omitted, `immediate32` is assumed.
+- `representation` is per index entry (slot), not per operand.
 - `capture` and `match_capture` are independent; an entry may set both to capture
   a value and simultaneously compare it against an earlier capture.
+- Capture names are kind-specific:
+  - operand `match_capture` and emit operand `capture` must reference operand captures
+  - index `match_capture` must reference index captures
+  - rule `replace` must reference instruction captures
 
 Index capture round-trip example — rewrite `mul r0.xyzw, r0.xyzw, r1.xyzw` to
 `mov r0.xyzw, r1.xyzw` while preserving the exact temp register number:

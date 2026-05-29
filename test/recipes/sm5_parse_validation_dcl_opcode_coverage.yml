@@ -25,5 +25,6 @@ steps:
           - opcode: dcl_thread_group_shared_memory_raw
             operands:
               - type: immediate32
-                immediates_u32: [16]
+                indices:
+                  - immediate_lo: 16
           - opcode: ret

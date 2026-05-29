@@ -1,0 +1,17 @@
+version: 1
+steps:
+  - kind: apply_rules
+    rules:
+      - match:
+          opcode: mov
+          capture: op_tok
+          operands:
+            - type: temp
+              capture: dst
+            - type: temp
+              match_capture: op_tok
+        emit:
+          - opcode: mov
+            operands:
+              - capture: dst
+              - capture: dst

@@ -257,7 +257,7 @@ int main(int argc, char **argv) {
 
   if (patchedProgram.TempCount <= initialTempCount) {
     std::cerr << "Expected patched shader to increase dcl_temps for injected "
-                 "scratch registers.\n";
+                 "temporary registers.\n";
     return 1;
   }
 
