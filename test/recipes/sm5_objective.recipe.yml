@@ -1,7 +1,9 @@
 ﻿version: 1
-temp_decls:
-  - handle: ign_sample_coord
 steps:
+  - kind: add_temp
+    name: add_ign_sample_coord
+    handle: ign_sample_coord
+
   - kind: add_cbuffer
     name: add_frame_constants
     handle: frame_constants

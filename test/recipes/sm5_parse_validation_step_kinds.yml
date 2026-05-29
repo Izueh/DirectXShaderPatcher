@@ -1,5 +1,9 @@
 version: 1
 steps:
+  - kind: add_temp
+    name: add_tmp0
+    handle: tmp0
+
   - kind: prefilter
     name: require_mul_probe
     checks:

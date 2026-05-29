@@ -388,8 +388,6 @@ dxp_add_test(dxil_patch_sm5_recipe_match_sequence_test              "test/sm5_re
 dxp_add_test(dxil_patch_sm5_recipe_before_after_test                "test/sm5_recipe_before_after.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso")
 dxp_add_test(dxil_patch_sm5_recipe_add_sampler_decl_test            "test/sm5_recipe_add_sampler_decl.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso")
 dxp_add_test(dxil_patch_sm5_recipe_objective_ign_texture_patch_test "test/sm5_recipe_objective_ign_texture_patch.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso"  "${CMAKE_CURRENT_SOURCE_DIR}/test/recipes/sm5_objective.recipe.yml"  "${CMAKE_CURRENT_BINARY_DIR}/test-output/0x7AFF256C.ps_5_0.objective.recipe.patched.cso")
-dxp_add_test(dxil_patch_sm5_recipe_reserve_temps_test               "test/sm5_recipe_reserve_temps.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso")
-dxp_add_test(dxil_patch_sm5_recipe_custom_step_reserve_temps_test   "test/sm5_recipe_custom_step_reserve_temps.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso")
 dxp_add_test(dxil_patch_sm5_recipe_state_temp_emit_test             "test/sm5_recipe_state_temp_emit.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso")
 dxp_add_test(dxil_patch_sm5_recipe_operand_index_capture_test       "test/sm5_recipe_operand_index_capture.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso"  "${CMAKE_CURRENT_BINARY_DIR}/test-output/0x7AFF256C.ps_5_0.operand_index_capture.patched.cso")
 dxp_add_test(dxil_patch_sm5_recipe_pattern_prefilter_test           "test/sm5_recipe_pattern_prefilter.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso")

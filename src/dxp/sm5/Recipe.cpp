@@ -2172,35 +2172,6 @@ static bool ShouldExecuteStep(const RecipeStep &step, RecipeContext &context) {
   return true;
 }
 
-static void ApplyReservedTemps(Program &program, const Recipe &recipe,
-                               RecipeContext &context) {
-  const auto &tempDecls = recipe.GetTempDecls();
-  const uint32_t reservedTemps =
-      std::max(recipe.GetReservedTempRegisters(),
-               static_cast<uint32_t>(tempDecls.size()));
-  if (reservedTemps == 0) {
-    context.ReservedTempBase = program.TempCount;
-    context.ReservedTempCount = 0;
-    return;
-  }
-
-  const uint32_t reservedBase = program.TempCount;
-  EnsureTempDeclaration(program, reservedBase + reservedTemps);
-  context.ReservedTempBase = reservedBase;
-  context.ReservedTempCount = reservedTemps;
-
-  for (uint32_t i = 0; i < tempDecls.size(); ++i) {
-    const std::string &handle = tempDecls[i].Handle;
-    if (handle.empty()) {
-      continue;
-    }
-    context.TempBindings.emplace(handle, reservedBase + i);
-  }
-
-  context.ProgramModified = true;
-  context.ModuleVerified = false;
-}
-
 class ScopedProgramBinding {
 public:
   ScopedProgramBinding(RecipeContext &context, Program &program)
@@ -2431,6 +2402,44 @@ RecipeStep MakePrefilterStep(std::string name,
                                 context);
   };
   return step;
+}
+
+static bool ReserveTempRegisters(RecipeContext &context, uint32_t count,
+                                 uint32_t &baseIndex);
+
+RecipeStep MakeAddTempStep(std::string id, RecipeTempDecl decl) {
+  return MakeCustomRecipeStep("add_temp:" + id, [id = std::move(id), decl](
+                                                   RecipeContext &context) {
+    if (context.ProgramHandle == nullptr) {
+      return MakeRecipeStepFailure(
+          context, "add_temp: recipe context is missing active SM5 program");
+    }
+
+    const std::string handle = decl.Handle.empty() ? id : decl.Handle;
+    if (handle.empty()) {
+      return MakeRecipeStepFailure(
+          context, "add_temp: handle is required");
+    }
+
+    if (context.TempBindings.find(handle) != context.TempBindings.end()) {
+      return MakeRecipeStepFailure(
+          context, "add_temp: duplicate temp handle '" + handle + "'");
+    }
+
+    uint32_t baseIndex = 0;
+    if (!ReserveTempRegisters(context, 1, baseIndex)) {
+      return MakeRecipeStepFailure(
+          context, "add_temp: failed to reserve temp for '" + handle + "': " +
+                       context.LastError);
+    }
+
+    context.TempBindings.emplace(handle, baseIndex);
+
+    RecipeStepResult result;
+    result.Success = true;
+    result.Changed = true;
+    return result;
+  });
 }
 
 RecipeStep MakeAddInputStep(std::string id, RecipeInputDecl decl) {
@@ -2725,8 +2734,8 @@ RecipePrefilter MakePatternPrefilter(RecipeMatchPattern match, std::string name,
       .CheckPatternMatch(std::move(match));
 }
 
-bool ReserveTempRegisters(RecipeContext &context, uint32_t count,
-                          uint32_t &baseIndex) {
+static bool ReserveTempRegisters(RecipeContext &context, uint32_t count,
+                                 uint32_t &baseIndex) {
   if (context.ProgramHandle == nullptr) {
     context.LastError = "recipe context is missing active SM5 program";
     context.AddDiagnostic(context.LastError);
@@ -2782,7 +2791,8 @@ bool ExecuteRecipe(Program &program, const Recipe &recipe,
   if (report != nullptr)
     report->NewBindings.clear();
 
-  ApplyReservedTemps(program, recipe, context);
+  context.ReservedTempBase = program.TempCount;
+  context.ReservedTempCount = 0;
 
   for (const auto &step : recipe.GetSteps()) {
     if (!ShouldExecuteStep(step, context)) {

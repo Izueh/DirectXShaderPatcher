@@ -142,6 +142,18 @@ int main() {
   {
     dxp::sm5::RecipeParseResult parseResult;
     if (!ParseFixture(
+            "test/recipes/sm5_parse_validation_add_temp_bind_handle.yml",
+            parseResult)) {
+      std::cerr << "Expected add_temp handles to satisfy temp bind_handle "
+                   "validation: "
+                << parseResult.Error << "\n";
+      return 1;
+    }
+  }
+
+  {
+    dxp::sm5::RecipeParseResult parseResult;
+    if (!ParseFixture(
             "test/recipes/sm5_parse_validation_emit_immediate_shorthand.yml",
             parseResult)) {
       std::cerr << "Expected SM5 emit immediate shorthand to parse: "
@@ -299,6 +311,22 @@ int main() {
     if (!Contains(parseResult.Error,
                   "index immediate_lo only accepts integer literals")) {
       std::cerr << "Expected integer-only index immediate validation error.\n";
+      return 1;
+    }
+  }
+
+  {
+    dxp::sm5::RecipeParseResult parseResult;
+    if (ParseFixture(
+            "test/recipes/"
+            "sm5_parse_validation_invalid_add_temp_missing_handle.yml",
+            parseResult)) {
+      std::cerr << "Expected add_temp without handle to fail parsing.\n";
+      return 1;
+    }
+
+    if (!Contains(parseResult.Error, "add_temp steps require handle")) {
+      std::cerr << "Expected add_temp handle validation error.\n";
       return 1;
     }
   }

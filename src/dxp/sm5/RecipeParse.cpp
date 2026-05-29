@@ -341,10 +341,6 @@ struct YamlTextureDecl {
   bool auto_bind = false;
 };
 
-struct YamlTempDecl {
-  std::string handle;
-};
-
 struct YamlInputDecl {
   int32_t bind_point = -1;
   std::string interpolation_mode = "linear";
@@ -399,11 +395,9 @@ struct YamlUavDecl {
 
 struct YamlRecipeDocument {
   uint32_t version = 1;
-  uint32_t reserved_temps = 0;
   std::vector<YamlPrefilter> prefilters;
   std::vector<YamlRule> rewrite_rules;
   std::vector<YamlStep> steps;
-  std::vector<YamlTempDecl> temp_decls;
 
   std::vector<YamlTextureDecl> texture_decls;
   std::vector<YamlInputDecl> input_decls;
@@ -431,7 +425,6 @@ LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRule)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlStep)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlStepCondition)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlPrefilter)
-LLVM_YAML_IS_SEQUENCE_VECTOR(YamlTempDecl)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlTextureDecl)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlInputDecl)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlOutputDecl)
@@ -603,12 +596,6 @@ template <> struct MappingTraits<YamlTextureDecl> {
   }
 };
 
-template <> struct MappingTraits<YamlTempDecl> {
-  static void mapping(IO &io, YamlTempDecl &decl) {
-    io.mapOptional("handle", decl.handle);
-  }
-};
-
 template <> struct MappingTraits<YamlInputDecl> {
   static void mapping(IO &io, YamlInputDecl &decl) {
     io.mapOptional("bind_point", decl.bind_point, -1);
@@ -680,11 +667,9 @@ template <> struct MappingTraits<YamlUavDecl> {
 template <> struct MappingTraits<YamlRecipeDocument> {
   static void mapping(IO &io, YamlRecipeDocument &document) {
     io.mapOptional("version", document.version, 1u);
-    io.mapOptional("reserved_temps", document.reserved_temps, 0u);
     io.mapOptional("prefilters", document.prefilters);
     io.mapOptional("rewrite_rules", document.rewrite_rules);
     io.mapOptional("steps", document.steps);
-    io.mapOptional("temp_decls", document.temp_decls);
     io.mapOptional("texture_decls", document.texture_decls);
     io.mapOptional("input_decls", document.input_decls);
     io.mapOptional("output_decls", document.output_decls);
@@ -1509,8 +1494,8 @@ static bool ParseEmitOperand(const YamlOperand &operandModel, Operand &operand,
   const bool hasCaptureReference = !captureRef.empty();
 
   if (!operandModel.scratch.empty()) {
-    error = "SM5 scratch is unsupported; declare temp_decls and use bind_handle"
-            " on type: temp operands";
+      error = "SM5 scratch is unsupported; use add_temp and bind_handle on "
+        "type: temp operands";
     return false;
   }
 
@@ -1772,8 +1757,8 @@ static bool FillRecipeOperandPattern(const YamlOperand &operandModel,
                                      bool allowEmitImmediateShorthands,
                                      std::string &error) {
   if (!operandModel.scratch.empty()) {
-    error = "SM5 scratch is unsupported; declare temp_decls and use bind_handle"
-            " on type: temp operands";
+      error = "SM5 scratch is unsupported; use add_temp and bind_handle on "
+        "type: temp operands";
     return false;
   }
 
@@ -2278,6 +2263,7 @@ static bool BuildRecipePrefilter(const YamlPrefilter &prefilterModel,
 
 static bool CollectDeclarationHandlesFromSteps(
     const std::vector<YamlStep> &steps,
+  std::unordered_map<std::string, uint32_t> &tempHandles,
     std::unordered_map<std::string, uint32_t> &inputHandles,
     std::unordered_map<std::string, uint32_t> &outputHandles,
     std::unordered_map<std::string, uint32_t> &resourceHandles,
@@ -2301,7 +2287,11 @@ static bool CollectDeclarationHandlesFromSteps(
   for (const YamlStep &step : steps) {
     const std::string stepKind =
         step.kind.empty() ? "apply_rules" : Lowercase(step.kind);
-    if (stepKind == "add_input") {
+    if (stepKind == "add_temp") {
+      if (!insertHandle(tempHandles, step.handle, "temp")) {
+        return false;
+      }
+    } else if (stepKind == "add_input") {
       if (!insertHandle(inputHandles, step.handle, "input")) {
         return false;
       }
@@ -2335,17 +2325,6 @@ static bool CollectDeclarationHandlesFromSteps(
 static bool ValidateUniqueDeclarationHandles(const YamlRecipeDocument &document,
                                              std::string &error) {
   std::unordered_map<std::string, uint32_t> tempHandles;
-  for (uint32_t i = 0; i < document.temp_decls.size(); ++i) {
-    if (document.temp_decls[i].handle.empty()) {
-      continue;
-    }
-    if (!tempHandles.emplace(document.temp_decls[i].handle, i).second) {
-      error = "duplicate SM5 temp declaration handle: '" +
-              document.temp_decls[i].handle + "'";
-      return false;
-    }
-  }
-
   std::unordered_map<std::string, uint32_t> inputHandles;
   std::unordered_map<std::string, uint32_t> outputHandles;
   std::unordered_map<std::string, uint32_t> resourceHandles;
@@ -2353,7 +2332,7 @@ static bool ValidateUniqueDeclarationHandles(const YamlRecipeDocument &document,
   std::unordered_map<std::string, uint32_t> samplerHandles;
   std::unordered_map<std::string, uint32_t> uavHandles;
   return CollectDeclarationHandlesFromSteps(
-      document.steps, inputHandles, outputHandles, resourceHandles,
+      document.steps, tempHandles, inputHandles, outputHandles, resourceHandles,
       cbufferHandles, samplerHandles, uavHandles, error);
 }
 
@@ -2450,14 +2429,9 @@ static bool ValidateEmitHandleReferences(const YamlRecipeDocument &document,
   std::unordered_map<std::string, uint32_t> samplerHandles;
   std::unordered_map<std::string, uint32_t> uavHandles;
 
-  for (uint32_t i = 0; i < document.temp_decls.size(); ++i) {
-    if (!document.temp_decls[i].handle.empty()) {
-      tempHandles.emplace(document.temp_decls[i].handle, i);
-    }
-  }
-
   if (!CollectDeclarationHandlesFromSteps(
-          document.steps, inputHandles, outputHandles, resourceHandles,
+      document.steps, tempHandles, inputHandles, outputHandles,
+      resourceHandles,
           cbufferHandles, samplerHandles, uavHandles, error)) {
     return false;
   }
@@ -2536,13 +2510,6 @@ static bool BuildStepCondition(const YamlStepCondition &conditionModel,
 
 static bool ValidatePortableDeclarationModel(const YamlRecipeDocument &document,
                                              std::string &error) {
-  for (const YamlTempDecl &decl : document.temp_decls) {
-    if (decl.handle.empty()) {
-      error = "portable schema temp_decls require handle";
-      return false;
-    }
-  }
-
   for (const YamlInputDecl &decl : document.input_decls) {
     if (decl.handle.empty()) {
       error = "portable schema input_decls require handle";
@@ -2748,14 +2715,6 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
                    "*_decls; use add_* declaration steps";
     return false;
   }
-  if (document.reserved_temps > 0) {
-    result.Recipe.ReserveTemps(document.reserved_temps);
-  }
-
-  for (const YamlTempDecl &declModel : document.temp_decls) {
-    result.Recipe.AddTempDecl(
-        RecipeTempDecl{}.WithHandle(declModel.handle));
-  }
 
   if (!ValidateUniqueDeclarationHandles(document, parseError)) {
     result.Error = sourceName.str() + ": " + parseError;
@@ -2897,6 +2856,27 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
       }
       decl.WithInterpolationMode(decl.InterpolationMode);
       result.Recipe.AddStep(MakeAddInputStep(stepName, std::move(decl))
+                                .Require(stepModel.required)
+                                .When(stepCondition));
+    } else if (stepKind == "add_temp") {
+      if (stepModel.handle.empty()) {
+        result.Error = sourceName.str() +
+                       ": add_temp steps require handle";
+        return false;
+      }
+      if (stepModel.bind_point >= 0) {
+        result.Error = sourceName.str() +
+                       ": add_temp steps do not allow bind_point";
+        return false;
+      }
+      if (stepModel.auto_bind) {
+        result.Error = sourceName.str() +
+                       ": add_temp steps do not allow auto_bind";
+        return false;
+      }
+
+      RecipeTempDecl decl = RecipeTempDecl{}.WithHandle(stepModel.handle);
+      result.Recipe.AddStep(MakeAddTempStep(stepName, std::move(decl))
                                 .Require(stepModel.required)
                                 .When(stepCondition));
     } else if (stepKind == "add_output") {

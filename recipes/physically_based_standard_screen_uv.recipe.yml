@@ -1,7 +1,4 @@
 version: 1
-reserved_temps: 1
-temp_decls:
-  - handle: screen_uv_temp
 steps:
   - kind: prefilter
     name: require_sm5_0
@@ -9,6 +6,12 @@ steps:
       - kind: check_shader_version
         major: 5
         minor: 0
+
+  - kind: add_temp
+    name: add_screen_uv_temp
+    if:
+      state: require_sm5_0
+    handle: screen_uv_temp
 
   - kind: add_input
     name: add_screen_uv_x

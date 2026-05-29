@@ -1,7 +1,4 @@
 version: 1
-temp_decls:
-  - handle: raw_probe
-  - handle: uav_probe
 steps:
   - kind: prefilter
     name: require_sm5_0
@@ -9,6 +6,18 @@ steps:
       - kind: check_shader_version
         major: 5
         minor: 0
+
+  - kind: add_temp
+    name: add_raw_probe_temp
+    if:
+      state: require_sm5_0
+    handle: raw_probe
+
+  - kind: add_temp
+    name: add_uav_probe_temp
+    if:
+      state: require_sm5_0
+    handle: uav_probe
 
   - kind: add_raw_resource
     name: add_injected_raw_srv

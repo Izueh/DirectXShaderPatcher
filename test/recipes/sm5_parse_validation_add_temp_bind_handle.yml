@@ -1,0 +1,20 @@
+version: 1
+steps:
+  - kind: add_temp
+    name: add_tmp0
+    handle: tmp0
+
+  - kind: apply_rules
+    name: use_tmp0
+    rules:
+      - match:
+          opcode: mov
+          operands:
+            - capture: dst
+            - capture: src
+        emit:
+          - opcode: mov
+            operands:
+              - type: temp
+                bind_handle: tmp0
+              - capture: src
