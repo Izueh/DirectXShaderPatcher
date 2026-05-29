@@ -170,7 +170,7 @@ struct RecipeTextureDecl {
   }
 };
 
-/// @brief Declares a temporary register handle used by a recipe.
+/// @brief Declares a temporary register handle consumed by add_temp steps.
 struct RecipeTempDecl {
   std::string Handle;
 
@@ -1942,6 +1942,9 @@ RecipeStep MakePrefilterStep(
   std::string setState = {},
   RecipePrefilterMode mode = RecipePrefilterMode::All);
 
+/// @brief Creates a step that adds a temp declaration.
+RecipeStep MakeAddTempStep(std::string id, RecipeTempDecl decl);
+
 /// @brief Creates a step that adds an input declaration.
 RecipeStep MakeAddInputStep(std::string id, RecipeInputDecl decl);
 
@@ -1995,42 +1998,18 @@ RecipePrefilter MakePatternPrefilter(RecipeMatchPattern match,
                                      std::string name = {},
                                      bool required = true);
 
-/// @brief Reserves a contiguous range of temporary registers.
-/// @param context Recipe execution context to update.
-/// @param count Number of temporary registers to reserve.
-/// @param baseIndex Receives the first reserved register index.
-/// @return `true` on success.
-bool ReserveTempRegisters(RecipeContext &context, uint32_t count,
-                          uint32_t &baseIndex);
-
 /// @brief Owns the declarative SM5 recipe definition.
 class Recipe {
 public:
-  Recipe &ReserveTemps(uint32_t count) {
-    reservedTempRegisters_ = count;
-    return *this;
-  }
-
   Recipe &AddStep(RecipeStep step) {
     steps_.push_back(std::move(step));
     return *this;
   }
 
-  Recipe &AddTempDecl(RecipeTempDecl decl) {
-    tempDecls_.push_back(std::move(decl));
-    return *this;
-  }
-
   const std::vector<RecipeStep> &GetSteps() const { return steps_; }
 
-  const std::vector<RecipeTempDecl> &GetTempDecls() const { return tempDecls_; }
-
-  uint32_t GetReservedTempRegisters() const { return reservedTempRegisters_; }
-
 private:
-  uint32_t reservedTempRegisters_ = 0;
   std::vector<RecipeStep> steps_;
-  std::vector<RecipeTempDecl> tempDecls_;
 };
 
 } // namespace dxp::sm5

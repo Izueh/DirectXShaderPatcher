@@ -6,9 +6,7 @@ SM5 recipes use schema version `1`.
 
 ```yaml
 version: 1
-reserved_temps: 0
 steps: []
-temp_decls: []
 ```
 
 Rules:
@@ -16,7 +14,6 @@ Rules:
 - `steps` is required and execution order is defined only by `steps`.
 - Top-level `rewrite_rules` are rejected in schema version `1`; use `apply_rules` steps instead.
 - Top-level `*_decls` are rejected in schema version `1`; use `add_*` declaration steps instead.
-- `temp_decls` are still allowed at the top level.
 
 This schema is specific to `dxp::sm5`. It is separate from the DXIL schema because SM5 patching operates on DXBC token IR.
 
@@ -39,6 +36,7 @@ Supported step kinds:
 - `prefilter`
 - `refresh_resources`
 - `verify_program`
+- `add_temp`
 - `add_input`
 - `add_output`
 - `add_texture`
@@ -161,6 +159,7 @@ Notes:
 - `match.sequence` cannot be combined with single-instruction match fields in the same pattern.
 - `prefilter` no longer stops or fails the recipe directly; it publishes a boolean probe result for later `if` guards.
 - Top-level `prefilters` are rejected in schema version `1`; use `steps[].kind: prefilter` instead.
+- For conditional temp allocation, use `steps[].kind: add_temp` guarded with `if`.
 
 ## Rules
 
@@ -293,7 +292,7 @@ Operand notes:
   other properties literal from the emit operand template.
 - Literal `indices` and `immediate*` values override replayed values when
   `capture_fields.indices` or `capture_fields.immediates` are enabled.
-- `bind_handle` resolves declaration handles from `temp_decls` and `add_*` declaration steps.
+- `bind_handle` resolves declaration handles from `add_temp` and `add_*` declaration steps.
 - `bind_handle` requires an explicit `type` and a matching declaration handle.
 - `match_capture` requires the operand to match an earlier captured operand exactly.
 - `match_capture_fields` restricts `match_capture` comparison to selected
@@ -507,6 +506,10 @@ To replay selected operand fields while overriding specific literals:
 
 Declaration steps support either explicit `bind_point` or `auto_bind: true`.
 
+Exception:
+
+- `add_temp` supports only `handle` and does not allow `bind_point` or `auto_bind`.
+
 Common declaration fields:
 
 - `handle`
@@ -515,6 +518,7 @@ Common declaration fields:
 
 Step-specific fields:
 
+- `add_temp`: `handle` required
 - `add_input`: `interpolation_mode` optional, defaults to `linear`
 - `add_texture`: `dimension` optional, defaults to `Texture2D`
 - `add_structured_resource`: `stride` optional, defaults to `16`
@@ -525,10 +529,10 @@ Step-specific fields:
 Examples:
 
 ```yaml
-temp_decls:
-  - handle: <temp_handle>
-
 steps:
+  - kind: add_temp
+    handle: <temp_handle>
+
   - kind: add_input
     handle: <input_handle>
     auto_bind: true
@@ -578,16 +582,4 @@ Supported UAV kinds:
 - `raw`
 - `structured`
 
-## Reserved Temps
-
-Recipes may reserve a temp register range up front:
-
-```yaml
-reserved_temps: 2
-```
-
-Notes:
-
-- `reserved_temps` increases `dcl_temps` before rule execution.
-- `temp_decls` are mapped in order onto the reserved temp range starting at `ReservedTempBase`.
-- When both are present, the effective reserved count is `max(reserved_temps, temp_decls.size())`.
+`add_temp` steps allocate temps at step execution time and can be guarded by `if` conditions.

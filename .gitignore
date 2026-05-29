@@ -13,6 +13,7 @@ original_dump.txt
 patched_dump.txt
 patched_dump_after_fix.txt
 /artifacts/
+playground/
 
 # Generated shader/test outputs
 test/*.patched.cso
