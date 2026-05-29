@@ -1,0 +1,17 @@
+version: 1
+steps:
+  - kind: apply_rules
+    rules:
+      - match:
+          opcode: mov
+          operands:
+            - capture: dst
+            - capture: src
+        emit:
+          - opcode: mov
+            operands:
+              - type: immediate32
+                indices:
+                  - representation: immediate32
+                    immediate_lo: 1
+                immediates_u32: [2]

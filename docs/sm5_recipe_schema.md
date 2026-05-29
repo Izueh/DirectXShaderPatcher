@@ -259,14 +259,22 @@ Supported fields in `match.operands[]`:
 - `modifier`
 - `capture`
 - `match_capture`
+- `match_capture_fields`
 
 Supported fields in `emit[].operands[]`:
 
 - `any` (unsupported for emit; validation error)
 - `capture`
+- `capture_fields`
 - `bind_handle`
 - `type`
 - `indices`
+- `immediates_u32`
+- `immediates_u64`
+- `immediates_i32`
+- `immediates_i64`
+- `immediates_f32`
+- `immediates_f64`
 - `components.kind`
 - `components.value`
 - `num_components`
@@ -281,15 +289,61 @@ Component selector kinds:
 Operand notes:
 
 - Emit `capture` copies a previously captured operand.
+- Emit `capture_fields` projects selected properties from `capture` and keeps
+  other properties literal from the emit operand template.
+- Literal `indices` and `immediate*` values override replayed values when
+  `capture_fields.indices` or `capture_fields.immediates` are enabled.
 - `bind_handle` resolves declaration handles from `temp_decls` and `add_*` declaration steps.
 - `bind_handle` requires an explicit `type` and a matching declaration handle.
 - `match_capture` requires the operand to match an earlier captured operand exactly.
-- For `type: immediate32` and `type: immediate64`, literal payload words are provided via ordered `indices` entries (`immediate_lo`/`immediate_hi`).
+- `match_capture_fields` restricts `match_capture` comparison to selected
+  operand properties.
+- For `type: immediate32` and `type: immediate64`, literal payload words are provided via ordered `indices` entries (`immediate_lo`/`immediate_hi`) or emit shorthand arrays (`immediates_u32` / `immediates_u64` / `immediates_i32` / `immediates_i64` / `immediates_f32` / `immediates_f64`).
 - Immediate float payloads are expressed as their raw IEEE-754 bit patterns in `immediate_lo`.
+- `immediates_u32`, `immediates_u64`, `immediates_i32`, `immediates_i64`, `immediates_f32`, and `immediates_f64` are emit-only and rejected on match operands.
+- Emit operands may define either explicit `indices` or shorthand arrays (`immediates_u32` / `immediates_u64` / `immediates_i32` / `immediates_i64` / `immediates_f32` / `immediates_f64`), but not both on the same operand.
+- Each `immediates_u64` entry is one integer literal that is split into `immediate_lo`/`immediate_hi` on a single `immediate64` index entry.
+- Each `immediates_i32` entry is encoded using signed two's-complement payload bits and mapped to one `immediate32` index entry (`immediate_lo`).
+- Each `immediates_i64` entry is encoded using signed two's-complement payload bits and split into `immediate_lo`/`immediate_hi` on one `immediate64` index entry.
+- Each `immediates_f32` entry is encoded to its IEEE-754 payload and mapped to one `immediate32` index entry (`immediate_lo`).
+- Each `immediates_f64` entry is encoded to its IEEE-754 payload and split into `immediate_lo`/`immediate_hi` on one `immediate64` index entry.
 - `scratch` and `state_temp` are unsupported and rejected.
+
+`capture_fields` and `match_capture_fields` flags:
+
+- `type`
+- `components`
+- `modifier`
+- `indices`
+- `immediates`
+
+Field projection notes:
+
+- `capture_fields` requires emit operand `capture`.
+- `match_capture_fields` requires match operand `match_capture`.
+- If no projection flags are set, `capture` and `match_capture` use full-operand
+  replay/compare semantics.
 
 `indices` is an ordered list of index objects. Scalar index lists are not
 supported.
+
+Emit shorthand arrays:
+
+- `immediates_u32` is an ordered list of integer literals that map to
+  `immediate32` index entries (`immediate_lo` only).
+- `immediates_u64` is an ordered list of integer literals that map to
+  `immediate64` index entries (`immediate_lo` + `immediate_hi`).
+- `immediates_i32` is an ordered list of signed integer literals that map to
+  `immediate32` index entries (`immediate_lo` two's-complement payload bits).
+- `immediates_i64` is an ordered list of signed integer literals that map to
+  `immediate64` index entries (`immediate_lo` + `immediate_hi`
+  two's-complement payload bits).
+- `immediates_f32` is an ordered list of float literals that map to
+  `immediate32` index entries (`immediate_lo` payload bits).
+- `immediates_f64` is an ordered list of float literals that map to
+  `immediate64` index entries (`immediate_lo` + `immediate_hi` payload bits).
+- Shorthand arrays are normalized as if equivalent explicit `indices` entries
+  were authored.
 
 Index object fields:
 
@@ -303,6 +357,8 @@ Index object fields:
 - `immediate_lo` optional immediate value for low 32 bits
 - `immediate_hi` optional immediate value for high 32 bits
 - `immediate_lo` and `immediate_hi` accept integer literals only (decimal or hex)
+- transitional replay-object form is also accepted for `immediate_lo`:
+  `immediate_lo: { from: <index_capture_name> }`
 - `capture` optional (match only): captures the current matched index immediate value
 - `match_capture` optional:
   - in `match`: compares the current index immediate value with a previously captured index value
@@ -313,8 +369,13 @@ Index notes:
 - Index entries are matched and emitted in list order.
 - `capture` on emit index entries is invalid.
 - `any` on emit index entries is invalid.
+- replay-object form on `immediate_hi` is currently unsupported in v1.
 - If `representation` is omitted, `immediate32` is assumed.
 - `representation` is per index entry (slot), not per operand.
+- Shorthand arrays preserve operand-level declaration order: all
+  `immediates_u32` entries are emitted first, followed by `immediates_u64`,
+  then `immediates_i32`, then `immediates_i64`, then `immediates_f32`, then
+  `immediates_f64` entries.
 - `capture` and `match_capture` are independent; an entry may set both to capture
   a value and simultaneously compare it against an earlier capture.
 - Capture names are kind-specific:
@@ -345,6 +406,75 @@ steps:
               - capture: src         # replay captured source operand
 ```
 
+Emit shorthand examples for immediate literals:
+
+```yaml
+steps:
+  - name: emit_immediates
+    rules:
+      - match:
+          opcode: mov
+          operands:
+            - capture: dst
+            - capture: src
+        emit:
+          - opcode: mov
+            operands:
+              - capture: dst
+              - type: immediate32
+                immediates_u32: [0x3F000000]   # 0.5f payload bits
+
+          - opcode: mov
+            operands:
+              - capture: dst
+              - type: immediate64
+                immediates_u64: [0x1122334455667788]
+
+          - opcode: mov
+            operands:
+              - capture: dst
+              - type: immediate32
+                immediates_i32: [-1]
+
+          - opcode: mov
+            operands:
+              - capture: dst
+              - type: immediate64
+                immediates_i64: [-2]
+
+          - opcode: mov
+            operands:
+              - capture: dst
+              - type: immediate32
+                immediates_f32: [0.5]
+
+          - opcode: mov
+            operands:
+              - capture: dst
+              - type: immediate64
+                immediates_f64: [1.25]
+```
+
+Invalid mix (rejected):
+
+```yaml
+steps:
+  - name: invalid_mix
+    rules:
+      - match:
+          opcode: mov
+          operands:
+            - capture: dst
+            - capture: src
+        emit:
+          - opcode: mov
+            operands:
+              - type: immediate32
+                indices:
+                  - immediate_lo: 1
+                immediates_u32: [2]
+```
+
 To reconstruct the destination from its captured index instead of replaying the
 entire operand (useful when the component mask must differ):
 
@@ -357,6 +487,20 @@ entire operand (useful when the component mask must differ):
                   - representation: immediate32
                     match_capture: dst_reg   # resolved from captured index
               - capture: src
+
+To replay selected operand fields while overriding specific literals:
+
+```yaml
+        emit:
+          - opcode: mov
+            operands:
+              - capture: dst
+                capture_fields:
+                  type: true
+                  indices: true
+                modifier: neg
+              - capture: src
+```
 ```
 
 ## Declaration Steps

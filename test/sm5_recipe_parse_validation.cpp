@@ -141,6 +141,17 @@ int main() {
 
   {
     dxp::sm5::RecipeParseResult parseResult;
+    if (!ParseFixture(
+            "test/recipes/sm5_parse_validation_emit_immediate_shorthand.yml",
+            parseResult)) {
+      std::cerr << "Expected SM5 emit immediate shorthand to parse: "
+                << parseResult.Error << "\n";
+      return 1;
+    }
+  }
+
+  {
+    dxp::sm5::RecipeParseResult parseResult;
     if (!ParseFixture("test/recipes/sm5_parse_validation_rewrite_modes.yml",
                       parseResult)) {
       std::cerr << "Expected SM5 Before/After rewrite modes to parse: "
@@ -288,6 +299,49 @@ int main() {
     if (!Contains(parseResult.Error,
                   "index immediate_lo only accepts integer literals")) {
       std::cerr << "Expected integer-only index immediate validation error.\n";
+      return 1;
+    }
+  }
+
+  {
+    dxp::sm5::RecipeParseResult parseResult;
+    if (ParseFixture(
+            "test/recipes/"
+            "sm5_parse_validation_invalid_emit_indices_and_immediate_"
+            "shorthand.yml",
+            parseResult)) {
+      std::cerr << "Expected mixed emit index declaration styles to fail "
+                   "parsing.\n";
+      return 1;
+    }
+
+    if (!Contains(parseResult.Error,
+                  "SM5 emit operands may use explicit indices or "
+                  "immediate shorthand arrays "
+                  "(immediates_u32/immediates_u64/immediates_i32/"
+                  "immediates_i64/immediates_f32/immediates_f64), but not "
+                  "both")) {
+      std::cerr << "Expected emit shorthand exclusivity validation error.\n";
+      return 1;
+    }
+  }
+
+  {
+    dxp::sm5::RecipeParseResult parseResult;
+    if (ParseFixture("test/recipes/"
+                     "sm5_parse_validation_invalid_match_immediate_"
+                     "shorthand.yml",
+                     parseResult)) {
+      std::cerr << "Expected match-side shorthand immediate usage to fail "
+                   "parsing.\n";
+      return 1;
+    }
+
+    if (!Contains(parseResult.Error,
+                  "SM5 immediates_u32/immediates_u64/immediates_i32/"
+                  "immediates_i64/immediates_f32/immediates_f64 are only "
+                  "valid on emit operands")) {
+      std::cerr << "Expected emit-only shorthand validation error.\n";
       return 1;
     }
   }

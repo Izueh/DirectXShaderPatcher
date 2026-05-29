@@ -817,6 +817,14 @@ private:
 ///
 /// `IndexPatterns` carries an ordered list of `RecipeOperandIndexPattern`
 /// objects, one per expected index slot.
+///
+/// YAML note: emit operands may use either explicit `indices` entries or the
+/// operand-level shorthand arrays `immediates_u32` / `immediates_u64` /
+/// `immediates_i32` / `immediates_i64` / `immediates_f32` /
+/// `immediates_f64`.
+/// Shorthands are normalized into `IndexPatterns` during parsing and cannot be
+/// combined with explicit `indices` on the same operand. Shorthands are emit
+/// only; match operands must use explicit `indices`.
 struct RecipeOperandPattern {
   /// When `true`, this operand is a wildcard (match only) and all other fields
   /// are ignored. Invalid on emit operands.
@@ -824,6 +832,10 @@ struct RecipeOperandPattern {
   /// Token name for the operand type (e.g., `"temp"`, `"resource"`).
   std::string Type;
   /// Ordered per-slot index patterns.
+  ///
+  /// For YAML-authored emit operands, this is also the normalized target for
+  /// `immediates_u32`, `immediates_u64`, `immediates_i32`, `immediates_i64`,
+  /// `immediates_f32`, and `immediates_f64` shorthand arrays.
   std::vector<RecipeOperandIndexPattern> IndexPatterns;
   std::string BindHandle;
   std::string Mask;
