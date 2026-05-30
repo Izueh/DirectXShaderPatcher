@@ -213,6 +213,48 @@ if(DXP_ENABLE_SDK_INSTALL)
         COMPONENT ${DXP_SDK_COMPONENT}
     )
 
+    # Public SM6 headers expose DXC/LLVM types, so the SDK must also ship the
+    # referenced third-party header trees.
+    if(EXISTS "${DXC_SOURCE_DIR}/include/dxc")
+        install(
+            DIRECTORY "${DXC_SOURCE_DIR}/include/dxc"
+            DESTINATION "${DXP_SDK_ROOT}/include"
+            COMPONENT ${DXP_SDK_COMPONENT}
+        )
+    endif()
+
+    if(EXISTS "${DXC_BINARY_DIR}/include/dxc")
+        install(
+            DIRECTORY "${DXC_BINARY_DIR}/include/dxc"
+            DESTINATION "${DXP_SDK_ROOT}/include"
+            COMPONENT ${DXP_SDK_COMPONENT}
+        )
+    endif()
+
+    if(EXISTS "${DXC_SOURCE_DIR}/external/llvm/include/llvm")
+        install(
+            DIRECTORY "${DXC_SOURCE_DIR}/external/llvm/include/llvm"
+            DESTINATION "${DXP_SDK_ROOT}/include"
+            COMPONENT ${DXP_SDK_COMPONENT}
+        )
+    endif()
+
+    if(EXISTS "${DXC_BINARY_DIR}/external/llvm/include/llvm")
+        install(
+            DIRECTORY "${DXC_BINARY_DIR}/external/llvm/include/llvm"
+            DESTINATION "${DXP_SDK_ROOT}/include"
+            COMPONENT ${DXP_SDK_COMPONENT}
+        )
+    endif()
+
+    if(EXISTS "${DXC_BINARY_DIR}/include/llvm")
+        install(
+            DIRECTORY "${DXC_BINARY_DIR}/include/llvm"
+            DESTINATION "${DXP_SDK_ROOT}/include"
+            COMPONENT ${DXP_SDK_COMPONENT}
+        )
+    endif()
+
     install(
         FILES "${CMAKE_CURRENT_BINARY_DIR}/DirectXShaderPatcher.props"
         DESTINATION "${DXP_SDK_ROOT}"
