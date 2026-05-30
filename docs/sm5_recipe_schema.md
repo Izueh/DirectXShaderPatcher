@@ -508,17 +508,18 @@ Declaration steps support either explicit `bind_point` or `auto_bind: true`.
 
 Exception:
 
-- `add_temp` supports only `handle` and does not allow `bind_point` or `auto_bind`.
+- `add_temp` supports `handle` or `handles` and does not allow `bind_point` or `auto_bind`.
 
 Common declaration fields:
 
 - `handle`
+- `handles` (`add_temp` only)
 - `bind_point` optional
 - `auto_bind` optional, defaults to `false`
 
 Step-specific fields:
 
-- `add_temp`: `handle` required
+- `add_temp`: exactly one of `handle` or `handles` required
 - `add_input`: `interpolation_mode` optional, defaults to `linear`
 - `add_texture`: `dimension` optional, defaults to `Texture2D`
 - `add_structured_resource`: `stride` optional, defaults to `16`
@@ -532,6 +533,9 @@ Examples:
 steps:
   - kind: add_temp
     handle: <temp_handle>
+
+  - kind: add_temp
+    handles: [<temp_handle_a>, <temp_handle_b>]
 
   - kind: add_input
     handle: <input_handle>
@@ -583,3 +587,4 @@ Supported UAV kinds:
 - `structured`
 
 `add_temp` steps allocate temps at step execution time and can be guarded by `if` conditions.
+When `handles` is provided, temps are allocated in listed order and each handle gets one temp register.

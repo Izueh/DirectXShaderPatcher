@@ -154,6 +154,18 @@ int main() {
   {
     dxp::sm5::RecipeParseResult parseResult;
     if (!ParseFixture(
+            "test/recipes/sm5_parse_validation_add_temp_handles_bind_handle.yml",
+            parseResult)) {
+      std::cerr << "Expected add_temp handles list to satisfy temp "
+                   "bind_handle validation: "
+                << parseResult.Error << "\n";
+      return 1;
+    }
+  }
+
+  {
+    dxp::sm5::RecipeParseResult parseResult;
+    if (!ParseFixture(
             "test/recipes/sm5_parse_validation_emit_immediate_shorthand.yml",
             parseResult)) {
       std::cerr << "Expected SM5 emit immediate shorthand to parse: "
@@ -325,8 +337,27 @@ int main() {
       return 1;
     }
 
-    if (!Contains(parseResult.Error, "add_temp steps require handle")) {
+    if (!Contains(parseResult.Error, "add_temp steps require handle or handles")) {
       std::cerr << "Expected add_temp handle validation error.\n";
+      return 1;
+    }
+  }
+
+  {
+    dxp::sm5::RecipeParseResult parseResult;
+    if (ParseFixture(
+            "test/recipes/"
+            "sm5_parse_validation_invalid_add_temp_handle_and_handles.yml",
+            parseResult)) {
+      std::cerr << "Expected add_temp with both handle and handles to fail "
+                   "parsing.\n";
+      return 1;
+    }
+
+    if (!Contains(parseResult.Error,
+                  "add_temp steps cannot combine handle and handles")) {
+      std::cerr << "Expected add_temp handle/handles exclusivity "
+                   "validation error.\n";
       return 1;
     }
   }

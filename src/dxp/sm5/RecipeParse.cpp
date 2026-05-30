@@ -322,6 +322,7 @@ struct YamlStep {
 
   int32_t bind_point = -1;
   std::string handle;
+  std::vector<std::string> handles;
   bool auto_bind = false;
   std::string dimension = "Texture2D";
   std::string interpolation_mode = "linear";
@@ -433,6 +434,7 @@ LLVM_YAML_IS_SEQUENCE_VECTOR(YamlStructuredResourceDecl)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlCBufferDecl)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlSamplerDecl)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlUavDecl)
+LLVM_YAML_IS_SEQUENCE_VECTOR(std::string)
 
 namespace llvm {
 namespace yaml {
@@ -558,6 +560,7 @@ template <> struct MappingTraits<YamlStep> {
     io.mapOptional("checks", step.checks);
     io.mapOptional("bind_point", step.bind_point, -1);
     io.mapOptional("handle", step.handle);
+    io.mapOptional("handles", step.handles);
     io.mapOptional("auto_bind", step.auto_bind, false);
     io.mapOptional("dimension", step.dimension, std::string("Texture2D"));
     io.mapOptional("interpolation_mode", step.interpolation_mode,
@@ -2288,8 +2291,30 @@ static bool CollectDeclarationHandlesFromSteps(
     const std::string stepKind =
         step.kind.empty() ? "apply_rules" : Lowercase(step.kind);
     if (stepKind == "add_temp") {
-      if (!insertHandle(tempHandles, step.handle, "temp")) {
+      if (!step.handle.empty() && !step.handles.empty()) {
+        error = "add_temp steps cannot combine handle and handles";
         return false;
+      }
+
+      if (step.handle.empty() && step.handles.empty()) {
+        error = "add_temp steps require handle or handles";
+        return false;
+      }
+
+      if (!step.handle.empty()) {
+        if (!insertHandle(tempHandles, step.handle, "temp")) {
+          return false;
+        }
+      }
+
+      for (const std::string &tempHandle : step.handles) {
+        if (tempHandle.empty()) {
+          error = "add_temp handles entries must be non-empty";
+          return false;
+        }
+        if (!insertHandle(tempHandles, tempHandle, "temp")) {
+          return false;
+        }
       }
     } else if (stepKind == "add_input") {
       if (!insertHandle(inputHandles, step.handle, "input")) {
@@ -2859,9 +2884,15 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
                                 .Require(stepModel.required)
                                 .When(stepCondition));
     } else if (stepKind == "add_temp") {
-      if (stepModel.handle.empty()) {
+      if (!stepModel.handle.empty() && !stepModel.handles.empty()) {
         result.Error = sourceName.str() +
-                       ": add_temp steps require handle";
+                       ": add_temp steps cannot combine handle and handles";
+        return false;
+      }
+
+      if (stepModel.handle.empty() && stepModel.handles.empty()) {
+        result.Error = sourceName.str() +
+                       ": add_temp steps require handle or handles";
         return false;
       }
       if (stepModel.bind_point >= 0) {
@@ -2875,10 +2906,29 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
         return false;
       }
 
-      RecipeTempDecl decl = RecipeTempDecl{}.WithHandle(stepModel.handle);
-      result.Recipe.AddStep(MakeAddTempStep(stepName, std::move(decl))
-                                .Require(stepModel.required)
-                                .When(stepCondition));
+      std::vector<std::string> tempHandles;
+      if (!stepModel.handle.empty()) {
+        tempHandles.push_back(stepModel.handle);
+      }
+      for (const std::string &tempHandle : stepModel.handles) {
+        if (tempHandle.empty()) {
+          result.Error = sourceName.str() +
+                         ": add_temp handles entries must be non-empty";
+          return false;
+        }
+        tempHandles.push_back(tempHandle);
+      }
+
+      for (size_t tempIndex = 0; tempIndex < tempHandles.size(); ++tempIndex) {
+        RecipeTempDecl decl = RecipeTempDecl{}.WithHandle(tempHandles[tempIndex]);
+        const std::string tempStepName =
+            tempHandles.size() == 1
+                ? stepName
+                : stepName + "[" + std::to_string(tempIndex) + "]";
+        result.Recipe.AddStep(MakeAddTempStep(tempStepName, std::move(decl))
+                                  .Require(stepModel.required)
+                                  .When(stepCondition));
+      }
     } else if (stepKind == "add_output") {
       RecipeOutputDecl decl = RecipeOutputDecl{}
                                  .WithBindPoint(stepModel.bind_point >= 0

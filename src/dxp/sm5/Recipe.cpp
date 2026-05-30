@@ -677,7 +677,9 @@ static bool ParseOperandComponentMode(const RecipeOperandPattern &operandModel,
   }
 
   componentMode = 0;
-  if (numComponents == D3D10_SB_OPERAND_4_COMPONENT) {
+  if ((operandType != D3D10_SB_OPERAND_TYPE_IMMEDIATE32 &&
+       operandType != D3D10_SB_OPERAND_TYPE_IMMEDIATE64) &&
+      numComponents == D3D10_SB_OPERAND_4_COMPONENT) {
     componentMode = D3D10_SB_OPERAND_4_COMPONENT_NOSWIZZLE;
   }
   return true;

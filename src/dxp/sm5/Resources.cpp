@@ -34,6 +34,21 @@ static Operand MakeConstantBufferOperand(uint32_t bindPoint,
   return operand;
 }
 
+static Operand MakeConstantBufferDeclarationOperand(uint32_t bindPoint,
+                                                    uint32_t elementCount) {
+  Operand operand;
+  operand.Type = D3D10_SB_OPERAND_TYPE_CONSTANT_BUFFER;
+  operand.NumComponents = D3D10_SB_OPERAND_4_COMPONENT;
+  operand.ComponentMode =
+      ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(
+          D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE) |
+      ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE(
+          D3D10_SB_4_COMPONENT_X, D3D10_SB_4_COMPONENT_Y,
+          D3D10_SB_4_COMPONENT_Z, D3D10_SB_4_COMPONENT_W);
+  operand.Indices = {bindPoint, elementCount};
+  return operand;
+}
+
 static Operand MakeSamplerOperand(uint32_t bindPoint) {
   Operand operand;
   operand.Type = D3D10_SB_OPERAND_TYPE_SAMPLER;
@@ -89,8 +104,9 @@ static Instruction
 BuildConstantBufferDeclaration(const RecipeCBufferDecl &decl) {
   Instruction instruction;
   instruction.Opcode = Opcode{D3D10_SB_OPCODE_DCL_CONSTANT_BUFFER};
-  const auto operand = EncodeOperand(MakeConstantBufferOperand(
-      decl.BindPoint, decl.Elements, D3D10_SB_4_COMPONENT_X));
+  const auto declarationOperand =
+      MakeConstantBufferDeclarationOperand(decl.BindPoint, decl.Elements);
+  const auto operand = EncodeOperand(declarationOperand);
 
   instruction.RawTokens.push_back(
       ENCODE_D3D10_SB_OPCODE_TYPE(D3D10_SB_OPCODE_DCL_CONSTANT_BUFFER) |
@@ -102,8 +118,7 @@ BuildConstantBufferDeclaration(const RecipeCBufferDecl &decl) {
                                operand.end());
   instruction.LengthInDwords =
       static_cast<uint32_t>(instruction.RawTokens.size());
-  instruction.Operands.push_back(MakeConstantBufferOperand(
-      decl.BindPoint, decl.Elements, D3D10_SB_4_COMPONENT_X));
+  instruction.Operands.push_back(std::move(declarationOperand));
   return instruction;
 }
 

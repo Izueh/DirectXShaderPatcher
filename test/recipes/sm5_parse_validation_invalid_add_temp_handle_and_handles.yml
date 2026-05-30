@@ -1,0 +1,12 @@
+version: 1
+steps:
+  - kind: add_temp
+    name: add_tmp_conflict
+    handle: tmp0
+    handles: [tmp1]
+
+  - kind: apply_rules
+    rules:
+      - match:
+          opcode: mov
+          rewrite_mode: None
