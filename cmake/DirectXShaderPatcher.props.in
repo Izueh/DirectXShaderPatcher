@@ -10,6 +10,8 @@
       this before importing the props when consuming split SDK packages that
       publish a single configuration per root.
     -->
+    <DXPSdkLibraryConfiguration Condition="'$(DXPSdkLibraryConfiguration)'=='' and $([System.String]::Copy('$(Configuration)').Contains('Debug'))">Debug</DXPSdkLibraryConfiguration>
+    <DXPSdkLibraryConfiguration Condition="'$(DXPSdkLibraryConfiguration)'=='' and $([System.String]::Copy('$(Configuration)').Contains('Release'))">Release</DXPSdkLibraryConfiguration>
     <DXPSdkLibraryConfiguration Condition="'$(DXPSdkLibraryConfiguration)'==''">$(Configuration)</DXPSdkLibraryConfiguration>
     <LibraryPath Condition="Exists('$(MSBuildThisFileDirectory)lib\$(DXPSdkLibraryConfiguration)\$(DXPSdkToolsetSubdir)')">$(MSBuildThisFileDirectory)lib\$(DXPSdkLibraryConfiguration)\$(DXPSdkToolsetSubdir);$(LibraryPath)</LibraryPath>
     <LibraryPath Condition="!Exists('$(MSBuildThisFileDirectory)lib\$(DXPSdkLibraryConfiguration)\clang') and !Exists('$(MSBuildThisFileDirectory)lib\$(DXPSdkLibraryConfiguration)\msvc')">$(MSBuildThisFileDirectory)lib\$(DXPSdkLibraryConfiguration);$(LibraryPath)</LibraryPath>
@@ -17,7 +19,7 @@
   <ItemDefinitionGroup>
     <ClCompile>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <PreprocessorDefinitions>NOMINMAX;_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH;$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH;$(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <AdditionalDependencies>@DXP_SDK_MSBUILD_DEPENDENCIES@;$(AdditionalDependencies)</AdditionalDependencies>
