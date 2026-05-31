@@ -6,9 +6,17 @@ on:
       - master
     tags:
       - 'v*'
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - ".github/workflows/**"
   pull_request:
     branches:
       - master
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - ".github/workflows/**"
 
 permissions:
   actions: write
@@ -18,6 +26,10 @@ jobs:
   build:
     name: Compile And Package Artifacts
     runs-on: windows-latest
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_CACHE_SIZE: "2G"
+      SCCACHE_C_CUSTOM_CACHE_BUSTER: "${{ github.workflow }}"
 
     steps:
       - name: Checkout Source Code
@@ -50,54 +62,20 @@ jobs:
           arch: amd64
 
       - name: Setup Compiler Cache
-        id: compiler_cache
-        uses: hendrikmuhs/ccache-action@v1.2.23
-        with:
-          variant: sccache
-          key: ${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-sccache
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-sccache-
-            ${{ runner.os }}-${{ runner.arch }}-sccache-
-          max-size: 2G
-          append-timestamp: true
-          evict-old-files: job
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Prepare Staging Directory
         shell: pwsh
         run: |
           Remove-Item -Recurse -Force "artifacts/release" -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path "artifacts/release" | Out-Null
-          New-Item -ItemType Directory -Path "artifacts/release/clang-debug" | Out-Null
-          New-Item -ItemType Directory -Path "artifacts/release/msvc-debug" | Out-Null
           New-Item -ItemType Directory -Path "artifacts/release/clang-release" | Out-Null
           New-Item -ItemType Directory -Path "artifacts/release/msvc-release" | Out-Null
-
-      - name: Build And Install Clang Debug Package
-        shell: pwsh
-        run: |
-          cmake --preset ninja-clang-debug -DDXP_ENABLE_SDK_INSTALL=ON -DDXP_SDK_TOOLSET_SUBDIR=clang
-          cmake --build --preset ninja-clang-debug --parallel --target dxp_lib dxcompiler dxp
-          cmake --install "out/build/ninja-clang-debug" --component DirectXShaderPatcherSDK --prefix "$env:GITHUB_WORKSPACE/artifacts/release/clang-debug"
-          cmake --install "out/build/ninja-clang-debug" --component DirectXShaderPatcherCLI --prefix "$env:GITHUB_WORKSPACE/artifacts/release/clang-debug"
-          if (Test-Path "artifacts/release/clang-debug/DirectXShaderPatcher_SDK") {
-            Move-Item -Path "artifacts/release/clang-debug/DirectXShaderPatcher_SDK" -Destination "artifacts/release/clang-debug/DirectXShaderPatcher"
-          }
-
-      - name: Build And Install MSVC Debug Package
-        shell: pwsh
-        run: |
-          cmake --preset ninja-msvc-debug -DDXP_ENABLE_SDK_INSTALL=ON -DDXP_SDK_TOOLSET_SUBDIR=msvc
-          cmake --build --preset ninja-msvc-debug --parallel --target dxp_lib dxcompiler dxp
-          cmake --install "out/build/ninja-msvc-debug" --component DirectXShaderPatcherSDK --prefix "$env:GITHUB_WORKSPACE/artifacts/release/msvc-debug"
-          cmake --install "out/build/ninja-msvc-debug" --component DirectXShaderPatcherCLI --prefix "$env:GITHUB_WORKSPACE/artifacts/release/msvc-debug"
-          if (Test-Path "artifacts/release/msvc-debug/DirectXShaderPatcher_SDK") {
-            Move-Item -Path "artifacts/release/msvc-debug/DirectXShaderPatcher_SDK" -Destination "artifacts/release/msvc-debug/DirectXShaderPatcher"
-          }
 
       - name: Build And Install Clang Release Package
         shell: pwsh
         run: |
-          cmake --preset ninja-clang-release -DDXP_ENABLE_SDK_INSTALL=ON -DDXP_SDK_TOOLSET_SUBDIR=clang
+          cmake --preset ninja-clang-release -DDXP_ENABLE_SDK_INSTALL=ON -DDXP_SDK_TOOLSET_SUBDIR=clang -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
           cmake --build --preset ninja-clang-release --parallel --target dxp_lib dxcompiler dxp
           cmake --install "out/build/ninja-clang-release" --component DirectXShaderPatcherSDK --prefix "$env:GITHUB_WORKSPACE/artifacts/release/clang-release"
           cmake --install "out/build/ninja-clang-release" --component DirectXShaderPatcherCLI --prefix "$env:GITHUB_WORKSPACE/artifacts/release/clang-release"
@@ -108,7 +86,7 @@ jobs:
       - name: Build And Install MSVC Release Package
         shell: pwsh
         run: |
-          cmake --preset ninja-msvc-release -DDXP_ENABLE_SDK_INSTALL=ON -DDXP_SDK_TOOLSET_SUBDIR=msvc
+          cmake --preset ninja-msvc-release -DDXP_ENABLE_SDK_INSTALL=ON -DDXP_SDK_TOOLSET_SUBDIR=msvc -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
           cmake --build --preset ninja-msvc-release --parallel --target dxp_lib dxcompiler dxp
           cmake --install "out/build/ninja-msvc-release" --component DirectXShaderPatcherSDK --prefix "$env:GITHUB_WORKSPACE/artifacts/release/msvc-release"
           cmake --install "out/build/ninja-msvc-release" --component DirectXShaderPatcherCLI --prefix "$env:GITHUB_WORKSPACE/artifacts/release/msvc-release"
@@ -116,58 +94,16 @@ jobs:
             Move-Item -Path "artifacts/release/msvc-release/DirectXShaderPatcher_SDK" -Destination "artifacts/release/msvc-release/DirectXShaderPatcher"
           }
 
+      - name: Show sccache stats
+        if: always()
+        shell: pwsh
+        run: sccache --show-stats
+
       - name: Archive Distribution Packages
         shell: pwsh
         run: |
-          Compress-Archive -Path "artifacts/release/clang-debug/*" -DestinationPath "artifacts/DirectXShaderPatcher-clang-debug.zip" -Force
-          Compress-Archive -Path "artifacts/release/msvc-debug/*" -DestinationPath "artifacts/DirectXShaderPatcher-msvc-debug.zip" -Force
           Compress-Archive -Path "artifacts/release/clang-release/*" -DestinationPath "artifacts/DirectXShaderPatcher-clang-release.zip" -Force
           Compress-Archive -Path "artifacts/release/msvc-release/*" -DestinationPath "artifacts/DirectXShaderPatcher-msvc-release.zip" -Force
-
-      - name: Prune Older Compiler Caches
-        if: always() && github.event_name == 'push'
-        shell: pwsh
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-
-          $cachePrefix = "${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-sccache"
-          $keepCount = 2
-          $repo = "${{ github.repository }}"
-          $headers = @{
-            Authorization = "Bearer $env:GITHUB_TOKEN"
-            Accept = "application/vnd.github+json"
-            "X-GitHub-Api-Version" = "2022-11-28"
-          }
-
-          $response = Invoke-RestMethod `
-            -Method Get `
-            -Uri "https://api.github.com/repos/$repo/actions/caches?per_page=100" `
-            -Headers $headers
-
-          $matchingCaches = @($response.actions_caches | Where-Object {
-            $_.key -like "$cachePrefix*"
-          } | Sort-Object -Property { [DateTime]$_.last_accessed_at } -Descending)
-
-          if ($matchingCaches.Count -le $keepCount) {
-            Write-Host "No cache eviction needed for prefix '$cachePrefix' (count=$($matchingCaches.Count), keep=$keepCount)."
-            exit 0
-          }
-
-          $toDelete = @($matchingCaches | Select-Object -Skip $keepCount)
-          Write-Host "Evicting $($toDelete.Count) old compiler cache entr$(if ($toDelete.Count -eq 1) { 'y' } else { 'ies' }) for prefix '$cachePrefix'."
-
-          foreach ($cache in $toDelete) {
-            $cacheId = $cache.id
-            $cacheKey = $cache.key
-            Write-Host "Deleting cache id=$cacheId key=$cacheKey"
-
-            Invoke-RestMethod `
-              -Method Delete `
-              -Uri "https://api.github.com/repos/$repo/actions/caches/$cacheId" `
-              -Headers $headers | Out-Null
-          }
 
       - name: Generate GitHub Release Asset Package
         if: github.event_name == 'push'
@@ -177,8 +113,6 @@ jobs:
           name: ${{ steps.release_meta.outputs.release_name }}
           target_commitish: ${{ github.sha }}
           files: |
-            artifacts/DirectXShaderPatcher-clang-debug.zip
-            artifacts/DirectXShaderPatcher-msvc-debug.zip
             artifacts/DirectXShaderPatcher-clang-release.zip
             artifacts/DirectXShaderPatcher-msvc-release.zip
           draft: false

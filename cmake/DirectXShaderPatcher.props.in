@@ -5,14 +5,19 @@
     <IncludePath>$(MSBuildThisFileDirectory)include;$(IncludePath)</IncludePath>
     <DXPSdkToolsetSubdir Condition="'$(PlatformToolset)'=='ClangCL'">clang</DXPSdkToolsetSubdir>
     <DXPSdkToolsetSubdir Condition="'$(PlatformToolset)'!='ClangCL'">msvc</DXPSdkToolsetSubdir>
-    <LibraryPath Condition="Exists('$(MSBuildThisFileDirectory)lib\$(Configuration)\$(DXPSdkToolsetSubdir)')">$(MSBuildThisFileDirectory)lib\$(Configuration)\$(DXPSdkToolsetSubdir);$(LibraryPath)</LibraryPath>
-    <LibraryPath Condition="!Exists('$(MSBuildThisFileDirectory)lib\$(Configuration)\clang') and !Exists('$(MSBuildThisFileDirectory)lib\$(Configuration)\msvc')">$(MSBuildThisFileDirectory)lib\$(Configuration);$(LibraryPath)</LibraryPath>
+    <!--
+      Defaults to the current MSBuild configuration (Debug/Release). Override
+      this before importing the props when consuming split SDK packages that
+      publish a single configuration per root.
+    -->
+    <DXPSdkLibraryConfiguration Condition="'$(DXPSdkLibraryConfiguration)'==''">$(Configuration)</DXPSdkLibraryConfiguration>
+    <LibraryPath Condition="Exists('$(MSBuildThisFileDirectory)lib\$(DXPSdkLibraryConfiguration)\$(DXPSdkToolsetSubdir)')">$(MSBuildThisFileDirectory)lib\$(DXPSdkLibraryConfiguration)\$(DXPSdkToolsetSubdir);$(LibraryPath)</LibraryPath>
+    <LibraryPath Condition="!Exists('$(MSBuildThisFileDirectory)lib\$(DXPSdkLibraryConfiguration)\clang') and !Exists('$(MSBuildThisFileDirectory)lib\$(DXPSdkLibraryConfiguration)\msvc')">$(MSBuildThisFileDirectory)lib\$(DXPSdkLibraryConfiguration);$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <PreprocessorDefinitions>NOMINMAX;_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH;$(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="'$(Configuration)'=='Debug'">_ITERATOR_DEBUG_LEVEL=0;$(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <AdditionalDependencies>@DXP_SDK_MSBUILD_DEPENDENCIES@;$(AdditionalDependencies)</AdditionalDependencies>

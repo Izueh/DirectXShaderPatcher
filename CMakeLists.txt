@@ -137,12 +137,6 @@ target_include_directories(dxp_lib SYSTEM PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/external/WDK/includes"
 )
 
-if(MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    target_compile_definitions(dxp_lib PUBLIC
-        $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
-    )
-endif()
-
 target_link_libraries(dxp_lib PRIVATE 
     LLVMBitReader
     LLVMBitWriter
