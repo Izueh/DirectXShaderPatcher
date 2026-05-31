@@ -108,6 +108,15 @@ struct Operand {
     /// previously captured index value of this name. Corresponds to the
     /// `match_capture` field on emit-side index objects in YAML.
     std::string MatchCaptureName;
+    /// Non-empty on emit templates: resolves immediate_lo from a runtime
+    /// recipe variable/input key.
+    std::string ImmediateLoVariableName;
+    /// Non-empty on emit templates: resolves immediate_hi from a runtime
+    /// recipe variable/input key.
+    std::string ImmediateHiVariableName;
+    /// Runtime conversion family for variable-backed immediates.
+    /// 0=none, 1=u32, 2=u64, 3=i32, 4=i64, 5=f32, 6=f64.
+    uint32_t ImmediateVariableFamily = 0;
   };
 
   OperandType Type = kOperandTypeTemp;

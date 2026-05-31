@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -20,6 +21,16 @@ struct PatchResult {
   /// binding requirements and Report.OutputContainer for the emitted DXBC
   /// envelope. Report.Steps provides optional execution detail.
   dxp::PatchReport Report;
+};
+
+/// @brief Optional callbacks for mutating/observing context during execution.
+struct RecipeExecutionOptions {
+  std::function<void(const std::string &stepName, RecipeContext &context)>
+      BeforeStep;
+  std::function<void(const std::string &stepName,
+                     const RecipeStepResult &stepResult,
+                     RecipeContext &context)>
+      AfterStep;
 };
 
 /// @brief Describes one operand in the inspection-friendly program view.
@@ -62,6 +73,11 @@ PatchResult PatchContainer(const std::vector<uint8_t> &inputContainer,
                            const Recipe &recipe,
                            const RecipeContext &context = {});
 
+/// @brief Applies an SM5 recipe with a mutable execution context and hooks.
+PatchResult PatchContainer(const std::vector<uint8_t> &inputContainer,
+                           const Recipe &recipe, RecipeContext &context,
+                           const RecipeExecutionOptions &execution = {});
+
 /// @brief Applies an SM5 recipe to an in-memory container buffer.
 /// @param recipe Recipe to execute.
 /// @param inputData Pointer to the input container bytes.
@@ -71,6 +87,11 @@ PatchResult PatchContainer(const std::vector<uint8_t> &inputContainer,
 /// and execution diagnostics.
 PatchResult PatchContainer(const Recipe &recipe, const uint8_t *inputData,
                            size_t inputSize, const RecipeContext &context = {});
+
+/// @brief Applies an SM5 recipe from memory with mutable context and hooks.
+PatchResult PatchContainer(const Recipe &recipe, const uint8_t *inputData,
+                           size_t inputSize, RecipeContext &context,
+                           const RecipeExecutionOptions &execution = {});
 
 /// @brief Extracts opcode values from a container byte vector.
 /// @param inputContainer Input DXBC container bytes.

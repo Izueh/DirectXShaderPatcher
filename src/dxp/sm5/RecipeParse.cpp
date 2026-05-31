@@ -6,6 +6,7 @@
 #include "dxp/sm5/Transforms.h"
 
 #include <cctype>
+#include <climits>
 #include <cstring>
 #include <cstdlib>
 #include <fstream>
@@ -243,6 +244,10 @@ struct YamlOperandIndex {
   std::string match_capture;
 };
 
+struct YamlImmediateScalar {
+  std::string value;
+};
+
 struct YamlOperandCaptureFields {
   bool type = false;
   bool components = false;
@@ -255,12 +260,12 @@ struct YamlOperand {
   bool any = false;
   std::string type;
   std::vector<YamlOperandIndex> indices;
-  std::vector<uint32_t> immediates_u32;
-  std::vector<uint64_t> immediates_u64;
-  std::vector<int32_t> immediates_i32;
-  std::vector<int64_t> immediates_i64;
-  std::vector<float> immediates_f32;
-  std::vector<double> immediates_f64;
+  std::vector<YamlImmediateScalar> immediates_u32;
+  std::vector<YamlImmediateScalar> immediates_u64;
+  std::vector<YamlImmediateScalar> immediates_i32;
+  std::vector<YamlImmediateScalar> immediates_i64;
+  std::vector<YamlImmediateScalar> immediates_f32;
+  std::vector<YamlImmediateScalar> immediates_f64;
   std::string bind_handle;
   std::string state_temp;
   YamlComponentSelector components;
@@ -305,6 +310,7 @@ struct YamlPrefilter {
 
 struct YamlStepCondition {
   std::string state;
+  std::string input;
   std::vector<YamlStepCondition> all;
   std::vector<YamlStepCondition> any;
   bool not_condition = false;
@@ -418,6 +424,7 @@ LLVM_YAML_IS_SEQUENCE_VECTOR(int32_t)
 LLVM_YAML_IS_SEQUENCE_VECTOR(int64_t)
 LLVM_YAML_IS_SEQUENCE_VECTOR(float)
 LLVM_YAML_IS_SEQUENCE_VECTOR(double)
+LLVM_YAML_IS_SEQUENCE_VECTOR(YamlImmediateScalar)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlOperandIndex)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlOperand)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlInstructionMatch)
@@ -438,6 +445,23 @@ LLVM_YAML_IS_SEQUENCE_VECTOR(std::string)
 
 namespace llvm {
 namespace yaml {
+
+template <> struct ScalarTraits<YamlImmediateScalar> {
+  static void output(const YamlImmediateScalar &value, void *ctxt,
+                     raw_ostream &out) {
+    (void)ctxt;
+    out << value.value;
+  }
+
+  static StringRef input(StringRef scalar, void *ctxt,
+                         YamlImmediateScalar &value) {
+    (void)ctxt;
+    value.value = scalar.str();
+    return StringRef();
+  }
+
+  static bool mustQuote(StringRef) { return false; }
+};
 
 template <> struct MappingTraits<YamlComponentSelector> {
   static void mapping(IO &io, YamlComponentSelector &selector) {
@@ -542,6 +566,7 @@ template <> struct MappingTraits<YamlRule> {
 template <> struct MappingTraits<YamlStepCondition> {
   static void mapping(IO &io, YamlStepCondition &condition) {
     io.mapOptional("state", condition.state);
+    io.mapOptional("input", condition.input);
     io.mapOptional("all", condition.all);
     io.mapOptional("any", condition.any);
     io.mapOptional("not", condition.not_condition, false);
@@ -1002,6 +1027,26 @@ static bool ParseIndexImmediateScalar(const std::string &token,
   return false;
 }
 
+static bool IsValidVariableKey(const std::string &name) {
+  if (name.empty()) {
+    return false;
+  }
+
+  const unsigned char first = static_cast<unsigned char>(name.front());
+  if (!(std::isalpha(first) || first == '_')) {
+    return false;
+  }
+
+  for (char ch : name) {
+    const unsigned char value = static_cast<unsigned char>(ch);
+    if (!(std::isalnum(value) || value == '_')) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 template <typename TDest, typename TSource>
 static TDest BitCastImmediate(TSource value) {
   static_assert(sizeof(TDest) == sizeof(TSource),
@@ -1018,7 +1063,8 @@ static bool DecodeOperandIndexPatterns(
 
 static bool DecodeEmitImmediateShorthands(
     const YamlOperand &operandModel,
-    std::vector<RecipeOperandIndexPattern> &indexPatterns) {
+    std::vector<RecipeOperandIndexPattern> &indexPatterns,
+    std::string &error) {
   indexPatterns.clear();
   indexPatterns.reserve(operandModel.immediates_u32.size() +
                         operandModel.immediates_u64.size() +
@@ -1027,46 +1073,189 @@ static bool DecodeEmitImmediateShorthands(
                         operandModel.immediates_f32.size() +
                         operandModel.immediates_f64.size());
 
-  auto appendImmediate32 = [&](uint32_t immediate) {
+  auto appendImmediate32 = [&](uint32_t immediate,
+                               RecipeImmediateFamily family) {
     RecipeOperandIndexPattern indexPattern;
     indexPattern.Representation = RecipeOperandIndexRepresentation::Immediate32;
     indexPattern.HasImmediateLo = true;
     indexPattern.ImmediateLo = immediate;
+    indexPattern.ImmediateFamily = family;
     indexPatterns.push_back(std::move(indexPattern));
   };
 
-  auto appendImmediate64 = [&](uint64_t immediate) {
+  auto appendImmediate64 = [&](uint64_t immediate,
+                               RecipeImmediateFamily family) {
     RecipeOperandIndexPattern indexPattern;
     indexPattern.Representation = RecipeOperandIndexRepresentation::Immediate64;
     indexPattern.HasImmediateLo = true;
     indexPattern.ImmediateLo = static_cast<uint32_t>(immediate & 0xFFFFFFFFull);
     indexPattern.HasImmediateHi = true;
     indexPattern.ImmediateHi = static_cast<uint32_t>(immediate >> 32);
+    indexPattern.ImmediateFamily = family;
     indexPatterns.push_back(std::move(indexPattern));
   };
 
-  for (uint32_t value : operandModel.immediates_u32) {
-    appendImmediate32(value);
+  auto appendVariable32 = [&](const std::string &variable,
+                              RecipeImmediateFamily family,
+                              const char *fieldName) -> bool {
+    if (!IsValidVariableKey(variable)) {
+      error = std::string("SM5 ") + fieldName +
+              " entries must be numeric literals or non-empty identifier "
+              "variable names";
+      return false;
+    }
+    RecipeOperandIndexPattern indexPattern;
+    indexPattern.Representation = RecipeOperandIndexRepresentation::Immediate32;
+    indexPattern.HasImmediateLo = true;
+    indexPattern.ImmediateLoVariable = variable;
+    indexPattern.ImmediateFamily = family;
+    indexPatterns.push_back(std::move(indexPattern));
+    return true;
+  };
+
+  auto appendVariable64 = [&](const std::string &variable,
+                              RecipeImmediateFamily family,
+                              const char *fieldName) -> bool {
+    if (!IsValidVariableKey(variable)) {
+      error = std::string("SM5 ") + fieldName +
+              " entries must be numeric literals or non-empty identifier "
+              "variable names";
+      return false;
+    }
+    RecipeOperandIndexPattern indexPattern;
+    indexPattern.Representation = RecipeOperandIndexRepresentation::Immediate64;
+    indexPattern.HasImmediateLo = true;
+    indexPattern.HasImmediateHi = true;
+    indexPattern.ImmediateLoVariable = variable;
+    indexPattern.ImmediateFamily = family;
+    indexPatterns.push_back(std::move(indexPattern));
+    return true;
+  };
+
+  auto parseUnsigned = [&](const std::string &token,
+                           uint64_t &value) -> bool {
+    char *end = nullptr;
+    const unsigned long long parsed = std::strtoull(token.c_str(), &end, 0);
+    if (end != nullptr && *end == '\0') {
+      value = static_cast<uint64_t>(parsed);
+      return true;
+    }
+    return false;
+  };
+
+  auto parseSigned = [&](const std::string &token, int64_t &value) -> bool {
+    char *end = nullptr;
+    const long long parsed = std::strtoll(token.c_str(), &end, 0);
+    if (end != nullptr && *end == '\0') {
+      value = static_cast<int64_t>(parsed);
+      return true;
+    }
+    return false;
+  };
+
+  auto parseFloat32 = [&](const std::string &token, float &value) -> bool {
+    char *end = nullptr;
+    const float parsed = std::strtof(token.c_str(), &end);
+    if (end != nullptr && *end == '\0') {
+      value = parsed;
+      return true;
+    }
+    return false;
+  };
+
+  auto parseFloat64 = [&](const std::string &token, double &value) -> bool {
+    char *end = nullptr;
+    const double parsed = std::strtod(token.c_str(), &end);
+    if (end != nullptr && *end == '\0') {
+      value = parsed;
+      return true;
+    }
+    return false;
+  };
+
+  for (const YamlImmediateScalar &token : operandModel.immediates_u32) {
+    uint64_t parsed = 0;
+    if (parseUnsigned(token.value, parsed)) {
+      if (parsed > 0xFFFFFFFFull) {
+        error = "SM5 immediates_u32 literal is out of uint32 range";
+        return false;
+      }
+      appendImmediate32(static_cast<uint32_t>(parsed), RecipeImmediateFamily::U32);
+      continue;
+    }
+    if (!appendVariable32(token.value, RecipeImmediateFamily::U32,
+                          "immediates_u32")) {
+      return false;
+    }
   }
 
-  for (uint64_t immediate : operandModel.immediates_u64) {
-    appendImmediate64(immediate);
+  for (const YamlImmediateScalar &token : operandModel.immediates_u64) {
+    uint64_t parsed = 0;
+    if (parseUnsigned(token.value, parsed)) {
+      appendImmediate64(parsed, RecipeImmediateFamily::U64);
+      continue;
+    }
+    if (!appendVariable64(token.value, RecipeImmediateFamily::U64,
+                          "immediates_u64")) {
+      return false;
+    }
   }
 
-  for (int32_t value : operandModel.immediates_i32) {
-    appendImmediate32(BitCastImmediate<uint32_t>(value));
+  for (const YamlImmediateScalar &token : operandModel.immediates_i32) {
+    int64_t parsed = 0;
+    if (parseSigned(token.value, parsed)) {
+      if (parsed < static_cast<int64_t>(INT32_MIN) ||
+          parsed > static_cast<int64_t>(INT32_MAX)) {
+        error = "SM5 immediates_i32 literal is out of int32 range";
+        return false;
+      }
+      appendImmediate32(BitCastImmediate<uint32_t>(static_cast<int32_t>(parsed)),
+                        RecipeImmediateFamily::I32);
+      continue;
+    }
+    if (!appendVariable32(token.value, RecipeImmediateFamily::I32,
+                          "immediates_i32")) {
+      return false;
+    }
   }
 
-  for (int64_t value : operandModel.immediates_i64) {
-    appendImmediate64(BitCastImmediate<uint64_t>(value));
+  for (const YamlImmediateScalar &token : operandModel.immediates_i64) {
+    int64_t parsed = 0;
+    if (parseSigned(token.value, parsed)) {
+      appendImmediate64(BitCastImmediate<uint64_t>(parsed),
+                        RecipeImmediateFamily::I64);
+      continue;
+    }
+    if (!appendVariable64(token.value, RecipeImmediateFamily::I64,
+                          "immediates_i64")) {
+      return false;
+    }
   }
 
-  for (float value : operandModel.immediates_f32) {
-    appendImmediate32(BitCastImmediate<uint32_t>(value));
+  for (const YamlImmediateScalar &token : operandModel.immediates_f32) {
+    float parsed = 0.0f;
+    if (parseFloat32(token.value, parsed)) {
+      appendImmediate32(BitCastImmediate<uint32_t>(parsed),
+                        RecipeImmediateFamily::F32);
+      continue;
+    }
+    if (!appendVariable32(token.value, RecipeImmediateFamily::F32,
+                          "immediates_f32")) {
+      return false;
+    }
   }
 
-  for (double value : operandModel.immediates_f64) {
-    appendImmediate64(BitCastImmediate<uint64_t>(value));
+  for (const YamlImmediateScalar &token : operandModel.immediates_f64) {
+    double parsed = 0.0;
+    if (parseFloat64(token.value, parsed)) {
+      appendImmediate64(BitCastImmediate<uint64_t>(parsed),
+                        RecipeImmediateFamily::F64);
+      continue;
+    }
+    if (!appendVariable64(token.value, RecipeImmediateFamily::F64,
+                          "immediates_f64")) {
+      return false;
+    }
   }
 
   return true;
@@ -1100,7 +1289,7 @@ static bool DecodeOperandIndexPatternsWithShorthands(
   }
 
   if (hasImmediateShorthands) {
-    return DecodeEmitImmediateShorthands(operandModel, indexPatterns);
+    return DecodeEmitImmediateShorthands(operandModel, indexPatterns, error);
   }
 
   indexPatterns.clear();
@@ -2489,6 +2678,9 @@ static bool BuildStepCondition(const YamlStepCondition &conditionModel,
   if (!conditionModel.state.empty()) {
     ++populatedFields;
   }
+  if (!conditionModel.input.empty()) {
+    ++populatedFields;
+  }
   if (!conditionModel.all.empty()) {
     ++populatedFields;
   }
@@ -2501,7 +2693,7 @@ static bool BuildStepCondition(const YamlStepCondition &conditionModel,
   }
 
   if (populatedFields != 1) {
-    error = "SM5 step if must specify exactly one of state, all, or any";
+    error = "SM5 step if must specify exactly one of state, input, all, or any";
     return false;
   }
 
@@ -2509,6 +2701,15 @@ static bool BuildStepCondition(const YamlStepCondition &conditionModel,
     condition.State = conditionModel.state;
     if (condition.State.empty()) {
       error = "SM5 step if.state must not be empty";
+      return false;
+    }
+    return true;
+  }
+
+  if (!conditionModel.input.empty()) {
+    condition.Input = conditionModel.input;
+    if (condition.Input.empty()) {
+      error = "SM5 step if.input must not be empty";
       return false;
     }
     return true;

@@ -18,7 +18,13 @@ namespace dxp {
 namespace sm5 {
 
 bool ExecuteRecipe(Program &program, const Recipe &recipe,
-                   RecipeContext &context, dxp::PatchReport *report = nullptr);
+           RecipeContext &context, dxp::PatchReport *report = nullptr,
+           const std::function<void(const std::string &, RecipeContext &)>
+             *beforeStep = nullptr,
+           const std::function<void(const std::string &,
+                      const RecipeStepResult &,
+                      RecipeContext &)> *afterStep =
+             nullptr);
 
 namespace {
 
@@ -670,6 +676,13 @@ ParseProgramForInspection(const std::vector<uint8_t> &inputContainer,
 
 PatchResult PatchContainer(const std::vector<uint8_t> &inputContainer,
                            const Recipe &recipe, const RecipeContext &context) {
+  RecipeContext mutableContext = context;
+  return PatchContainer(inputContainer, recipe, mutableContext);
+}
+
+PatchResult PatchContainer(const std::vector<uint8_t> &inputContainer,
+                           const Recipe &recipe, RecipeContext &context,
+                           const RecipeExecutionOptions &execution) {
   PatchResult result;
   result.RecipeContext = context;
 
@@ -683,7 +696,8 @@ PatchResult PatchContainer(const std::vector<uint8_t> &inputContainer,
 
   const Program originalProgram = program;
 
-  if (!ExecuteRecipe(program, recipe, result.RecipeContext, &result.Report)) {
+  if (!ExecuteRecipe(program, recipe, result.RecipeContext, &result.Report,
+                     &execution.BeforeStep, &execution.AfterStep)) {
     const std::string error = result.RecipeContext.LastError.empty()
                                   ? "failed to execute SM5 recipe"
                                   : result.RecipeContext.LastError;
@@ -738,15 +752,25 @@ PatchResult PatchContainer(const std::vector<uint8_t> &inputContainer,
   }
 
   result.Success = true;
+  context = result.RecipeContext;
   return result;
 }
 
 PatchResult PatchContainer(const Recipe &recipe, const uint8_t *inputData,
                            size_t inputSize, const RecipeContext &context) {
+  RecipeContext mutableContext = context;
+  return PatchContainer(recipe, inputData, inputSize, mutableContext);
+}
+
+PatchResult PatchContainer(const Recipe &recipe, const uint8_t *inputData,
+                           size_t inputSize, RecipeContext &context,
+                           const RecipeExecutionOptions &execution) {
   if (inputData == nullptr || inputSize == 0)
     return MakeError("invalid input data");
-  return PatchContainer(std::vector<uint8_t>(inputData, inputData + inputSize),
-                        recipe, context);
+  PatchResult result = PatchContainer(
+      std::vector<uint8_t>(inputData, inputData + inputSize), recipe, context,
+      execution);
+  return result;
 }
 
 bool ExtractProgramOpcodes(const std::vector<uint8_t> &inputContainer,

@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <unordered_set>
 
@@ -846,6 +847,10 @@ static bool CompileEmitOperand(const RecipeOperandPattern &operandModel,
       indexEntry.HasImmediateHi = indexPattern.HasImmediateHi;
       indexEntry.ImmediateHi = indexPattern.ImmediateHi;
       indexEntry.MatchCaptureName = indexPattern.MatchCapture;
+        indexEntry.ImmediateLoVariableName = indexPattern.ImmediateLoVariable;
+        indexEntry.ImmediateHiVariableName = indexPattern.ImmediateHiVariable;
+        indexEntry.ImmediateVariableFamily =
+          static_cast<uint32_t>(indexPattern.ImmediateFamily);
 
       if (indexPattern.RelativeOperand) {
         Operand relativeOperand;
@@ -1771,6 +1776,136 @@ static bool ResolveRangeReplacement(const RuntimeRule &rule,
   return false;
 }
 
+template <typename TDest, typename TSource>
+static TDest BitCastValue(TSource value) {
+  static_assert(sizeof(TDest) == sizeof(TSource),
+                "bit-cast source/destination sizes must match");
+  TDest result{};
+  std::memcpy(&result, &value, sizeof(result));
+  return result;
+}
+
+static std::string DescribeAnyType(const std::any &value) {
+  if (value.type() == typeid(bool))
+    return "bool";
+  if (value.type() == typeid(uint32_t))
+    return "uint32_t";
+  if (value.type() == typeid(int32_t))
+    return "int32_t";
+  if (value.type() == typeid(uint64_t))
+    return "uint64_t";
+  if (value.type() == typeid(int64_t))
+    return "int64_t";
+  if (value.type() == typeid(float))
+    return "float";
+  if (value.type() == typeid(double))
+    return "double";
+  if (value.type() == typeid(std::string))
+    return "string";
+  return "unsupported";
+}
+
+static bool ResolveImmediateFromVariable(const std::string &path,
+                                         const std::string &familyLabel,
+                                         const std::string &variableName,
+                                         const RecipeContext &context,
+                                         uint32_t family,
+                                         uint32_t &outLo,
+                                         uint32_t &outHi,
+                                         bool &hasHi,
+                                         std::string &error) {
+  const std::any *value = context.FindVariableAny(variableName);
+  if (value == nullptr) {
+    error = path + ": missing variable '" + variableName + "' for " +
+            familyLabel;
+    return false;
+  }
+
+  auto failType = [&]() {
+    error = path + ": variable '" + variableName + "' type " +
+            DescribeAnyType(*value) + " is incompatible with " + familyLabel;
+    return false;
+  };
+
+  hasHi = false;
+  switch (family) {
+  case static_cast<uint32_t>(RecipeImmediateFamily::U32): {
+    if (const uint32_t *typed = std::any_cast<uint32_t>(value)) {
+      outLo = *typed;
+      return true;
+    }
+    if (const int32_t *typed = std::any_cast<int32_t>(value)) {
+      outLo = BitCastValue<uint32_t>(*typed);
+      return true;
+    }
+    if (const bool *typed = std::any_cast<bool>(value)) {
+      outLo = *typed ? 1u : 0u;
+      return true;
+    }
+    return failType();
+  }
+  case static_cast<uint32_t>(RecipeImmediateFamily::I32): {
+    if (const int32_t *typed = std::any_cast<int32_t>(value)) {
+      outLo = BitCastValue<uint32_t>(*typed);
+      return true;
+    }
+    if (const uint32_t *typed = std::any_cast<uint32_t>(value)) {
+      outLo = *typed;
+      return true;
+    }
+    return failType();
+  }
+  case static_cast<uint32_t>(RecipeImmediateFamily::U64): {
+    uint64_t resolved = 0;
+    if (const uint64_t *typed = std::any_cast<uint64_t>(value)) {
+      resolved = *typed;
+    } else if (const int64_t *typed = std::any_cast<int64_t>(value)) {
+      resolved = BitCastValue<uint64_t>(*typed);
+    } else {
+      return failType();
+    }
+    outLo = static_cast<uint32_t>(resolved & 0xFFFFFFFFull);
+    outHi = static_cast<uint32_t>(resolved >> 32);
+    hasHi = true;
+    return true;
+  }
+  case static_cast<uint32_t>(RecipeImmediateFamily::I64): {
+    uint64_t resolved = 0;
+    if (const int64_t *typed = std::any_cast<int64_t>(value)) {
+      resolved = BitCastValue<uint64_t>(*typed);
+    } else if (const uint64_t *typed = std::any_cast<uint64_t>(value)) {
+      resolved = *typed;
+    } else {
+      return failType();
+    }
+    outLo = static_cast<uint32_t>(resolved & 0xFFFFFFFFull);
+    outHi = static_cast<uint32_t>(resolved >> 32);
+    hasHi = true;
+    return true;
+  }
+  case static_cast<uint32_t>(RecipeImmediateFamily::F32): {
+    if (const float *typed = std::any_cast<float>(value)) {
+      outLo = BitCastValue<uint32_t>(*typed);
+      return true;
+    }
+    return failType();
+  }
+  case static_cast<uint32_t>(RecipeImmediateFamily::F64): {
+    if (const double *typed = std::any_cast<double>(value)) {
+      const uint64_t resolved = BitCastValue<uint64_t>(*typed);
+      outLo = static_cast<uint32_t>(resolved & 0xFFFFFFFFull);
+      outHi = static_cast<uint32_t>(resolved >> 32);
+      hasHi = true;
+      return true;
+    }
+    return failType();
+  }
+  default:
+    error = path + ": variable-backed immediate is missing family metadata";
+    return false;
+  }
+}
+
 static bool InstantiateOperand(const Operand &operandTemplate,
                                const MatchResult &match,
                                const std::string &path,
@@ -1907,12 +2042,13 @@ static bool InstantiateOperand(const Operand &operandTemplate,
   if (!operand.IndexEntries.empty()) {
     size_t immediateCursor = 0;
     for (Operand::Index &indexEntry : operand.IndexEntries) {
+      const size_t indexPosition =
+          &indexEntry - operand.IndexEntries.data();
+
       if (!indexEntry.MatchCaptureName.empty()) {
         const uint32_t *capturedOperandIndex =
             match.GetCapturedOperandIndexValue(indexEntry.MatchCaptureName);
         if (capturedOperandIndex == nullptr) {
-          const size_t indexPosition =
-              &indexEntry - operand.IndexEntries.data();
           error = path + ".indices[" + std::to_string(indexPosition) +
                   "]: missing captured operand index '" +
                   indexEntry.MatchCaptureName + "'";
@@ -1923,16 +2059,77 @@ static bool InstantiateOperand(const Operand &operandTemplate,
       }
 
       if (indexEntry.HasImmediateLo && immediateCursor < operand.Indices.size()) {
-        indexEntry.ImmediateLo = operand.Indices[immediateCursor++];
+        const bool hasDynamicImmediateLo =
+            !indexEntry.MatchCaptureName.empty() ||
+            !indexEntry.ImmediateLoVariableName.empty();
+        if (!hasDynamicImmediateLo) {
+          indexEntry.ImmediateLo = operand.Indices[immediateCursor];
+        }
+        ++immediateCursor;
       }
       if (indexEntry.HasImmediateHi && immediateCursor < operand.Indices.size()) {
-        indexEntry.ImmediateHi = operand.Indices[immediateCursor++];
+        const bool hasDynamicImmediateHi =
+            !indexEntry.ImmediateHiVariableName.empty() ||
+            (!indexEntry.ImmediateLoVariableName.empty() &&
+             (indexEntry.ImmediateVariableFamily ==
+                  static_cast<uint32_t>(RecipeImmediateFamily::U64) ||
+              indexEntry.ImmediateVariableFamily ==
+                  static_cast<uint32_t>(RecipeImmediateFamily::I64) ||
+              indexEntry.ImmediateVariableFamily ==
+                  static_cast<uint32_t>(RecipeImmediateFamily::F64)));
+        if (!hasDynamicImmediateHi) {
+          indexEntry.ImmediateHi = operand.Indices[immediateCursor];
+        }
+        ++immediateCursor;
+      }
+
+      if (!indexEntry.ImmediateLoVariableName.empty() ||
+          !indexEntry.ImmediateHiVariableName.empty()) {
+        const std::string variableName =
+            !indexEntry.ImmediateLoVariableName.empty()
+                ? indexEntry.ImmediateLoVariableName
+                : indexEntry.ImmediateHiVariableName;
+        uint32_t resolvedLo = 0;
+        uint32_t resolvedHi = 0;
+        bool resolvedHasHi = false;
+        const std::string familyLabel =
+            (indexEntry.ImmediateVariableFamily ==
+             static_cast<uint32_t>(RecipeImmediateFamily::U32))
+                ? "immediates_u32"
+                : (indexEntry.ImmediateVariableFamily ==
+                   static_cast<uint32_t>(RecipeImmediateFamily::U64))
+                      ? "immediates_u64"
+                      : (indexEntry.ImmediateVariableFamily ==
+                         static_cast<uint32_t>(RecipeImmediateFamily::I32))
+                            ? "immediates_i32"
+                            : (indexEntry.ImmediateVariableFamily ==
+                               static_cast<uint32_t>(RecipeImmediateFamily::I64))
+                                  ? "immediates_i64"
+                                  : (indexEntry.ImmediateVariableFamily ==
+                                     static_cast<uint32_t>(
+                                         RecipeImmediateFamily::F32))
+                                        ? "immediates_f32"
+                                        : "immediates_f64";
+        if (!ResolveImmediateFromVariable(
+                path + ".indices[" + std::to_string(indexPosition) + "]",
+                familyLabel, variableName, context,
+                indexEntry.ImmediateVariableFamily, resolvedLo, resolvedHi,
+                resolvedHasHi, error)) {
+          return false;
+        }
+
+        if (!indexEntry.ImmediateLoVariableName.empty()) {
+          indexEntry.HasImmediateLo = true;
+          indexEntry.ImmediateLo = resolvedLo;
+        }
+        if (!indexEntry.ImmediateHiVariableName.empty() || resolvedHasHi) {
+          indexEntry.HasImmediateHi = true;
+          indexEntry.ImmediateHi = resolvedHi;
+        }
       }
 
       if (indexEntry.RelativeOperand) {
         Operand instantiatedRelative;
-        const size_t indexPosition =
-          &indexEntry - operand.IndexEntries.data();
         if (!InstantiateOperand(*indexEntry.RelativeOperand, match,
                     path + ".indices[" +
                       std::to_string(indexPosition) +
@@ -2141,6 +2338,24 @@ static bool EvaluateStepCondition(const RecipeStepCondition &condition,
             value = !stringValue->empty();
           }
         }
+      }
+    }
+  } else if (!condition.Input.empty()) {
+    const std::any *inputValue = context.FindVariableAny(condition.Input);
+    if (inputValue != nullptr) {
+      if (const bool *boolValue = std::any_cast<bool>(inputValue)) {
+        value = *boolValue;
+      } else if (const uint32_t *u32Value = std::any_cast<uint32_t>(inputValue)) {
+        value = *u32Value != 0;
+      } else if (const int32_t *i32Value = std::any_cast<int32_t>(inputValue)) {
+        value = *i32Value != 0;
+      } else if (const uint64_t *u64Value = std::any_cast<uint64_t>(inputValue)) {
+        value = *u64Value != 0;
+      } else if (const int64_t *i64Value = std::any_cast<int64_t>(inputValue)) {
+        value = *i64Value != 0;
+      } else if (const std::string *stringValue =
+                     std::any_cast<std::string>(inputValue)) {
+        value = !stringValue->empty();
       }
     }
   } else if (!condition.All.empty()) {
@@ -2774,7 +2989,12 @@ static RecipeStepResult ExecuteRecipeStep(Program &program,
 }
 
 bool ExecuteRecipe(Program &program, const Recipe &recipe,
-                   RecipeContext &context, dxp::PatchReport *report) {
+           RecipeContext &context, dxp::PatchReport *report,
+           const std::function<void(const std::string &, RecipeContext &)>
+             *beforeStep,
+           const std::function<void(const std::string &,
+                      const RecipeStepResult &,
+                      RecipeContext &)> *afterStep) {
   ScopedProgramBinding boundProgram(context, program);
   context.ReservedTempBase = 0;
   context.ReservedTempCount = 0;
@@ -2788,6 +3008,14 @@ bool ExecuteRecipe(Program &program, const Recipe &recipe,
   context.SamplerBindings.clear();
   context.UavBindings.clear();
 
+  for (const auto &input : context.Inputs) {
+    if (!context.HasVariable(input.first)) {
+      context.Variables[input.first] = input.second;
+    }
+  }
+  context.HasInitialVariablesSnapshot = false;
+  context.SnapshotInitialVariables();
+
   if (report != nullptr)
     report->Steps.clear();
   if (report != nullptr)
@@ -2797,6 +3025,10 @@ bool ExecuteRecipe(Program &program, const Recipe &recipe,
   context.ReservedTempCount = 0;
 
   for (const auto &step : recipe.GetSteps()) {
+    if (beforeStep != nullptr && *beforeStep) {
+      (*beforeStep)(step.Name, context);
+    }
+
     if (!ShouldExecuteStep(step, context)) {
       if (report != nullptr) {
         dxp::PatchStepReport stepReport;
@@ -2807,10 +3039,18 @@ bool ExecuteRecipe(Program &program, const Recipe &recipe,
         stepReport.Required = step.Required;
         report->Steps.push_back(std::move(stepReport));
       }
+      if (afterStep != nullptr && *afterStep) {
+        RecipeStepResult skipped;
+        skipped.Success = true;
+        (*afterStep)(step.Name, skipped, context);
+      }
       continue;
     }
 
     const auto result = ExecuteRecipeStep(program, step, context);
+    if (afterStep != nullptr && *afterStep) {
+      (*afterStep)(step.Name, result, context);
+    }
     if (report != nullptr) {
       dxp::PatchStepReport stepReport;
       stepReport.Name = step.Name;

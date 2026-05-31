@@ -41,6 +41,9 @@ struct RecipeContext {
   std::string LastError;
   std::vector<std::string> Diagnostics;
   std::unordered_map<std::string, std::any> Inputs;
+  std::unordered_map<std::string, std::any> Variables;
+  std::unordered_map<std::string, std::any> InitialVariables;
+  bool HasInitialVariablesSnapshot = false;
   std::unordered_map<std::string, std::any> State;
 
   void AddDiagnostic(std::string message) {
@@ -50,6 +53,7 @@ struct RecipeContext {
   template <typename TValue>
   void SetInput(const std::string &name, TValue value) {
     Inputs[name] = std::any(std::move(value));
+    Variables[name] = Inputs[name];
   }
 
   template <typename TValue> TValue *FindInput(const std::string &name) {
@@ -67,6 +71,70 @@ struct RecipeContext {
       return nullptr;
     }
     return std::any_cast<TValue>(&it->second);
+  }
+
+  template <typename TValue>
+  void SetVariable(const std::string &name, TValue value) {
+    Variables[name] = std::any(std::move(value));
+  }
+
+  bool UnsetVariable(const std::string &name) {
+    return Variables.erase(name) != 0;
+  }
+
+  bool HasVariable(const std::string &name) const {
+    return Variables.find(name) != Variables.end();
+  }
+
+  template <typename TValue> TValue *FindVariable(const std::string &name) {
+    auto it = Variables.find(name);
+    if (it != Variables.end()) {
+      return std::any_cast<TValue>(&it->second);
+    }
+    auto inputIt = Inputs.find(name);
+    if (inputIt != Inputs.end()) {
+      return std::any_cast<TValue>(&inputIt->second);
+    }
+    return nullptr;
+  }
+
+  template <typename TValue>
+  const TValue *FindVariable(const std::string &name) const {
+    auto it = Variables.find(name);
+    if (it != Variables.end()) {
+      return std::any_cast<TValue>(&it->second);
+    }
+    auto inputIt = Inputs.find(name);
+    if (inputIt != Inputs.end()) {
+      return std::any_cast<TValue>(&inputIt->second);
+    }
+    return nullptr;
+  }
+
+  const std::any *FindVariableAny(const std::string &name) const {
+    auto it = Variables.find(name);
+    if (it != Variables.end()) {
+      return &it->second;
+    }
+    auto inputIt = Inputs.find(name);
+    if (inputIt != Inputs.end()) {
+      return &inputIt->second;
+    }
+    return nullptr;
+  }
+
+  void SnapshotInitialVariables() {
+    if (!HasInitialVariablesSnapshot) {
+      InitialVariables = Variables;
+      HasInitialVariablesSnapshot = true;
+    }
+  }
+
+  void ResetVariables() {
+    if (!HasInitialVariablesSnapshot) {
+      SnapshotInitialVariables();
+    }
+    Variables = InitialVariables;
   }
 
   template <typename TValue>
@@ -575,6 +643,17 @@ enum class RecipeOperandIndexRepresentation {
   Immediate64PlusRelative, ///< 64-bit immediate plus relative
 };
 
+/// @brief Shorthand family used when resolving variable-backed immediates.
+enum class RecipeImmediateFamily {
+  None = 0,
+  U32 = 1,
+  U64 = 2,
+  I32 = 3,
+  I64 = 4,
+  F32 = 5,
+  F64 = 6,
+};
+
 struct RecipeOperandPattern;
 
 /// @brief Selects which fields of a captured operand participate in
@@ -724,6 +803,12 @@ struct RecipeOperandIndexPattern {
   /// Match: compare against a previously captured index value.
   /// Emit: resolve the emitted immediate from a previously captured value.
   std::string MatchCapture;
+  /// Emit: resolve immediate_lo from a runtime variable/input key.
+  std::string ImmediateLoVariable;
+  /// Emit: resolve immediate_hi from a runtime variable/input key.
+  std::string ImmediateHiVariable;
+  /// Emit: strict conversion family for variable-backed immediates.
+  RecipeImmediateFamily ImmediateFamily = RecipeImmediateFamily::None;
 };
 
 /// @brief Fluent builder for `RecipeOperandIndexPattern`.
@@ -1827,6 +1912,7 @@ struct RecipeStepResult {
 /// @brief Describes a generic step guard based on recipe context state.
 struct RecipeStepCondition {
   std::string State;
+  std::string Input;
   std::vector<RecipeStepCondition> All;
   std::vector<RecipeStepCondition> Any;
   bool Negate = false;
@@ -1835,6 +1921,14 @@ struct RecipeStepCondition {
                                        bool negate = false) {
     RecipeStepCondition condition;
     condition.State = std::move(state);
+    condition.Negate = negate;
+    return condition;
+  }
+
+  static RecipeStepCondition FromInput(std::string input,
+                                       bool negate = false) {
+    RecipeStepCondition condition;
+    condition.Input = std::move(input);
     condition.Negate = negate;
     return condition;
   }
@@ -1856,7 +1950,7 @@ struct RecipeStepCondition {
   }
 
   bool IsSet() const {
-    return !State.empty() || !All.empty() || !Any.empty();
+    return !State.empty() || !Input.empty() || !All.empty() || !Any.empty();
   }
 };
 
