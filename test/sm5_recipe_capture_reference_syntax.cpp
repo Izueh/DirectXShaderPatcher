@@ -28,7 +28,8 @@ static int FindTargetMul(const dxp::sm5::ProgramInspection &program) {
 
 int main(int argc, char **argv) {
   if (argc != 2) {
-    std::cerr << "Usage: sm5_recipe_replay_object_from_syntax <input.ps_5_0.cso>\n";
+    std::cerr
+        << "Usage: sm5_recipe_capture_reference_syntax <input.ps_5_0.cso>\n";
     return 1;
   }
 
@@ -58,44 +59,45 @@ int main(int argc, char **argv) {
 
   const char *recipeText = R"YAML(version: 1
 steps:
-  - name: replay_object_from_syntax
+  - name: capture_reference_syntax
     rules:
       - name: inline_rule_1
         match:
           opcode: mul
-          capture: { from: inst }
+          capture: inst
           rewrite_mode: before
           insert_relative_index: 0
           operands:
             - type: temp
-              capture: { from: dst }
+              capture: dst
               indices:
                 - representation: immediate32
-                  capture: { from: dst_reg }
+                  capture: dst_reg
             - type: temp
-              capture: { from: src }
+              capture: src
               indices:
                 - representation: immediate32
-                  capture: { from: src_reg }
+                  capture: src_reg
         emit:
           - opcode: mov
             operands:
-              - capture: { from: dst }
+              - capture: dst
               - type: temp
                 indices:
                   - representation: immediate32
-                    immediate_lo: { from: src_reg }
+                    match_capture: src_reg
 )YAML";
 
   dxp::sm5::RecipeParseResult parseResult;
   if (!dxp::sm5::ParseRecipeText(recipeText, parseResult,
-                                 "inline-sm5-replay-object-from-syntax")) {
+                                 "inline-sm5-capture-reference-syntax")) {
     std::cerr << "Failed to parse inline SM5 recipe: " << parseResult.Error
               << "\n";
     return 1;
   }
 
-  const auto patchResult = dxp::sm5::PatchContainer(inputBytes, parseResult.Recipe);
+  const auto patchResult =
+      dxp::sm5::PatchContainer(inputBytes, parseResult.Recipe);
   if (!patchResult.Success) {
     std::cerr << "Failed to patch SM5 shader: " << patchResult.Error << "\n";
     return 1;
@@ -123,12 +125,12 @@ steps:
 
   const auto &patchedSrc = patchedInstruction.Operands[1];
   if (patchedSrc.Indices != originalSrc.Indices) {
-    std::cerr << "Expected replay-object immediate_lo to preserve source "
-                 "register indices.\n";
+    std::cerr << "Expected capture-derived source register indices to "
+                 "be preserved.\n";
     return 1;
   }
 
-  std::cout << "SM5 replay-object syntax validated at instruction index "
+  std::cout << "SM5 capture-reference syntax validated at instruction index "
             << targetIndex << ".\n";
   return 0;
 }

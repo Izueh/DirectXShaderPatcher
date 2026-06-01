@@ -10,7 +10,6 @@
 #include <cstring>
 #include <cstdlib>
 #include <fstream>
-#include <regex>
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
@@ -19,143 +18,18 @@
 
 namespace {
 
-static std::string Lowercase(const std::string &value) {
-  std::string lowered = value;
-  for (char &ch : lowered) {
-    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-  }
-  return lowered;
-}
-
-static std::string Trim(const std::string &value) {
-  size_t start = 0;
-  while (start < value.size() &&
-         std::isspace(static_cast<unsigned char>(value[start]))) {
-    ++start;
-  }
-
-  size_t end = value.size();
-  while (end > start &&
-         std::isspace(static_cast<unsigned char>(value[end - 1]))) {
-    --end;
-  }
-
-  return value.substr(start, end - start);
-}
-
-static std::string StripOptionalQuotes(const std::string &value) {
-  if (value.size() >= 2 &&
-      ((value.front() == '"' && value.back() == '"') ||
-       (value.front() == '\'' && value.back() == '\''))) {
-    return value.substr(1, value.size() - 2);
-  }
-  return value;
-}
-
-static bool TryNormalizeReplayFromLine(const std::string &line,
-                                       const std::string &sourceField,
-                                       const std::string &targetField,
-                                       std::string &normalizedLine,
-                                       std::string &captureName) {
-  std::string fieldPattern;
-  if (sourceField == "immediate_hi") {
-    fieldPattern =
-        R"(^([\t ]*(?:- [\t ]*)?)immediate_hi:[\t ]*\{[\t ]*from:[\t ]*([^}]+)[\t ]*\}[\t ]*$)";
-  } else if (sourceField == "immediate_lo") {
-    fieldPattern =
-        R"(^([\t ]*(?:- [\t ]*)?)immediate_lo:[\t ]*\{[\t ]*from:[\t ]*([^}]+)[\t ]*\}[\t ]*$)";
-  } else if (sourceField == "capture") {
-    fieldPattern =
-        R"(^([\t ]*(?:- [\t ]*)?)capture:[\t ]*\{[\t ]*from:[\t ]*([^}]+)[\t ]*\}[\t ]*$)";
-  } else if (sourceField == "match_capture") {
-    fieldPattern =
-        R"(^([\t ]*(?:- [\t ]*)?)match_capture:[\t ]*\{[\t ]*from:[\t ]*([^}]+)[\t ]*\}[\t ]*$)";
-  } else {
-    normalizedLine.clear();
-    captureName.clear();
-    return false;
-  }
-
-  const std::regex pattern(fieldPattern);
-  std::smatch match;
-  if (!std::regex_match(line, match, pattern)) {
-    normalizedLine.clear();
-    captureName.clear();
-    return false;
-  }
-
-  captureName = StripOptionalQuotes(Trim(match[2].str()));
-  normalizedLine = match[1].str() + targetField + ": " + captureName;
-  return true;
-}
-
-static bool NormalizeReplayObjectSyntax(llvm::StringRef recipeText,
-                                        std::string &normalizedText,
-                                        std::string &error) {
-  normalizedText.clear();
-  error.clear();
-
-  std::istringstream stream(recipeText.str());
-  std::string line;
-  uint32_t lineNumber = 0;
-  while (std::getline(stream, line)) {
-    ++lineNumber;
-    std::string normalizedLine;
-    std::string captureName;
-    if (TryNormalizeReplayFromLine(line, "immediate_lo", "match_capture",
-                                   normalizedLine, captureName)) {
-      if (captureName.empty()) {
-        error = "line " + std::to_string(lineNumber) +
-                ": index immediate_lo replay object requires non-empty from";
-        return false;
-      }
-      line = std::move(normalizedLine);
-    } else if (TryNormalizeReplayFromLine(line, "immediate_hi",
-                                          "immediate_hi", normalizedLine,
-                                          captureName)) {
-      error = "line " + std::to_string(lineNumber) +
-              ": SM5 index immediate_hi replay object is unsupported; use "
-              "literal immediate_hi";
-      return false;
-    } else if (TryNormalizeReplayFromLine(line, "capture", "capture",
-                                          normalizedLine, captureName)) {
-      if (captureName.empty()) {
-        error = "line " + std::to_string(lineNumber) +
-                ": capture replay object requires non-empty from";
-        return false;
-      }
-      line = std::move(normalizedLine);
-    } else if (TryNormalizeReplayFromLine(line, "match_capture",
-                                          "match_capture", normalizedLine,
-                                          captureName)) {
-      if (captureName.empty()) {
-        error = "line " + std::to_string(lineNumber) +
-                ": match_capture replay object requires non-empty from";
-        return false;
-      }
-      line = std::move(normalizedLine);
-    }
-
-    normalizedText += line;
-    normalizedText.push_back('\n');
-  }
-
-  return true;
-}
-
 static bool ParseRuleApplicationMode(
     const std::string &value, dxp::sm5::RecipeRuleApplicationMode &mode,
     std::string &error) {
-  const std::string lowered = Lowercase(value);
-  if (lowered.empty() || lowered == "first") {
+  if (value.empty() || value == "first") {
     mode = dxp::sm5::RecipeRuleApplicationMode::First;
     return true;
   }
-  if (lowered == "last") {
+  if (value == "last") {
     mode = dxp::sm5::RecipeRuleApplicationMode::Last;
     return true;
   }
-  if (lowered == "match_all") {
+  if (value == "match_all") {
     mode = dxp::sm5::RecipeRuleApplicationMode::MatchAll;
     return true;
   }
@@ -167,32 +41,31 @@ static bool ParseRuleApplicationMode(
 static bool ParseRuleRewriteMode(const std::string &value,
                                  dxp::sm5::RecipeRuleRewriteMode &mode,
                                  std::string &error) {
-  const std::string lowered = Lowercase(value);
-  if (lowered.empty()) {
+  if (value.empty()) {
     mode = dxp::sm5::RecipeRuleRewriteMode::Replace;
     return true;
   }
-  if (lowered == "auto") {
+  if (value == "auto") {
     error = "SM5 rewrite mode auto was removed; use replace or replace_range";
     return false;
   }
-  if (lowered == "none") {
+  if (value == "none") {
     mode = dxp::sm5::RecipeRuleRewriteMode::None;
     return true;
   }
-  if (lowered == "replace") {
+  if (value == "replace") {
     mode = dxp::sm5::RecipeRuleRewriteMode::Replace;
     return true;
   }
-  if (lowered == "before") {
+  if (value == "before") {
     mode = dxp::sm5::RecipeRuleRewriteMode::Before;
     return true;
   }
-  if (lowered == "after") {
+  if (value == "after") {
     mode = dxp::sm5::RecipeRuleRewriteMode::After;
     return true;
   }
-  if (lowered == "replace_range") {
+  if (value == "replace_range") {
     mode = dxp::sm5::RecipeRuleRewriteMode::ReplaceRange;
     return true;
   }
@@ -747,12 +620,11 @@ static bool ParseTextureDimensionToken(const std::string &value,
 static bool ParseCBufferAccessPatternToken(const std::string &value,
                                            uint32_t &accessPattern,
                                            std::string &error) {
-  const std::string lowered = Lowercase(value);
-  if (lowered == "immediate_indexed") {
+  if (value == "immediate_indexed") {
     accessPattern = D3D10_SB_CONSTANT_BUFFER_IMMEDIATE_INDEXED;
     return true;
   }
-  if (lowered == "dynamic_indexed") {
+  if (value == "dynamic_indexed") {
     accessPattern = D3D10_SB_CONSTANT_BUFFER_DYNAMIC_INDEXED;
     return true;
   }
@@ -763,16 +635,15 @@ static bool ParseCBufferAccessPatternToken(const std::string &value,
 
 static bool ParseSamplerModeToken(const std::string &value, uint32_t &mode,
                                   std::string &error) {
-  const std::string lowered = Lowercase(value);
-  if (lowered == "default") {
+  if (value == "default") {
     mode = D3D10_SB_SAMPLER_MODE_DEFAULT;
     return true;
   }
-  if (lowered == "comparison") {
+  if (value == "comparison") {
     mode = D3D10_SB_SAMPLER_MODE_COMPARISON;
     return true;
   }
-  if (lowered == "mono") {
+  if (value == "mono") {
     mode = D3D10_SB_SAMPLER_MODE_MONO;
     return true;
   }
@@ -783,16 +654,15 @@ static bool ParseSamplerModeToken(const std::string &value, uint32_t &mode,
 
 static bool ParseUavKindToken(const std::string &value, RecipeUavKind &kind,
                               std::string &error) {
-  const std::string lowered = Lowercase(value);
-  if (lowered == "typed") {
+  if (value == "typed") {
     kind = RecipeUavKind::Typed;
     return true;
   }
-  if (lowered == "raw") {
+  if (value == "raw") {
     kind = RecipeUavKind::Raw;
     return true;
   }
-  if (lowered == "structured") {
+  if (value == "structured") {
     kind = RecipeUavKind::Structured;
     return true;
   }
@@ -803,12 +673,11 @@ static bool ParseUavKindToken(const std::string &value, RecipeUavKind &kind,
 
 static bool ParseBoolToken(const std::string &value, bool &parsedValue,
                            std::string &error) {
-  const std::string lowered = Lowercase(value);
-  if (lowered == "true") {
+  if (value == "true") {
     parsedValue = true;
     return true;
   }
-  if (lowered == "false") {
+  if (value == "false") {
     parsedValue = false;
     return true;
   }
@@ -819,36 +688,35 @@ static bool ParseBoolToken(const std::string &value, bool &parsedValue,
 
 static bool ParseInterpolationModeToken(const std::string &value,
                                         uint32_t &mode, std::string &error) {
-  const std::string lowered = Lowercase(value);
-  if (lowered == "undefined") {
+  if (value == "undefined") {
     mode = D3D10_SB_INTERPOLATION_UNDEFINED;
     return true;
   }
-  if (lowered == "constant") {
+  if (value == "constant") {
     mode = D3D10_SB_INTERPOLATION_CONSTANT;
     return true;
   }
-  if (lowered == "linear") {
+  if (value == "linear") {
     mode = D3D10_SB_INTERPOLATION_LINEAR;
     return true;
   }
-  if (lowered == "linear_centroid") {
+  if (value == "linear_centroid") {
     mode = D3D10_SB_INTERPOLATION_LINEAR_CENTROID;
     return true;
   }
-  if (lowered == "linear_noperspective") {
+  if (value == "linear_noperspective") {
     mode = D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE;
     return true;
   }
-  if (lowered == "linear_noperspective_centroid") {
+  if (value == "linear_noperspective_centroid") {
     mode = D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_CENTROID;
     return true;
   }
-  if (lowered == "linear_sample") {
+  if (value == "linear_sample") {
     mode = D3D10_SB_INTERPOLATION_LINEAR_SAMPLE;
     return true;
   }
-  if (lowered == "linear_noperspective_sample") {
+  if (value == "linear_noperspective_sample") {
     mode = D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_SAMPLE;
     return true;
   }
@@ -859,48 +727,47 @@ static bool ParseInterpolationModeToken(const std::string &value,
 
 static bool ParseOperandType(const std::string &value, OperandType &type,
                              std::string &error) {
-  const std::string lowered = Lowercase(value);
-  if (lowered == "temp") {
+  if (value == "temp") {
     type = D3D10_SB_OPERAND_TYPE_TEMP;
     return true;
   }
-  if (lowered == "input") {
+  if (value == "input") {
     type = D3D10_SB_OPERAND_TYPE_INPUT;
     return true;
   }
-  if (lowered == "output") {
+  if (value == "output") {
     type = D3D10_SB_OPERAND_TYPE_OUTPUT;
     return true;
   }
-  if (lowered == "indexable_temp") {
+  if (value == "indexable_temp") {
     type = D3D10_SB_OPERAND_TYPE_INDEXABLE_TEMP;
     return true;
   }
-  if (lowered == "immediate32") {
+  if (value == "immediate32") {
     type = D3D10_SB_OPERAND_TYPE_IMMEDIATE32;
     return true;
   }
-  if (lowered == "immediate64") {
+  if (value == "immediate64") {
     type = D3D10_SB_OPERAND_TYPE_IMMEDIATE64;
     return true;
   }
-  if (lowered == "sampler") {
+  if (value == "sampler") {
     type = D3D10_SB_OPERAND_TYPE_SAMPLER;
     return true;
   }
-  if (lowered == "resource") {
+  if (value == "resource") {
     type = D3D10_SB_OPERAND_TYPE_RESOURCE;
     return true;
   }
-  if (lowered == "unordered_access_view" || lowered == "uav") {
+  if (value == "unordered_access_view" || value == "uav") {
     type = D3D11_SB_OPERAND_TYPE_UNORDERED_ACCESS_VIEW;
     return true;
   }
-  if (lowered == "constant_buffer" || lowered == "cbuffer") {
+  if (value == "constant_buffer" || value == "cbuffer") {
     type = D3D10_SB_OPERAND_TYPE_CONSTANT_BUFFER;
     return true;
   }
-  if (lowered == "output_depth") {
+  if (value == "output_depth") {
     type = D3D10_SB_OPERAND_TYPE_OUTPUT_DEPTH;
     return true;
   }
@@ -919,20 +786,19 @@ static bool ParseOperandType(const std::string &value, OperandType &type,
 static bool ParseOperandModifier(const std::string &value,
                                  OperandModifier &modifier,
                                  std::string &error) {
-  const std::string lowered = Lowercase(value);
-  if (lowered.empty() || lowered == "none") {
+  if (value.empty() || value == "none") {
     modifier = D3D10_SB_OPERAND_MODIFIER_NONE;
     return true;
   }
-  if (lowered == "neg" || lowered == "minus") {
+  if (value == "neg" || value == "minus") {
     modifier = D3D10_SB_OPERAND_MODIFIER_NEG;
     return true;
   }
-  if (lowered == "abs") {
+  if (value == "abs") {
     modifier = D3D10_SB_OPERAND_MODIFIER_ABS;
     return true;
   }
-  if (lowered == "abs_neg") {
+  if (value == "abs_neg") {
     modifier = D3D10_SB_OPERAND_MODIFIER_ABSNEG;
     return true;
   }
@@ -944,24 +810,23 @@ static bool ParseOperandModifier(const std::string &value,
 static bool ParseOperandIndexRepresentationToken(
     const std::string &value, RecipeOperandIndexRepresentation &representation,
     std::string &error) {
-  const std::string lowered = Lowercase(value);
-  if (lowered.empty() || lowered == "immediate32") {
+  if (value.empty() || value == "immediate32") {
     representation = RecipeOperandIndexRepresentation::Immediate32;
     return true;
   }
-  if (lowered == "immediate64") {
+  if (value == "immediate64") {
     representation = RecipeOperandIndexRepresentation::Immediate64;
     return true;
   }
-  if (lowered == "relative") {
+  if (value == "relative") {
     representation = RecipeOperandIndexRepresentation::Relative;
     return true;
   }
-  if (lowered == "immediate32_plus_relative") {
+  if (value == "immediate32_plus_relative") {
     representation = RecipeOperandIndexRepresentation::Immediate32PlusRelative;
     return true;
   }
-  if (lowered == "immediate64_plus_relative") {
+  if (value == "immediate64_plus_relative") {
     representation = RecipeOperandIndexRepresentation::Immediate64PlusRelative;
     return true;
   }
@@ -1512,7 +1377,7 @@ static bool ParseOperandComponentMode(const YamlOperand &operandModel,
   std::string maskToken;
   std::string swizzleToken;
   if (hasSelectorObject) {
-    const std::string kind = Lowercase(operandModel.components.kind);
+    const std::string kind = operandModel.components.kind;
     if (kind.empty()) {
       error = "operand components.kind is required when components is present";
       return false;
@@ -1907,7 +1772,7 @@ static bool FillRecipeOperandPattern(const YamlOperand &operandModel,
 
   if (!operandModel.components.kind.empty() ||
       !operandModel.components.value.empty()) {
-    const std::string kind = Lowercase(operandModel.components.kind);
+    const std::string kind = operandModel.components.kind;
     if (kind == "mask") {
       operandPattern.WithMask(operandModel.components.value);
     } else if (kind == "swizzle") {
@@ -2292,7 +2157,7 @@ static bool CollectDeclarationHandlesFromSteps(
 
   for (const YamlStep &step : steps) {
     const std::string stepKind =
-        step.kind.empty() ? "apply_rules" : Lowercase(step.kind);
+      step.kind.empty() ? "apply_rules" : step.kind;
     if (stepKind == "add_temp") {
       if (!step.handle.empty()) {
         error = "add_temp steps no longer support handle; use handles";
@@ -2621,16 +2486,8 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
                      llvm::StringRef sourceName) {
   result = RecipeParseResult{};
 
-  std::string normalizedRecipeText;
-  std::string normalizationError;
-  if (!NormalizeReplayObjectSyntax(recipeText, normalizedRecipeText,
-                                   normalizationError)) {
-    result.Error = sourceName.str() + ": " + normalizationError;
-    return false;
-  }
-
   YamlRecipeDocument document;
-  llvm::yaml::Input input(normalizedRecipeText);
+  llvm::yaml::Input input(recipeText);
   input >> document;
   if (input.error()) {
     result.Error = sourceName.str() + ": " + input.error().message();
@@ -2704,7 +2561,7 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
 
   for (const YamlStep &stepModel : document.steps) {
     const std::string stepKind =
-        stepModel.kind.empty() ? "apply_rules" : Lowercase(stepModel.kind);
+      stepModel.kind.empty() ? "apply_rules" : stepModel.kind;
     if (stepModel.name.empty()) {
       result.Error = sourceName.str() +
                      ": SM5 step names are required and must be unique";

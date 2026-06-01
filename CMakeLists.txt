@@ -416,7 +416,7 @@ dxp_add_test(dxil_patch_sm5_recipe_replace_frc_with_mov_test        "test/sm5_re
 dxp_add_test(dxil_patch_sm5_recipe_emit_arbitrary_test              "test/sm5_recipe_emit_arbitrary.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso")
 dxp_add_test(dxil_patch_sm5_recipe_builder_capture_fields_test      "test/sm5_recipe_builder_capture_fields.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso")
 dxp_add_test(dxil_patch_sm5_recipe_capture_fields_literal_override_test  "test/sm5_recipe_capture_fields_literal_override.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso")
-dxp_add_test(dxil_patch_sm5_recipe_replay_object_from_syntax_test  "test/sm5_recipe_replay_object_from_syntax.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso")
+dxp_add_test(dxil_patch_sm5_recipe_capture_reference_syntax_test  "test/sm5_recipe_capture_reference_syntax.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso")
 dxp_add_test(dxil_patch_sm5_recipe_invalid_resolved_emit_test       "test/sm5_recipe_invalid_resolved_emit.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso")
 dxp_add_test(dxil_patch_sm5_recipe_replace_capture_test             "test/sm5_recipe_replace_capture.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso")
 dxp_add_test(dxil_patch_sm5_recipe_match_sequence_test              "test/sm5_recipe_match_sequence.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso")
