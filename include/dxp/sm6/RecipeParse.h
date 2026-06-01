@@ -6,7 +6,6 @@
 #include <string>
 #include <vector>
 
-#include "llvm/ADT/StringRef.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 
@@ -37,9 +36,9 @@ struct DxilRecipeParseResult {
 };
 
 /// @brief Parses a DXIL recipe from YAML text.
-bool ParseDxilRecipeText(llvm::StringRef recipeText,
+bool ParseDxilRecipeText(const std::string &recipeText,
                          DxilRecipeParseResult &result,
-                         llvm::StringRef sourceName = "recipe");
+                         const std::string &sourceName = "recipe");
 
 /// @brief Parses a DXIL recipe from a file path.
 bool ParseDxilRecipeFile(const std::string &recipePath,

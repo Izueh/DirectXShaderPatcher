@@ -8,7 +8,6 @@
 #include <string>
 #include <vector>
 
-#include "llvm/ADT/StringRef.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 

@@ -1508,10 +1508,11 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
 
 } // namespace
 
-bool ParseDxilRecipeText(llvm::StringRef recipeText,
+bool ParseDxilRecipeText(const std::string &recipeText,
                          DxilRecipeParseResult &result,
-                         llvm::StringRef sourceName) {
-  return ParseDxilRecipeTextAsYaml(recipeText, result, sourceName);
+                         const std::string &sourceName) {
+  return ParseDxilRecipeTextAsYaml(
+      llvm::StringRef(recipeText), result, llvm::StringRef(sourceName));
 }
 
 bool ParseDxilRecipeFile(const std::string &recipePath,

@@ -4,8 +4,6 @@
 
 #include <string>
 
-#include "llvm/ADT/StringRef.h"
-
 namespace dxp::sm5 {
 
 /// @brief Holds the result of parsing an SM5 recipe document.
@@ -25,8 +23,9 @@ struct RecipeParseResult {
 /// @param result Receives the parsed recipe or parse error.
 /// @param sourceName Logical source name used in diagnostics.
 /// @return `true` on success.
-bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
-                     llvm::StringRef sourceName = "recipe");
+bool ParseRecipeText(const std::string &recipeText,
+                     RecipeParseResult &result,
+                     const std::string &sourceName = "recipe");
 
 /// @brief Parses a declarative SM5 recipe from a file path.
 ///
