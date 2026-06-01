@@ -10,6 +10,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(DXP_ENABLE_SDK_INSTALL "Enable install rules for the GitHub release SDK layout" OFF)
 set(DXP_SDK_TOOLSET_SUBDIR "" CACHE STRING "Optional SDK library subdirectory suffix such as clang or msvc")
+option(DXP_ENABLE_DEBUG_ITERATORS "Build Debug artifacts with MSVC debug iterators enabled (iterator debug level 2)" ON)
 
 # DXC submodule paths
 set(DXC_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/DirectXShaderCompiler")
@@ -46,8 +47,6 @@ endif()
 # Use embedded debug info to avoid sccache/Ninja PDB contention
 if(MSVC)
     add_compile_options(/Z7)
-    add_compile_definitions($<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>)
-    add_compile_definitions($<$<CONFIG:Debug>:_HAS_ITERATOR_DEBUGGING=0>)
     string(REPLACE "/Zi" "/Z7" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
     string(REPLACE "/Zi" "/Z7" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
     string(REPLACE "/Zi" "/Z7" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
@@ -78,6 +77,13 @@ endif()
 set(ENABLE_SPIRV_CODEGEN ON CACHE BOOL "" FORCE)
 set(DXC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(HLSL_BUILD_DXIL_TESTS OFF CACHE BOOL "" FORCE)
+
+# Keep Debug ABI compatible with normal MSVC Debug consumers.
+if(DXP_ENABLE_DEBUG_ITERATORS)
+    set(HLSL_ENABLE_DEBUG_ITERATORS ON CACHE BOOL "" FORCE)
+else()
+    set(HLSL_ENABLE_DEBUG_ITERATORS OFF CACHE BOOL "" FORCE)
+endif()
 
 set(LLVM_INCLUDE_TESTS OFF CACHE BOOL "" FORCE)
 set(LLVM_INCLUDE_EXAMPLES OFF CACHE BOOL "" FORCE)
