@@ -4,7 +4,7 @@ resources:
   textures:
     - id: fast_noise
       name: FASTNoiseTexture
-      kind: Texture2DArray
+      kind: texture_2d_array
       element: F32
       width: 2
       binding:
@@ -338,27 +338,27 @@ rewrite_rules:
 
 steps:
   - kind: prefilter
-    set: ign_prefilter_matched
+    set: ign_probe_matched
     patterns:
       - ign_noise_rhs_probe
       - ign_noise_lhs_probe
   - kind: add_texture
     if:
-      state: ign_prefilter_matched
+      state: ign_probe_matched
     id: fast_noise
   - kind: add_cbuffer
     if:
-      state: ign_prefilter_matched
+      state: ign_probe_matched
     id: frame_constants
   - kind: apply_rule
     if:
-      state: ign_prefilter_matched
+      state: ign_probe_matched
     rule: ign_noise_rhs_inner
-    mode: MatchAll
+    mode: match_all
     required: false
   - kind: apply_rule
     if:
-      state: ign_prefilter_matched
+      state: ign_probe_matched
     rule: ign_noise_lhs_inner
-    mode: MatchAll
+    mode: match_all
     required: false

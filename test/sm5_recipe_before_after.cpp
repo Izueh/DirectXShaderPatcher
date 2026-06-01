@@ -77,13 +77,15 @@ int main(int argc, char **argv) {
 steps:
   - name: insert_before_mul
     rules:
-      - match:
+      - name: inline_rule_1
+        match:
           opcode: mul
           capture: target_mul
           operands:
             - capture: dst
             - capture: src
-          rewrite_mode: Before
+          rewrite_mode: before
+          insert_relative_index: 0
         emit:
           - opcode: mov
             operands:
@@ -150,13 +152,15 @@ steps:
 steps:
   - name: insert_after_mul
     rules:
-      - match:
+      - name: inline_rule_2
+        match:
           opcode: mul
           capture: target_mul
           operands:
             - capture: dst
             - capture: src
-          rewrite_mode: After
+          rewrite_mode: after
+          insert_relative_index: 0
         emit:
           - opcode: mov
             operands:
@@ -219,7 +223,83 @@ steps:
     return 1;
   }
 
-  std::cout << "SM5 Before/After rewrite modes inserted MOV instructions "
-               "around the matched MUL.\n";
+  const char *indexedAfterRecipeText = R"YAML(version: 1
+steps:
+  - name: after_indexed_mul
+    rules:
+      - name: inline_rule_3
+        match:
+          rewrite_mode: after
+          insert_relative_index: 0
+          sequence:
+            - opcode: mul
+              operands:
+                - capture: dst
+                - capture: src
+        emit:
+          - opcode: mov
+            operands:
+              - capture: dst
+              - capture: src
+)YAML";
+
+  dxp::sm5::RecipeParseResult indexedAfterParseResult;
+  if (!dxp::sm5::ParseRecipeText(indexedAfterRecipeText,
+                                 indexedAfterParseResult,
+                                 "inline-sm5-indexed-after-test")) {
+    std::cerr << "Failed to parse inline SM5 indexed-after recipe: "
+              << indexedAfterParseResult.Error << "\n";
+    return 1;
+  }
+
+  const auto indexedAfterPatchResult =
+      dxp::sm5::PatchContainer(inputBytes, indexedAfterParseResult.Recipe);
+  if (!indexedAfterPatchResult.Success) {
+    std::cerr << "Failed to patch SM5 shader with indexed-after recipe: "
+              << indexedAfterPatchResult.Error << "\n";
+    return 1;
+  }
+
+  dxp::sm5::ProgramInspection indexedAfterProgram;
+  if (!dxp::sm5::InspectProgram(indexedAfterPatchResult.OutputBytes,
+                                indexedAfterProgram, &inspectError)) {
+    std::cerr
+        << "Failed to inspect SM5 program patched with indexed-after recipe: "
+        << inspectError << "\n";
+    return 1;
+  }
+
+  if (indexedAfterProgram.Instructions.size() != initialInstructionCount + 1) {
+    std::cerr << "Expected indexed after rewrite to increase instruction count "
+                 "by one.\n";
+    return 1;
+  }
+
+  const auto &indexedAfterOriginalInstruction =
+      indexedAfterProgram.Instructions[static_cast<size_t>(targetInstructionIndex)];
+  const auto &indexedAfterInsertedInstruction = indexedAfterProgram.Instructions[
+      static_cast<size_t>(targetInstructionIndex + 1)];
+  if (indexedAfterOriginalInstruction.Opcode != D3D10_SB_OPCODE_MUL) {
+    std::cerr << "Expected indexed after rewrite to keep the matched MUL at "
+                 "the anchor position.\n";
+    return 1;
+  }
+  if (indexedAfterInsertedInstruction.Opcode != D3D10_SB_OPCODE_MOV) {
+    std::cerr << "Expected indexed after rewrite to insert MOV after the "
+                 "indexed matched instruction.\n";
+    return 1;
+  }
+  if (indexedAfterInsertedInstruction.Operands.size() != 2 ||
+      !OperandsEqual(indexedAfterInsertedInstruction.Operands[0],
+                     originalInstruction.Operands[0]) ||
+      !OperandsEqual(indexedAfterInsertedInstruction.Operands[1],
+                     originalInstruction.Operands[1])) {
+    std::cerr << "Expected indexed after rewrite to preserve captured operands "
+                 "on the inserted MOV.\n";
+    return 1;
+  }
+
+  std::cout << "SM5 before/after rewrite modes with explicit index anchors "
+               "inserted MOV instructions around the matched MUL.\n";
   return 0;
 }

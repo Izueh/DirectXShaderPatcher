@@ -4,7 +4,7 @@ resources:
   textures:
     - id: fast_noise
       name: FASTNoiseTexture
-      kind: Texture2DArray
+      kind: texture_2d_array
       element: F32
       width: 2
       binding:
@@ -442,7 +442,7 @@ steps:
       - blue_noise_scalar_slice_rhs
       - blue_noise_vec2_slice_lhs
       - blue_noise_vec2_slice_rhs
-    mode: MatchAll
+    mode: match_all
     required: false
   - kind: prune_dead_code
   - kind: refresh_resources

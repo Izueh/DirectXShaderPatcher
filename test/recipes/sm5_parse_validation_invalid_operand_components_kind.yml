@@ -1,19 +1,20 @@
-﻿version: 1
+version: 1
 steps:
-  - kind: prefilter
+  - kind: check_shader_version
     name: require_sm5_0
-    checks:
-      - kind: check_shader_version
-        major: 5
-        minor: 0
+    major: 5
+    minor: 0
 
   - name: bad_selector
     rules:
-      - match:
+      - name: rule
+        match:
           opcode: mul
           operands:
             - type: temp
-              mask: xy
+              components:
+                kind: bad_kind
+                value: xy
               capture: dst
             - capture: src
         emit:

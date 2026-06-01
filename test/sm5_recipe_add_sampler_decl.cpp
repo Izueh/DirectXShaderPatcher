@@ -62,7 +62,7 @@ steps:
     sampler_mode: comparison
 
   - name: noop
-    required: false
+    abort_on_failure: false
     rules: []
 )YAML";
 

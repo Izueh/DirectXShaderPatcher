@@ -12,9 +12,14 @@
 #include <fstream>
 #include <regex>
 #include <sstream>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "llvm/Support/YAMLTraits.h"
+
+#if defined(_MSC_VER)
+#include <windows.h>
+#endif
 
 namespace {
 
@@ -56,16 +61,24 @@ static bool TryNormalizeReplayFromLine(const std::string &line,
                                        const std::string &targetField,
                                        std::string &normalizedLine,
                                        std::string &captureName) {
-  const std::string fieldPattern =
-      sourceField == "immediate_hi"
-      ? R"(^([\t ]*(?:- [\t ]*)?)immediate_hi:[\t ]*\{[\t ]*from:[\t ]*([^}]+)[\t ]*\}[\t ]*$)"
-      : sourceField == "immediate_lo"
-    ? R"(^([\t ]*(?:- [\t ]*)?)immediate_lo:[\t ]*\{[\t ]*from:[\t ]*([^}]+)[\t ]*\}[\t ]*$)"
-            : sourceField == "capture"
-      ? R"(^([\t ]*(?:- [\t ]*)?)capture:[\t ]*\{[\t ]*from:[\t ]*([^}]+)[\t ]*\}[\t ]*$)"
-                  : sourceField == "match_capture"
-        ? R"(^([\t ]*(?:- [\t ]*)?)match_capture:[\t ]*\{[\t ]*from:[\t ]*([^}]+)[\t ]*\}[\t ]*$)"
-        : R"(^([\t ]*(?:- [\t ]*)?)replace:[\t ]*\{[\t ]*from:[\t ]*([^}]+)[\t ]*\}[\t ]*$)";
+  std::string fieldPattern;
+  if (sourceField == "immediate_hi") {
+    fieldPattern =
+        R"(^([\t ]*(?:- [\t ]*)?)immediate_hi:[\t ]*\{[\t ]*from:[\t ]*([^}]+)[\t ]*\}[\t ]*$)";
+  } else if (sourceField == "immediate_lo") {
+    fieldPattern =
+        R"(^([\t ]*(?:- [\t ]*)?)immediate_lo:[\t ]*\{[\t ]*from:[\t ]*([^}]+)[\t ]*\}[\t ]*$)";
+  } else if (sourceField == "capture") {
+    fieldPattern =
+        R"(^([\t ]*(?:- [\t ]*)?)capture:[\t ]*\{[\t ]*from:[\t ]*([^}]+)[\t ]*\}[\t ]*$)";
+  } else if (sourceField == "match_capture") {
+    fieldPattern =
+        R"(^([\t ]*(?:- [\t ]*)?)match_capture:[\t ]*\{[\t ]*from:[\t ]*([^}]+)[\t ]*\}[\t ]*$)";
+  } else {
+    normalizedLine.clear();
+    captureName.clear();
+    return false;
+  }
 
   const std::regex pattern(fieldPattern);
   std::smatch match;
@@ -125,14 +138,6 @@ static bool NormalizeReplayObjectSyntax(llvm::StringRef recipeText,
         return false;
       }
       line = std::move(normalizedLine);
-    } else if (TryNormalizeReplayFromLine(line, "replace", "replace",
-                                          normalizedLine, captureName)) {
-      if (captureName.empty()) {
-        error = "line " + std::to_string(lineNumber) +
-                ": replace replay object requires non-empty from";
-        return false;
-      }
-      line = std::move(normalizedLine);
     }
 
     normalizedText += line;
@@ -142,32 +147,24 @@ static bool NormalizeReplayObjectSyntax(llvm::StringRef recipeText,
   return true;
 }
 
-static dxp::sm5::RecipeRuleApplicationMode
-ParseRuleApplicationMode(const std::string &value) {
+static bool ParseRuleApplicationMode(
+    const std::string &value, dxp::sm5::RecipeRuleApplicationMode &mode,
+    std::string &error) {
   const std::string lowered = Lowercase(value);
+  if (lowered.empty() || lowered == "first") {
+    mode = dxp::sm5::RecipeRuleApplicationMode::First;
+    return true;
+  }
   if (lowered == "last") {
-    return dxp::sm5::RecipeRuleApplicationMode::Last;
-  }
-  if (lowered == "matchall" || lowered == "match_all") {
-    return dxp::sm5::RecipeRuleApplicationMode::MatchAll;
-  }
-  return dxp::sm5::RecipeRuleApplicationMode::First;
-}
-
-static bool ParsePrefilterMode(const std::string &value,
-                               dxp::sm5::RecipePrefilterMode &mode,
-                               std::string &error) {
-  const std::string lowered = Lowercase(value);
-  if (lowered.empty() || lowered == "all") {
-    mode = dxp::sm5::RecipePrefilterMode::All;
+    mode = dxp::sm5::RecipeRuleApplicationMode::Last;
     return true;
   }
-  if (lowered == "any") {
-    mode = dxp::sm5::RecipePrefilterMode::Any;
+  if (lowered == "match_all") {
+    mode = dxp::sm5::RecipeRuleApplicationMode::MatchAll;
     return true;
   }
 
-  error = "unsupported SM5 prefilter mode '" + value + "'";
+  error = "unsupported SM5 rule application mode '" + value + "'";
   return false;
 }
 
@@ -180,7 +177,7 @@ static bool ParseRuleRewriteMode(const std::string &value,
     return true;
   }
   if (lowered == "auto") {
-    error = "SM5 rewrite mode Auto was removed; use Replace or ReplaceRange";
+    error = "SM5 rewrite mode auto was removed; use replace or replace_range";
     return false;
   }
   if (lowered == "none") {
@@ -199,7 +196,7 @@ static bool ParseRuleRewriteMode(const std::string &value,
     mode = dxp::sm5::RecipeRuleRewriteMode::After;
     return true;
   }
-  if (lowered == "replacerange" || lowered == "replace_range") {
+  if (lowered == "replace_range") {
     mode = dxp::sm5::RecipeRuleRewriteMode::ReplaceRange;
     return true;
   }
@@ -214,6 +211,7 @@ struct YamlMatch {
   std::string rewrite_mode;
   int32_t range_start_offset = 0;
   int32_t range_end_offset = -1;
+  int32_t insert_relative_index = -1;
   std::string saturate;
   std::string interpolation_mode;
   int32_t test_boolean = -1;
@@ -266,19 +264,14 @@ struct YamlOperand {
   std::vector<YamlImmediateScalar> immediates_i64;
   std::vector<YamlImmediateScalar> immediates_f32;
   std::vector<YamlImmediateScalar> immediates_f64;
-  std::string bind_handle;
-  std::string state_temp;
+  std::string from_handle;
   YamlComponentSelector components;
-  std::string mask;
-  std::string swizzle;
-  std::string select;
   int32_t num_components = -1;
   std::string modifier;
   std::string capture;
   std::string match_capture;
   YamlOperandCaptureFields capture_fields;
   YamlOperandCaptureFields match_capture_fields;
-  std::string scratch;
 };
 
 struct YamlEmitInstruction {
@@ -290,50 +283,55 @@ struct YamlEmitInstruction {
 };
 
 struct YamlRule {
-  YamlMatch match;
-  std::vector<YamlEmitInstruction> emit;
-  std::string replace;
-  std::string mode;
-};
-
-struct YamlPrefilter {
-  std::string kind;
   std::string name;
-  bool required = true;
-  uint32_t major = 0;
-  uint32_t minor = 0;
-  std::string opcode;
-  int32_t expected_count = 0;
-  int32_t expected_resources = 0;
   YamlMatch match;
+  std::string replace;
+  std::vector<YamlEmitInstruction> emit;
+  std::string mode;
+  bool required_match = false;
 };
 
 struct YamlStepCondition {
+  struct Comparison {
+    std::string state;
+    std::string input;
+    std::string value;
+  };
+
   std::string state;
   std::string input;
-  std::vector<YamlStepCondition> all;
-  std::vector<YamlStepCondition> any;
+  std::vector<YamlStepCondition> and_conditions;
+  std::vector<YamlStepCondition> or_conditions;
+  Comparison eq;
+  Comparison ne;
+  Comparison gt;
+  Comparison gte;
+  Comparison lt;
+  Comparison lte;
   bool not_condition = false;
 };
 
 struct YamlStep {
   std::string kind;
   std::string name;
-  bool required = true;
+  bool abort_on_failure = true;
   std::string mode;
-  std::string set;
   YamlStepCondition if_condition;
   std::vector<YamlRule> rules;
-  std::vector<YamlPrefilter> checks;
+  int32_t major = INT_MIN;
+  int32_t minor = INT_MIN;
+  std::string opcode;
+  int32_t expected_count = INT_MIN;
+  int32_t expected_resources = INT_MIN;
 
   int32_t bind_point = -1;
   std::string handle;
   std::vector<std::string> handles;
   bool auto_bind = false;
-  std::string dimension = "Texture2D";
+  std::string dimension = "texture_2d";
   std::string interpolation_mode = "linear";
   uint32_t elements = 1;
-  std::string access_pattern = "immediateIndexed";
+  std::string access_pattern = "immediate_indexed";
   std::string sampler_mode = "default";
   std::string uav_kind = "typed";
   uint32_t stride = 16;
@@ -343,7 +341,7 @@ struct YamlStep {
 
 struct YamlTextureDecl {
   int32_t bind_point = -1;
-  std::string dimension = "Texture2D";
+  std::string dimension = "texture_2d";
   std::string handle;
   bool auto_bind = false;
 };
@@ -364,7 +362,7 @@ struct YamlOutputDecl {
 struct YamlCBufferDecl {
   int32_t bind_point = -1;
   uint32_t elements = 1;
-  std::string access_pattern = "immediateIndexed";
+  std::string access_pattern = "immediate_indexed";
   std::string handle;
   bool auto_bind = false;
 };
@@ -392,7 +390,7 @@ struct YamlStructuredResourceDecl {
 struct YamlUavDecl {
   int32_t bind_point = -1;
   std::string kind = "typed";
-  std::string dimension = "Texture2D";
+  std::string dimension = "texture_2d";
   uint32_t stride = 16;
   bool globally_coherent = false;
   bool has_counter = false;
@@ -402,7 +400,6 @@ struct YamlUavDecl {
 
 struct YamlRecipeDocument {
   uint32_t version = 1;
-  std::vector<YamlPrefilter> prefilters;
   std::vector<YamlRule> rewrite_rules;
   std::vector<YamlStep> steps;
 
@@ -432,7 +429,7 @@ LLVM_YAML_IS_SEQUENCE_VECTOR(YamlEmitInstruction)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRule)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlStep)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlStepCondition)
-LLVM_YAML_IS_SEQUENCE_VECTOR(YamlPrefilter)
+LLVM_YAML_IS_SEQUENCE_VECTOR(YamlStepCondition::Comparison)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlTextureDecl)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlInputDecl)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YamlOutputDecl)
@@ -491,19 +488,14 @@ template <> struct MappingTraits<YamlOperand> {
     io.mapOptional("immediates_i64", operand.immediates_i64);
     io.mapOptional("immediates_f32", operand.immediates_f32);
     io.mapOptional("immediates_f64", operand.immediates_f64);
-    io.mapOptional("bind_handle", operand.bind_handle);
-    io.mapOptional("state_temp", operand.state_temp);
+    io.mapOptional("from_handle", operand.from_handle);
     io.mapOptional("components", operand.components);
-    io.mapOptional("mask", operand.mask);
-    io.mapOptional("swizzle", operand.swizzle);
-    io.mapOptional("select", operand.select);
     io.mapOptional("num_components", operand.num_components, -1);
     io.mapOptional("modifier", operand.modifier);
     io.mapOptional("capture", operand.capture);
     io.mapOptional("match_capture", operand.match_capture);
     io.mapOptional("capture_fields", operand.capture_fields);
     io.mapOptional("match_capture_fields", operand.match_capture_fields);
-    io.mapOptional("scratch", operand.scratch);
   }
 };
 
@@ -536,6 +528,7 @@ template <> struct MappingTraits<YamlMatch> {
     io.mapOptional("rewrite_mode", match.rewrite_mode);
     io.mapOptional("range_start_offset", match.range_start_offset, 0);
     io.mapOptional("range_end_offset", match.range_end_offset, -1);
+    io.mapOptional("insert_relative_index", match.insert_relative_index, -1);
     io.mapOptional("saturate", match.saturate);
     io.mapOptional("interpolation_mode", match.interpolation_mode);
     io.mapOptional("test_boolean", match.test_boolean, -1);
@@ -556,20 +549,41 @@ template <> struct MappingTraits<YamlEmitInstruction> {
 
 template <> struct MappingTraits<YamlRule> {
   static void mapping(IO &io, YamlRule &rule) {
+    io.mapOptional("name", rule.name);
     io.mapOptional("match", rule.match);
-    io.mapOptional("emit", rule.emit);
     io.mapOptional("replace", rule.replace);
+    io.mapOptional("emit", rule.emit);
     io.mapOptional("mode", rule.mode);
+    io.mapOptional("required_match", rule.required_match, false);
   }
 };
 
 template <> struct MappingTraits<YamlStepCondition> {
+  static void mapComparison(IO &io, const char *key,
+                            YamlStepCondition::Comparison &comparison) {
+    io.mapOptional(key, comparison);
+  }
+
   static void mapping(IO &io, YamlStepCondition &condition) {
     io.mapOptional("state", condition.state);
     io.mapOptional("input", condition.input);
-    io.mapOptional("all", condition.all);
-    io.mapOptional("any", condition.any);
+    io.mapOptional("and", condition.and_conditions);
+    io.mapOptional("or", condition.or_conditions);
+    mapComparison(io, "eq", condition.eq);
+    mapComparison(io, "ne", condition.ne);
+    mapComparison(io, "gt", condition.gt);
+    mapComparison(io, "gte", condition.gte);
+    mapComparison(io, "lt", condition.lt);
+    mapComparison(io, "lte", condition.lte);
     io.mapOptional("not", condition.not_condition, false);
+  }
+};
+
+template <> struct MappingTraits<YamlStepCondition::Comparison> {
+  static void mapping(IO &io, YamlStepCondition::Comparison &comparison) {
+    io.mapOptional("state", comparison.state);
+    io.mapOptional("input", comparison.input);
+    io.mapRequired("value", comparison.value);
   }
 };
 
@@ -577,22 +591,25 @@ template <> struct MappingTraits<YamlStep> {
   static void mapping(IO &io, YamlStep &step) {
     io.mapOptional("kind", step.kind);
     io.mapOptional("name", step.name);
-    io.mapOptional("required", step.required, true);
+    io.mapOptional("abort_on_failure", step.abort_on_failure, true);
     io.mapOptional("mode", step.mode);
-    io.mapOptional("set", step.set);
     io.mapOptional("if", step.if_condition);
     io.mapOptional("rules", step.rules);
-    io.mapOptional("checks", step.checks);
+    io.mapOptional("major", step.major, INT_MIN);
+    io.mapOptional("minor", step.minor, INT_MIN);
+    io.mapOptional("opcode", step.opcode);
+    io.mapOptional("expected_count", step.expected_count, INT_MIN);
+    io.mapOptional("expected_resources", step.expected_resources, INT_MIN);
     io.mapOptional("bind_point", step.bind_point, -1);
     io.mapOptional("handle", step.handle);
     io.mapOptional("handles", step.handles);
     io.mapOptional("auto_bind", step.auto_bind, false);
-    io.mapOptional("dimension", step.dimension, std::string("Texture2D"));
+    io.mapOptional("dimension", step.dimension, std::string("texture_2d"));
     io.mapOptional("interpolation_mode", step.interpolation_mode,
                    std::string("linear"));
     io.mapOptional("elements", step.elements, 1u);
     io.mapOptional("access_pattern", step.access_pattern,
-                   std::string("immediateIndexed"));
+             std::string("immediate_indexed"));
     io.mapOptional("sampler_mode", step.sampler_mode, std::string("default"));
     io.mapOptional("uav_kind", step.uav_kind, std::string("typed"));
     io.mapOptional("stride", step.stride, 16u);
@@ -601,24 +618,10 @@ template <> struct MappingTraits<YamlStep> {
   }
 };
 
-template <> struct MappingTraits<YamlPrefilter> {
-  static void mapping(IO &io, YamlPrefilter &prefilter) {
-    io.mapRequired("kind", prefilter.kind);
-    io.mapOptional("name", prefilter.name);
-    io.mapOptional("required", prefilter.required, true);
-    io.mapOptional("major", prefilter.major, 0u);
-    io.mapOptional("minor", prefilter.minor, 0u);
-    io.mapOptional("opcode", prefilter.opcode);
-    io.mapOptional("expected_count", prefilter.expected_count, 0);
-    io.mapOptional("expected_resources", prefilter.expected_resources, 0);
-    io.mapOptional("match", prefilter.match);
-  }
-};
-
 template <> struct MappingTraits<YamlTextureDecl> {
   static void mapping(IO &io, YamlTextureDecl &decl) {
     io.mapOptional("bind_point", decl.bind_point, -1);
-    io.mapOptional("dimension", decl.dimension, std::string("Texture2D"));
+    io.mapOptional("dimension", decl.dimension, std::string("texture_2d"));
     io.mapOptional("handle", decl.handle);
     io.mapOptional("auto_bind", decl.auto_bind, false);
   }
@@ -647,7 +650,7 @@ template <> struct MappingTraits<YamlCBufferDecl> {
     io.mapOptional("bind_point", decl.bind_point, -1);
     io.mapOptional("elements", decl.elements, 1u);
     io.mapOptional("access_pattern", decl.access_pattern,
-                   std::string("immediateIndexed"));
+             std::string("immediate_indexed"));
     io.mapOptional("handle", decl.handle);
     io.mapOptional("auto_bind", decl.auto_bind, false);
   }
@@ -683,7 +686,7 @@ template <> struct MappingTraits<YamlUavDecl> {
   static void mapping(IO &io, YamlUavDecl &decl) {
     io.mapOptional("bind_point", decl.bind_point, -1);
     io.mapOptional("kind", decl.kind, std::string("typed"));
-    io.mapOptional("dimension", decl.dimension, std::string("Texture2D"));
+    io.mapOptional("dimension", decl.dimension, std::string("texture_2d"));
     io.mapOptional("stride", decl.stride, 16u);
     io.mapOptional("globally_coherent", decl.globally_coherent, false);
     io.mapOptional("has_counter", decl.has_counter, false);
@@ -695,7 +698,6 @@ template <> struct MappingTraits<YamlUavDecl> {
 template <> struct MappingTraits<YamlRecipeDocument> {
   static void mapping(IO &io, YamlRecipeDocument &document) {
     io.mapOptional("version", document.version, 1u);
-    io.mapOptional("prefilters", document.prefilters);
     io.mapOptional("rewrite_rules", document.rewrite_rules);
     io.mapOptional("steps", document.steps);
     io.mapOptional("texture_decls", document.texture_decls);
@@ -721,24 +723,23 @@ namespace {
 static bool ParseTextureDimensionToken(const std::string &value,
                                        uint32_t &dimension,
                                        std::string &error) {
-  const std::string lowered = Lowercase(value);
-  if (lowered == "texture1d") {
+  if (value == "texture_1d") {
     dimension = D3D10_SB_RESOURCE_DIMENSION_TEXTURE1D;
     return true;
   }
-  if (lowered == "texture2d") {
+  if (value == "texture_2d") {
     dimension = D3D10_SB_RESOURCE_DIMENSION_TEXTURE2D;
     return true;
   }
-  if (lowered == "texture2darray") {
+  if (value == "texture_2d_array") {
     dimension = D3D10_SB_RESOURCE_DIMENSION_TEXTURE2DARRAY;
     return true;
   }
-  if (lowered == "texture3d") {
+  if (value == "texture_3d") {
     dimension = D3D10_SB_RESOURCE_DIMENSION_TEXTURE3D;
     return true;
   }
-  if (lowered == "texturecube") {
+  if (value == "texture_cube") {
     dimension = D3D10_SB_RESOURCE_DIMENSION_TEXTURECUBE;
     return true;
   }
@@ -751,11 +752,11 @@ static bool ParseCBufferAccessPatternToken(const std::string &value,
                                            uint32_t &accessPattern,
                                            std::string &error) {
   const std::string lowered = Lowercase(value);
-  if (lowered == "immediateindexed" || lowered == "immediate_indexed") {
+  if (lowered == "immediate_indexed") {
     accessPattern = D3D10_SB_CONSTANT_BUFFER_IMMEDIATE_INDEXED;
     return true;
   }
-  if (lowered == "dynamicindexed" || lowered == "dynamic_indexed") {
+  if (lowered == "dynamic_indexed") {
     accessPattern = D3D10_SB_CONSTANT_BUFFER_DYNAMIC_INDEXED;
     return true;
   }
@@ -804,30 +805,6 @@ static bool ParseUavKindToken(const std::string &value, RecipeUavKind &kind,
   return false;
 }
 
-static bool ParsePrefilterKindToken(const std::string &value,
-                                    PrefilterKind &kind, std::string &error) {
-  const std::string lowered = Lowercase(value);
-  if (lowered == "check_shader_version") {
-    kind = PrefilterKind::CheckShaderVersion;
-    return true;
-  }
-  if (lowered == "check_opcode_count") {
-    kind = PrefilterKind::CheckOpcodeCount;
-    return true;
-  }
-  if (lowered == "check_resource_count") {
-    kind = PrefilterKind::CheckResourceCount;
-    return true;
-  }
-  if (lowered == "check_pattern_match") {
-    kind = PrefilterKind::CheckPatternMatch;
-    return true;
-  }
-
-  error = "unsupported SM5 prefilter kind: " + value;
-  return false;
-}
-
 static bool ParseBoolToken(const std::string &value, bool &parsedValue,
                            std::string &error) {
   const std::string lowered = Lowercase(value);
@@ -859,25 +836,23 @@ static bool ParseInterpolationModeToken(const std::string &value,
     mode = D3D10_SB_INTERPOLATION_LINEAR;
     return true;
   }
-  if (lowered == "linear_centroid" || lowered == "linearcentroid") {
+  if (lowered == "linear_centroid") {
     mode = D3D10_SB_INTERPOLATION_LINEAR_CENTROID;
     return true;
   }
-  if (lowered == "linear_noperspective" || lowered == "linearnoperspective") {
+  if (lowered == "linear_noperspective") {
     mode = D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE;
     return true;
   }
-  if (lowered == "linear_noperspective_centroid" ||
-      lowered == "linearnoperspectivecentroid") {
+  if (lowered == "linear_noperspective_centroid") {
     mode = D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_CENTROID;
     return true;
   }
-  if (lowered == "linear_sample" || lowered == "linearsample") {
+  if (lowered == "linear_sample") {
     mode = D3D10_SB_INTERPOLATION_LINEAR_SAMPLE;
     return true;
   }
-  if (lowered == "linear_noperspective_sample" ||
-      lowered == "linearnoperspectivesample") {
+  if (lowered == "linear_noperspective_sample") {
     mode = D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_SAMPLE;
     return true;
   }
@@ -961,7 +936,7 @@ static bool ParseOperandModifier(const std::string &value,
     modifier = D3D10_SB_OPERAND_MODIFIER_ABS;
     return true;
   }
-  if (lowered == "absneg" || lowered == "abs_neg") {
+  if (lowered == "abs_neg") {
     modifier = D3D10_SB_OPERAND_MODIFIER_ABSNEG;
     return true;
   }
@@ -1483,14 +1458,6 @@ static bool ValidateRuleCaptureReferences(const dxp::sm5::RecipeRule &rule,
   CaptureNameTables captures;
   CollectMatchCaptures(rule.Match, captures);
 
-  if (!rule.Replace.empty()) {
-    if (!ValidateCaptureReference(captures, rule.Replace, "instruction",
-                                  captures.Instructions, "replace capture",
-                                  error)) {
-      return false;
-    }
-  }
-
   for (const dxp::sm5::RecipeOperandPattern &operand : rule.Match.Operands) {
     if (!ValidateOperandCaptureReferences(operand, captures, false, error)) {
       return false;
@@ -1545,24 +1512,9 @@ static bool ParseOperandComponentMode(const YamlOperand &operandModel,
                                       std::string &error) {
   const bool hasSelectorObject = !operandModel.components.kind.empty() ||
                                  !operandModel.components.value.empty();
-  const bool hasLegacySelectors = !operandModel.select.empty() ||
-                                  !operandModel.mask.empty() ||
-                                  !operandModel.swizzle.empty();
-
-  if (hasLegacySelectors) {
-    error = "SM5 operands require components.kind/components.value instead of "
-            "mask/swizzle/select";
-    return false;
-  }
-
-  if (hasSelectorObject && hasLegacySelectors) {
-    error = "operand components cannot mix components with mask/swizzle/select";
-    return false;
-  }
-
-  std::string selectToken = operandModel.select;
-  std::string maskToken = operandModel.mask;
-  std::string swizzleToken = operandModel.swizzle;
+  std::string selectToken;
+  std::string maskToken;
+  std::string swizzleToken;
   if (hasSelectorObject) {
     const std::string kind = Lowercase(operandModel.components.kind);
     if (kind.empty()) {
@@ -1685,17 +1637,6 @@ static bool ParseEmitOperand(const YamlOperand &operandModel, Operand &operand,
   const std::string &captureRef = operandModel.capture;
   const bool hasCaptureReference = !captureRef.empty();
 
-  if (!operandModel.scratch.empty()) {
-      error = "SM5 scratch is unsupported; use add_temp and bind_handle on "
-        "type: temp operands";
-    return false;
-  }
-
-  if (!operandModel.state_temp.empty()) {
-    error = "SM5 state_temp is unsupported; use callback-driven emit logic";
-    return false;
-  }
-
   const bool hasCaptureFields = operandModel.capture_fields.type ||
                                 operandModel.capture_fields.components ||
                                 operandModel.capture_fields.modifier ||
@@ -1720,7 +1661,7 @@ static bool ParseEmitOperand(const YamlOperand &operandModel, Operand &operand,
     return false;
   }
 
-  if (!operandModel.bind_handle.empty() && !operandModel.type.empty()) {
+  if (!operandModel.from_handle.empty() && !operandModel.type.empty()) {
     OperandType parsedType = D3D10_SB_OPERAND_TYPE_TEMP;
     if (!ParseOperandType(operandModel.type, parsedType, error)) {
       return false;
@@ -1797,7 +1738,7 @@ static bool ParseEmitOperand(const YamlOperand &operandModel, Operand &operand,
     operand.Indices.clear();
   }
 
-  operand.BindHandle = operandModel.bind_handle;
+  operand.FromHandle = operandModel.from_handle;
 
   if (!operandModel.modifier.empty() &&
       !ParseOperandModifier(operandModel.modifier, operand.Modifier, error)) {
@@ -1883,9 +1824,8 @@ static bool ParseMatchOperand(const YamlOperand &operandModel,
                                   : D3D10_SB_OPERAND_TYPE_TEMP;
   uint32_t numComponents = 0;
   uint32_t componentMode = 0;
-  if (!operandModel.mask.empty() || !operandModel.swizzle.empty() ||
-      !operandModel.components.kind.empty() ||
-      !operandModel.components.value.empty() || !operandModel.select.empty() ||
+    if (!operandModel.components.kind.empty() ||
+      !operandModel.components.value.empty() ||
       operandModel.num_components >= 0) {
     if (!ParseOperandComponentMode(operandModel, componentType, numComponents,
                                    componentMode, error)) {
@@ -1948,17 +1888,6 @@ static bool FillRecipeOperandPattern(const YamlOperand &operandModel,
                                      RecipeOperandPattern &operandPattern,
                                      bool allowEmitImmediateShorthands,
                                      std::string &error) {
-  if (!operandModel.scratch.empty()) {
-      error = "SM5 scratch is unsupported; use add_temp and bind_handle on "
-        "type: temp operands";
-    return false;
-  }
-
-  if (!operandModel.state_temp.empty()) {
-    error = "SM5 state_temp is unsupported; use callback-driven emit logic";
-    return false;
-  }
-
   std::vector<RecipeOperandIndexPattern> indexPatterns;
   if (!DecodeOperandIndexPatternsWithShorthands(
           operandModel, indexPatterns, true,
@@ -1970,7 +1899,7 @@ static bool FillRecipeOperandPattern(const YamlOperand &operandModel,
                        .WithAny(operandModel.any)
                        .WithType(operandModel.type)
                        .WithIndexPatterns(std::move(indexPatterns))
-                       .WithBindHandle(operandModel.bind_handle)
+                       .WithFromHandle(operandModel.from_handle)
                        .WithNumComponents(operandModel.num_components)
                        .WithModifier(operandModel.modifier)
                          .WithCaptureFields(
@@ -1979,13 +1908,6 @@ static bool FillRecipeOperandPattern(const YamlOperand &operandModel,
                          .WithMatchCaptureFields(BuildCaptureFields(
                            operandModel.match_capture_fields))
                        .CaptureAs(operandModel.capture);
-
-  if (!operandModel.mask.empty() || !operandModel.swizzle.empty() ||
-      !operandModel.select.empty()) {
-    error = "SM5 operands require components.kind/components.value instead of "
-            "mask/swizzle/select";
-    return false;
-  }
 
   if (!operandModel.components.kind.empty() ||
       !operandModel.components.value.empty()) {
@@ -2128,10 +2050,20 @@ static bool ParseInstructionMatch(const YamlInstructionMatch &matchModel,
 static bool ParseRule(const YamlRule &ruleModel,
                       RecipeRuleApplicationMode inheritedMode, RecipeRule &rule,
                       std::string &error) {
-  rule = RecipeRule{}.ApplyMode(inheritedMode);
+  if (!ruleModel.replace.empty()) {
+    error = "SM5 rule.replace was removed; use match.rewrite_mode and emit";
+    return false;
+  }
+
+  rule = RecipeRule{}.Named(ruleModel.name).ApplyMode(inheritedMode);
+  rule.RequireMatch(ruleModel.required_match);
 
   if (!ruleModel.mode.empty()) {
-    rule.ApplyMode(ParseRuleApplicationMode(ruleModel.mode));
+    RecipeRuleApplicationMode ruleMode = RecipeRuleApplicationMode::First;
+    if (!ParseRuleApplicationMode(ruleModel.mode, ruleMode, error)) {
+      return false;
+    }
+    rule.ApplyMode(ruleMode);
   }
 
   RecipeRuleRewriteMode rewriteMode = RecipeRuleRewriteMode::Replace;
@@ -2141,10 +2073,13 @@ static bool ParseRule(const YamlRule &ruleModel,
   rule.RewriteAs(rewriteMode);
   rule.RangeOffsets(ruleModel.match.range_start_offset,
                     ruleModel.match.range_end_offset);
+  rule.InsertAfterRelativeIndex(ruleModel.match.insert_relative_index);
 
   const bool hasCustomRangeOffsets =
       ruleModel.match.range_start_offset != 0 ||
       ruleModel.match.range_end_offset != -1;
+  const bool hasInsertRelativeIndex =
+      ruleModel.match.insert_relative_index >= 0;
   if (ruleModel.match.range_start_offset < 0) {
     error = "SM5 match.range_start_offset must be >= 0";
     return false;
@@ -2156,7 +2091,24 @@ static bool ParseRule(const YamlRule &ruleModel,
   if (rewriteMode != RecipeRuleRewriteMode::ReplaceRange &&
       hasCustomRangeOffsets) {
     error =
-        "SM5 range offsets require match.rewrite_mode: ReplaceRange";
+        "SM5 range offsets require match.rewrite_mode: replace_range";
+    return false;
+  }
+  if (ruleModel.match.insert_relative_index < -1) {
+    error = "SM5 match.insert_relative_index must be -1 or >= 0";
+    return false;
+  }
+  if (rewriteMode != RecipeRuleRewriteMode::Before &&
+      rewriteMode != RecipeRuleRewriteMode::After &&
+      hasInsertRelativeIndex) {
+    error = "SM5 match.insert_relative_index requires match.rewrite_mode: "
+            "before or after";
+    return false;
+  }
+  if ((rewriteMode == RecipeRuleRewriteMode::Before ||
+       rewriteMode == RecipeRuleRewriteMode::After) &&
+      ruleModel.match.insert_relative_index < 0) {
+    error = "SM5 before/after rewrites require match.insert_relative_index";
     return false;
   }
 
@@ -2227,21 +2179,11 @@ static bool ParseRule(const YamlRule &ruleModel,
     return false;
   }
 
-  rule.ReplaceCapture(ruleModel.replace);
-
-  if ((rule.RewriteMode == RecipeRuleRewriteMode::Replace ||
-       rule.RewriteMode == RecipeRuleRewriteMode::ReplaceRange) &&
-      !rule.Replace.empty()) {
-    error = "SM5 replace capture is only valid with Before or After rewrite "
-            "modes";
-    return false;
-  }
-
   if (rule.RewriteMode == RecipeRuleRewriteMode::None) {
-    if (!rule.Replace.empty() || !ruleModel.emit.empty() ||
-        hasCustomRangeOffsets) {
-      error = "SM5 rewrite mode None cannot be combined with replace, emit, "
-              "or range offsets";
+    if (!ruleModel.emit.empty() || hasCustomRangeOffsets ||
+        hasInsertRelativeIndex) {
+      error = "SM5 rewrite mode None cannot be combined with emit, "
+              "range offsets, or insert_relative_index";
       return false;
     }
   } else {
@@ -2329,130 +2271,6 @@ static bool ParseRule(const YamlRule &ruleModel,
   return true;
 }
 
-static bool IsEmptyYamlMatch(const YamlMatch &match) {
-  return match.opcode.empty() && match.capture.empty() &&
-         match.saturate.empty() && match.interpolation_mode.empty() &&
-         match.test_boolean < 0 && match.operands.empty() &&
-         match.sequence.empty();
-}
-
-static bool ValidatePrefilterModel(const YamlPrefilter &prefilter,
-                                   PrefilterKind kind, std::string &error) {
-  switch (kind) {
-  case PrefilterKind::CheckShaderVersion:
-  case PrefilterKind::CheckResourceCount:
-    return true;
-  case PrefilterKind::CheckOpcodeCount:
-    if (prefilter.opcode.empty()) {
-      error = "SM5 check_opcode_count prefilter requires opcode";
-      return false;
-    }
-    return true;
-  case PrefilterKind::CheckPatternMatch:
-    if (IsEmptyYamlMatch(prefilter.match)) {
-      error = "SM5 check_pattern_match prefilter requires match.opcode or "
-              "match.sequence";
-      return false;
-    }
-    if (!prefilter.match.sequence.empty() &&
-        (!prefilter.match.opcode.empty() || !prefilter.match.capture.empty() ||
-         !prefilter.match.saturate.empty() ||
-         !prefilter.match.interpolation_mode.empty() ||
-         prefilter.match.test_boolean >= 0 ||
-         !prefilter.match.operands.empty())) {
-      error = "SM5 prefilter match.sequence cannot be combined with "
-              "single-instruction match fields";
-      return false;
-    }
-    if (prefilter.match.sequence.empty() && prefilter.match.opcode.empty()) {
-      error = "SM5 check_pattern_match prefilter requires match.opcode when "
-              "match.sequence is omitted";
-      return false;
-    }
-    return true;
-  }
-
-  return false;
-}
-
-static bool BuildRecipePrefilter(const YamlPrefilter &prefilterModel,
-                                 RecipePrefilter &prefilter,
-                                 std::string &parseError) {
-  PrefilterKind kind = PrefilterKind::CheckShaderVersion;
-  if (!ParsePrefilterKindToken(prefilterModel.kind, kind, parseError)) {
-    return false;
-  }
-  if (!ValidatePrefilterModel(prefilterModel, kind, parseError)) {
-    return false;
-  }
-
-  prefilter = RecipePrefilter{}
-                  .Named(prefilterModel.name)
-                  .Require(prefilterModel.required);
-  prefilter.Kind = kind;
-
-  std::string canonicalOpcodeName = prefilterModel.match.opcode;
-  int32_t resolvedTestBoolean = prefilterModel.match.test_boolean;
-  if (!prefilterModel.match.opcode.empty()) {
-    Opcode parsedOpcode;
-    if (!ResolveOpcodeAndTestBoolean(prefilterModel.match.opcode,
-                                     prefilterModel.match.test_boolean,
-                                     parsedOpcode, canonicalOpcodeName,
-                                     resolvedTestBoolean, parseError,
-                                     "prefilter")) {
-      return false;
-    }
-  }
-
-  RecipeMatchPattern match = RecipeMatchPattern{}
-                                 .WithOpcode(canonicalOpcodeName)
-                                 .CaptureAs(prefilterModel.match.capture)
-                                 .WithSaturate(prefilterModel.match.saturate)
-                                 .WithInterpolationMode(
-                                     prefilterModel.match.interpolation_mode)
-                                 .WithTestBoolean(resolvedTestBoolean);
-
-  for (const YamlOperand &operandModel : prefilterModel.match.operands) {
-    RecipeOperandPattern operand;
-    if (!FillRecipeOperandPattern(operandModel, operand, false, parseError)) {
-      return false;
-    }
-    match.AddOperand(std::move(operand));
-  }
-
-  for (const YamlInstructionMatch &matchModel : prefilterModel.match.sequence) {
-    RecipeInstructionPattern pattern;
-    if (!BuildRecipeInstructionPattern(matchModel, pattern, parseError)) {
-      return false;
-    }
-    match.AddInstruction(std::move(pattern));
-  }
-
-  switch (kind) {
-  case PrefilterKind::CheckShaderVersion:
-    prefilter.CheckShaderVersion(prefilterModel.major, prefilterModel.minor);
-    break;
-  case PrefilterKind::CheckOpcodeCount: {
-    Opcode parsedOpcode;
-    if (!ParseOpcode(prefilterModel.opcode, parsedOpcode)) {
-      parseError = "Unknown SM5 opcode in prefilter: " + prefilterModel.opcode;
-      return false;
-    }
-    prefilter.CheckOpcodeCount(prefilterModel.opcode,
-                               prefilterModel.expected_count);
-    break;
-  }
-  case PrefilterKind::CheckResourceCount:
-    prefilter.CheckResourceCount(prefilterModel.expected_resources);
-    break;
-  case PrefilterKind::CheckPatternMatch:
-    prefilter.CheckPatternMatch(std::move(match));
-    break;
-  }
-
-  return true;
-}
-
 static bool CollectDeclarationHandlesFromSteps(
     const std::vector<YamlStep> &steps,
   std::unordered_map<std::string, uint32_t> &tempHandles,
@@ -2480,20 +2298,14 @@ static bool CollectDeclarationHandlesFromSteps(
     const std::string stepKind =
         step.kind.empty() ? "apply_rules" : Lowercase(step.kind);
     if (stepKind == "add_temp") {
-      if (!step.handle.empty() && !step.handles.empty()) {
-        error = "add_temp steps cannot combine handle and handles";
-        return false;
-      }
-
-      if (step.handle.empty() && step.handles.empty()) {
-        error = "add_temp steps require handle or handles";
-        return false;
-      }
-
       if (!step.handle.empty()) {
-        if (!insertHandle(tempHandles, step.handle, "temp")) {
-          return false;
-        }
+        error = "add_temp steps no longer support handle; use handles";
+        return false;
+      }
+
+      if (step.handles.empty()) {
+        error = "add_temp steps require handles";
+        return false;
       }
 
       for (const std::string &tempHandle : step.handles) {
@@ -2560,12 +2372,12 @@ static bool ValidateEmitOperandHandleReference(
     const std::unordered_map<std::string, uint32_t> &samplerHandles,
     const std::unordered_map<std::string, uint32_t> &uavHandles,
     std::string &error) {
-  if (operand.bind_handle.empty()) {
+  if (operand.from_handle.empty()) {
     return true;
   }
 
   if (operand.type.empty()) {
-    error = "SM5 bind_handle emit operands require explicit operand type";
+    error = "SM5 from_handle emit operands require explicit operand type";
     return false;
   }
 
@@ -2576,59 +2388,59 @@ static bool ValidateEmitOperandHandleReference(
 
   switch (type) {
   case D3D10_SB_OPERAND_TYPE_TEMP:
-    if (tempHandles.find(operand.bind_handle) == tempHandles.end()) {
-      error = "SM5 bind_handle references unknown temp declaration handle '" +
-              operand.bind_handle + "'";
+    if (tempHandles.find(operand.from_handle) == tempHandles.end()) {
+      error = "SM5 from_handle references unknown temp declaration handle '" +
+              operand.from_handle + "'";
       return false;
     }
     return true;
   case D3D10_SB_OPERAND_TYPE_INPUT:
-    if (inputHandles.find(operand.bind_handle) == inputHandles.end()) {
-      error = "SM5 bind_handle references unknown input declaration handle '" +
-              operand.bind_handle + "'";
+    if (inputHandles.find(operand.from_handle) == inputHandles.end()) {
+      error = "SM5 from_handle references unknown input declaration handle '" +
+              operand.from_handle + "'";
       return false;
     }
     return true;
   case D3D10_SB_OPERAND_TYPE_OUTPUT:
-    if (outputHandles.find(operand.bind_handle) == outputHandles.end()) {
-      error = "SM5 bind_handle references unknown output declaration handle '" +
-              operand.bind_handle + "'";
+    if (outputHandles.find(operand.from_handle) == outputHandles.end()) {
+      error = "SM5 from_handle references unknown output declaration handle '" +
+              operand.from_handle + "'";
       return false;
     }
     return true;
   case D3D10_SB_OPERAND_TYPE_RESOURCE:
-    if (resourceHandles.find(operand.bind_handle) == resourceHandles.end()) {
+    if (resourceHandles.find(operand.from_handle) == resourceHandles.end()) {
       error =
-          "SM5 bind_handle references unknown resource declaration handle '" +
-          operand.bind_handle + "'";
+          "SM5 from_handle references unknown resource declaration handle '" +
+          operand.from_handle + "'";
       return false;
     }
     return true;
   case D3D11_SB_OPERAND_TYPE_UNORDERED_ACCESS_VIEW:
-    if (uavHandles.find(operand.bind_handle) == uavHandles.end()) {
-      error = "SM5 bind_handle references unknown uav declaration handle '" +
-              operand.bind_handle + "'";
+    if (uavHandles.find(operand.from_handle) == uavHandles.end()) {
+      error = "SM5 from_handle references unknown uav declaration handle '" +
+              operand.from_handle + "'";
       return false;
     }
     return true;
   case D3D10_SB_OPERAND_TYPE_CONSTANT_BUFFER:
-    if (cbufferHandles.find(operand.bind_handle) == cbufferHandles.end()) {
+    if (cbufferHandles.find(operand.from_handle) == cbufferHandles.end()) {
       error =
-          "SM5 bind_handle references unknown cbuffer declaration handle '" +
-          operand.bind_handle + "'";
+          "SM5 from_handle references unknown cbuffer declaration handle '" +
+          operand.from_handle + "'";
       return false;
     }
     return true;
   case D3D10_SB_OPERAND_TYPE_SAMPLER:
-    if (samplerHandles.find(operand.bind_handle) == samplerHandles.end()) {
+    if (samplerHandles.find(operand.from_handle) == samplerHandles.end()) {
       error =
-          "SM5 bind_handle references unknown sampler declaration handle '" +
-          operand.bind_handle + "'";
+          "SM5 from_handle references unknown sampler declaration handle '" +
+          operand.from_handle + "'";
       return false;
     }
     return true;
   default:
-    error = "SM5 bind_handle operand type is unsupported for resource binding";
+    error = "SM5 from_handle operand type is unsupported for resource binding";
     return false;
   }
 }
@@ -2674,6 +2486,37 @@ static bool BuildStepCondition(const YamlStepCondition &conditionModel,
   condition = RecipeStepCondition{};
   condition.Negate = conditionModel.not_condition;
 
+  auto isComparisonSet = [](const YamlStepCondition::Comparison &comparison) {
+    return !comparison.state.empty() || !comparison.input.empty() ||
+           !comparison.value.empty();
+  };
+
+  auto buildComparison = [&](const YamlStepCondition::Comparison &comparison,
+                             RecipeConditionCompareOp op) -> bool {
+    const bool hasState = !comparison.state.empty();
+    const bool hasInput = !comparison.input.empty();
+    if (hasState == hasInput) {
+      error =
+          "SM5 step if comparison requires exactly one of state or input";
+      return false;
+    }
+    if (comparison.value.empty()) {
+      error = "SM5 step if comparison requires non-empty value";
+      return false;
+    }
+
+    RecipeStepComparison compiledComparison;
+    if (hasState) {
+      compiledComparison.FromState(comparison.state);
+    } else {
+      compiledComparison.FromInput(comparison.input);
+    }
+    compiledComparison.WithValue(comparison.value);
+    condition.CompareOp = op;
+    condition.Compare = std::move(compiledComparison);
+    return true;
+  };
+
   size_t populatedFields = 0;
   if (!conditionModel.state.empty()) {
     ++populatedFields;
@@ -2681,10 +2524,28 @@ static bool BuildStepCondition(const YamlStepCondition &conditionModel,
   if (!conditionModel.input.empty()) {
     ++populatedFields;
   }
-  if (!conditionModel.all.empty()) {
+  if (!conditionModel.and_conditions.empty()) {
     ++populatedFields;
   }
-  if (!conditionModel.any.empty()) {
+  if (!conditionModel.or_conditions.empty()) {
+    ++populatedFields;
+  }
+  if (isComparisonSet(conditionModel.eq)) {
+    ++populatedFields;
+  }
+  if (isComparisonSet(conditionModel.ne)) {
+    ++populatedFields;
+  }
+  if (isComparisonSet(conditionModel.gt)) {
+    ++populatedFields;
+  }
+  if (isComparisonSet(conditionModel.gte)) {
+    ++populatedFields;
+  }
+  if (isComparisonSet(conditionModel.lt)) {
+    ++populatedFields;
+  }
+  if (isComparisonSet(conditionModel.lte)) {
     ++populatedFields;
   }
 
@@ -2693,7 +2554,7 @@ static bool BuildStepCondition(const YamlStepCondition &conditionModel,
   }
 
   if (populatedFields != 1) {
-    error = "SM5 step if must specify exactly one of state, input, all, or any";
+    error = "SM5 step if must specify exactly one of state, input, and, or, eq, ne, gt, gte, lt, or lte";
     return false;
   }
 
@@ -2715,172 +2576,44 @@ static bool BuildStepCondition(const YamlStepCondition &conditionModel,
     return true;
   }
 
-  std::vector<RecipeStepCondition> &destination =
-      !conditionModel.all.empty() ? condition.All : condition.Any;
-  const std::vector<YamlStepCondition> &source =
-      !conditionModel.all.empty() ? conditionModel.all : conditionModel.any;
-  destination.reserve(source.size());
-  for (const YamlStepCondition &childModel : source) {
-    RecipeStepCondition childCondition;
-    if (!BuildStepCondition(childModel, childCondition, error)) {
-      return false;
-    }
-    if (!childCondition.IsSet()) {
-      error = "SM5 nested step if condition must not be empty";
-      return false;
-    }
-    destination.push_back(std::move(childCondition));
-  }
-  return true;
-}
-
-static bool ValidatePortableDeclarationModel(const YamlRecipeDocument &document,
-                                             std::string &error) {
-  for (const YamlInputDecl &decl : document.input_decls) {
-    if (decl.handle.empty()) {
-      error = "portable schema input_decls require handle";
-      return false;
-    }
-    if (!decl.auto_bind) {
-      error = "portable schema input_decls require auto_bind: true";
-      return false;
-    }
-    if (decl.bind_point >= 0) {
-      error = "portable schema input_decls do not allow bind_point";
-      return false;
-    }
-    uint32_t parsedInterpolationMode = D3D10_SB_INTERPOLATION_LINEAR;
-    if (!ParseInterpolationModeToken(decl.interpolation_mode,
-                                     parsedInterpolationMode, error)) {
-      return false;
-    }
-  }
-
-  for (const YamlOutputDecl &decl : document.output_decls) {
-    if (decl.handle.empty()) {
-      error = "portable schema output_decls require handle";
-      return false;
-    }
-    if (!decl.auto_bind) {
-      error = "portable schema output_decls require auto_bind: true";
-      return false;
-    }
-    if (decl.bind_point >= 0) {
-      error = "portable schema output_decls do not allow bind_point";
-      return false;
-    }
-  }
-
-  auto validateTexture = [&](const YamlTextureDecl &decl) -> bool {
-    if (decl.handle.empty()) {
-      error = "portable schema texture_decls require handle";
-      return false;
-    }
-    if (!decl.auto_bind) {
-      error = "portable schema texture_decls require auto_bind: true";
-      return false;
-    }
-    if (decl.bind_point >= 0) {
-      error = "portable schema texture_decls do not allow bind_point";
-      return false;
+  if (!conditionModel.and_conditions.empty() || !conditionModel.or_conditions.empty()) {
+    std::vector<RecipeStepCondition> &destination =
+        !conditionModel.and_conditions.empty() ? condition.All : condition.Any;
+    const std::vector<YamlStepCondition> &source =
+        !conditionModel.and_conditions.empty() ? conditionModel.and_conditions
+                                               : conditionModel.or_conditions;
+    destination.reserve(source.size());
+    for (const YamlStepCondition &childModel : source) {
+      RecipeStepCondition childCondition;
+      if (!BuildStepCondition(childModel, childCondition, error)) {
+        return false;
+      }
+      if (!childCondition.IsSet()) {
+        error = "SM5 nested step if condition must not be empty";
+        return false;
+      }
+      destination.push_back(std::move(childCondition));
     }
     return true;
-  };
-
-  auto validateCBuffer = [&](const YamlCBufferDecl &decl) -> bool {
-    if (decl.handle.empty()) {
-      error = "portable schema cbuffer_decls require handle";
-      return false;
-    }
-    if (!decl.auto_bind) {
-      error = "portable schema cbuffer_decls require auto_bind: true";
-      return false;
-    }
-    if (decl.bind_point >= 0) {
-      error = "portable schema cbuffer_decls do not allow bind_point";
-      return false;
-    }
-    return true;
-  };
-
-  auto validateSampler = [&](const YamlSamplerDecl &decl) -> bool {
-    if (decl.handle.empty()) {
-      error = "portable schema sampler_decls require handle";
-      return false;
-    }
-    if (!decl.auto_bind) {
-      error = "portable schema sampler_decls require auto_bind: true";
-      return false;
-    }
-    if (decl.bind_point >= 0) {
-      error = "portable schema sampler_decls do not allow bind_point";
-      return false;
-    }
-    return true;
-  };
-
-  for (const YamlTextureDecl &decl : document.texture_decls) {
-    if (!validateTexture(decl)) {
-      return false;
-    }
   }
 
-  for (const YamlRawResourceDecl &decl : document.raw_resource_decls) {
-    if (decl.handle.empty()) {
-      error = "portable schema raw_resource_decls require handle";
-      return false;
-    }
-    if (!decl.auto_bind) {
-      error = "portable schema raw_resource_decls require auto_bind: true";
-      return false;
-    }
-    if (decl.bind_point >= 0) {
-      error = "portable schema raw_resource_decls do not allow bind_point";
-      return false;
-    }
+  if (isComparisonSet(conditionModel.eq)) {
+    return buildComparison(conditionModel.eq, RecipeConditionCompareOp::Eq);
   }
-
-  for (const YamlStructuredResourceDecl &decl :
-       document.structured_resource_decls) {
-    if (decl.handle.empty()) {
-      error = "portable schema structured_resource_decls require handle";
-      return false;
-    }
-    if (!decl.auto_bind) {
-      error =
-          "portable schema structured_resource_decls require auto_bind: true";
-      return false;
-    }
-    if (decl.bind_point >= 0) {
-      error =
-          "portable schema structured_resource_decls do not allow bind_point";
-      return false;
-    }
+  if (isComparisonSet(conditionModel.ne)) {
+    return buildComparison(conditionModel.ne, RecipeConditionCompareOp::Ne);
   }
-  for (const YamlCBufferDecl &decl : document.cbuffer_decls) {
-    if (!validateCBuffer(decl)) {
-      return false;
-    }
+  if (isComparisonSet(conditionModel.gt)) {
+    return buildComparison(conditionModel.gt, RecipeConditionCompareOp::Gt);
   }
-  for (const YamlSamplerDecl &decl : document.sampler_decls) {
-    if (!validateSampler(decl)) {
-      return false;
-    }
+  if (isComparisonSet(conditionModel.gte)) {
+    return buildComparison(conditionModel.gte, RecipeConditionCompareOp::Gte);
   }
-
-  for (const YamlUavDecl &decl : document.uav_decls) {
-    if (decl.handle.empty()) {
-      error = "portable schema uav_decls require handle";
-      return false;
-    }
-    if (!decl.auto_bind) {
-      error = "portable schema uav_decls require auto_bind: true";
-      return false;
-    }
-    if (decl.bind_point >= 0) {
-      error = "portable schema uav_decls do not allow bind_point";
-      return false;
-    }
+  if (isComparisonSet(conditionModel.lt)) {
+    return buildComparison(conditionModel.lt, RecipeConditionCompareOp::Lt);
+  }
+  if (isComparisonSet(conditionModel.lte)) {
+    return buildComparison(conditionModel.lte, RecipeConditionCompareOp::Lte);
   }
 
   return true;
@@ -2902,7 +2635,17 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
 
   YamlRecipeDocument document;
   llvm::yaml::Input input(normalizedRecipeText);
+#if defined(_MSC_VER)
+  __try {
+    input >> document;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    result.Error = sourceName.str() +
+                   ": malformed YAML caused parser exception";
+    return false;
+  }
+#else
   input >> document;
+#endif
   if (input.error()) {
     result.Error = sourceName.str() + ": " + input.error().message();
     return false;
@@ -2918,12 +2661,6 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
   if (!document.rewrite_rules.empty()) {
     result.Error = sourceName.str() + ": schema version 1 requires steps and "
                                       "does not allow top-level rewrite_rules";
-    return false;
-  }
-  if (!document.prefilters.empty()) {
-    result.Error = sourceName.str() +
-                   ": top-level prefilters are deprecated and unsupported in "
-                   "schema version 1; use prefilter steps";
     return false;
   }
   if (document.steps.empty()) {
@@ -2964,11 +2701,35 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
     return true;
   };
 
+  std::unordered_map<std::string, std::string> seenNames;
+
+  auto reserveName = [&](const std::string &name,
+                         const std::string &kind) -> bool {
+    const auto [it, inserted] = seenNames.emplace(name, kind);
+    if (inserted) {
+      return true;
+    }
+
+    result.Error = sourceName.str() + ": duplicate SM5 name '" + name +
+                   "' reused by " + kind + " (already used by " +
+                   it->second + ")";
+    return false;
+  };
+
   for (const YamlStep &stepModel : document.steps) {
     const std::string stepKind =
         stepModel.kind.empty() ? "apply_rules" : Lowercase(stepModel.kind);
-    const std::string stepName =
-        stepModel.name.empty() ? stepKind : stepModel.name;
+    if (stepModel.name.empty()) {
+      result.Error = sourceName.str() +
+                     ": SM5 step names are required and must be unique";
+      return false;
+    }
+    const std::string stepName = stepModel.name;
+
+    if (!reserveName(stepName, "step")) {
+      return false;
+    }
+
     RecipeStepCondition stepCondition;
     if (!BuildStepCondition(stepModel.if_condition, stepCondition, parseError)) {
       result.Error = sourceName.str() + ": " + parseError;
@@ -2978,13 +2739,25 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
     if (stepKind == "apply_rules") {
       RecipeRuleApplicationMode applicationMode = RecipeRuleApplicationMode::First;
       if (!stepModel.mode.empty()) {
-        applicationMode = ParseRuleApplicationMode(stepModel.mode);
+        if (!ParseRuleApplicationMode(stepModel.mode, applicationMode,
+                                      parseError)) {
+          result.Error = sourceName.str() + ": " + parseError;
+          return false;
+        }
       }
 
       std::vector<RecipeRule> rules;
       rules.reserve(stepModel.rules.size());
 
       for (const YamlRule &ruleModel : stepModel.rules) {
+        if (ruleModel.name.empty()) {
+          result.Error = sourceName.str() +
+                         ": SM5 rule names are required and must be unique";
+          return false;
+        }
+        if (!reserveName(ruleModel.name, "rule")) {
+          return false;
+        }
         if (!appendRule(ruleModel, applicationMode, rules)) {
           return false;
         }
@@ -2992,64 +2765,94 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
 
       result.Recipe.AddStep(MakeRewriteRulesStep(stepName, std::move(rules),
                                                 applicationMode,
-                                                stepModel.required)
+                                                stepModel.abort_on_failure)
                                 .When(stepCondition));
       continue;
     }
 
-    if (stepKind == "prefilter") {
+    if (stepKind == "check_shader_version") {
       if (!stepModel.rules.empty()) {
         result.Error = sourceName.str() +
-                       ": SM5 prefilter steps cannot define rules";
+                       ": SM5 check_shader_version steps cannot define rules";
         return false;
       }
-      if (stepModel.checks.empty()) {
+      if (!stepModel.mode.empty()) {
         result.Error = sourceName.str() +
-                       ": SM5 prefilter steps require at least one check";
+                       ": SM5 step mode is only valid for apply_rules steps";
+        return false;
+      }
+      if (stepModel.major < 0 || stepModel.minor < 0) {
+        result.Error = sourceName.str() +
+                       ": SM5 check_shader_version steps require major and minor";
         return false;
       }
 
-      RecipePrefilterMode prefilterMode = RecipePrefilterMode::All;
-      if (!ParsePrefilterMode(stepModel.mode, prefilterMode, parseError)) {
-        result.Error = sourceName.str() + ": " + parseError;
+      result.Recipe.AddStep(
+          MakeCheckShaderVersionStep(stepName,
+                                     static_cast<uint32_t>(stepModel.major),
+                                     static_cast<uint32_t>(stepModel.minor),
+                                     stepModel.abort_on_failure)
+              .When(stepCondition));
+      continue;
+    }
+
+    if (stepKind == "check_opcode_count") {
+      if (!stepModel.rules.empty()) {
+        result.Error = sourceName.str() +
+                       ": SM5 check_opcode_count steps cannot define rules";
+        return false;
+      }
+      if (!stepModel.mode.empty()) {
+        result.Error = sourceName.str() +
+                       ": SM5 step mode is only valid for apply_rules steps";
+        return false;
+      }
+      if (stepModel.opcode.empty()) {
+        result.Error = sourceName.str() +
+                       ": SM5 check_opcode_count steps require opcode";
+        return false;
+      }
+      if (stepModel.expected_count == INT_MIN) {
+        result.Error = sourceName.str() +
+                       ": SM5 check_opcode_count steps require expected_count";
         return false;
       }
 
-      std::vector<RecipePrefilter> checks;
-      checks.reserve(stepModel.checks.size());
-      for (const YamlPrefilter &checkModel : stepModel.checks) {
-        RecipePrefilter prefilter;
-        if (!BuildRecipePrefilter(checkModel, prefilter, parseError)) {
-          result.Error = sourceName.str() + ": " + parseError;
-          return false;
-        }
-        checks.push_back(std::move(prefilter));
+      result.Recipe.AddStep(
+          MakeCheckOpcodeCountStep(stepName, stepModel.opcode,
+                                   stepModel.expected_count,
+                                   stepModel.abort_on_failure)
+              .When(stepCondition));
+      continue;
+    }
+
+    if (stepKind == "check_resource_count") {
+      if (!stepModel.rules.empty()) {
+        result.Error = sourceName.str() +
+                       ": SM5 check_resource_count steps cannot define rules";
+        return false;
+      }
+      if (!stepModel.mode.empty()) {
+        result.Error = sourceName.str() +
+                       ": SM5 step mode is only valid for apply_rules steps";
+        return false;
+      }
+      if (stepModel.expected_resources == INT_MIN) {
+        result.Error = sourceName.str() +
+                       ": SM5 check_resource_count steps require expected_resources";
+        return false;
       }
 
-        result.Recipe.AddStep(
-            MakePrefilterStep(stepName, std::move(checks), stepModel.set,
-                  prefilterMode)
-                .Require(stepModel.required)
-                .When(stepCondition));
+      result.Recipe.AddStep(
+          MakeCheckResourceCountStep(stepName, stepModel.expected_resources,
+                                     stepModel.abort_on_failure)
+              .When(stepCondition));
       continue;
     }
 
     if (!stepModel.mode.empty()) {
       result.Error = sourceName.str() +
-                     ": SM5 step mode is only valid for apply_rules or "
-                     "prefilter steps";
-      return false;
-    }
-
-    if (!stepModel.checks.empty()) {
-      result.Error = sourceName.str() +
-                     ": SM5 step checks are only valid for prefilter steps";
-      return false;
-    }
-
-    if (!stepModel.set.empty()) {
-      result.Error = sourceName.str() +
-                     ": SM5 step set is only valid for prefilter steps";
+                     ": SM5 step mode is only valid for apply_rules steps";
       return false;
     }
 
@@ -3059,15 +2862,7 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
       return false;
     }
 
-    if (stepKind == "refresh_resources") {
-      result.Recipe.AddStep(MakeRefreshResourcesStep(stepName)
-                                .Require(stepModel.required)
-                                .When(stepCondition));
-    } else if (stepKind == "verify_program") {
-      result.Recipe.AddStep(MakeVerifyProgramStep(stepName)
-                                .Require(stepModel.required)
-                                .When(stepCondition));
-    } else if (stepKind == "add_input") {
+    if (stepKind == "add_input") {
       RecipeInputDecl decl = RecipeInputDecl{}
                                 .WithBindPoint(stepModel.bind_point >= 0
                                                    ? static_cast<uint32_t>(
@@ -3082,18 +2877,19 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
       }
       decl.WithInterpolationMode(decl.InterpolationMode);
       result.Recipe.AddStep(MakeAddInputStep(stepName, std::move(decl))
-                                .Require(stepModel.required)
+                                .AbortOnFailureFlag(stepModel.abort_on_failure)
                                 .When(stepCondition));
     } else if (stepKind == "add_temp") {
-      if (!stepModel.handle.empty() && !stepModel.handles.empty()) {
+      if (!stepModel.handle.empty()) {
         result.Error = sourceName.str() +
-                       ": add_temp steps cannot combine handle and handles";
+                       ": add_temp steps no longer support handle; use "
+                       "handles";
         return false;
       }
 
-      if (stepModel.handle.empty() && stepModel.handles.empty()) {
+      if (stepModel.handles.empty()) {
         result.Error = sourceName.str() +
-                       ": add_temp steps require handle or handles";
+                       ": add_temp steps require handles";
         return false;
       }
       if (stepModel.bind_point >= 0) {
@@ -3108,9 +2904,6 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
       }
 
       std::vector<std::string> tempHandles;
-      if (!stepModel.handle.empty()) {
-        tempHandles.push_back(stepModel.handle);
-      }
       for (const std::string &tempHandle : stepModel.handles) {
         if (tempHandle.empty()) {
           result.Error = sourceName.str() +
@@ -3126,8 +2919,13 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
             tempHandles.size() == 1
                 ? stepName
                 : stepName + "[" + std::to_string(tempIndex) + "]";
+
+        if (tempHandles.size() > 1 && !reserveName(tempStepName, "step")) {
+          return false;
+        }
+
         result.Recipe.AddStep(MakeAddTempStep(tempStepName, std::move(decl))
-                                  .Require(stepModel.required)
+                                  .AbortOnFailureFlag(stepModel.abort_on_failure)
                                   .When(stepCondition));
       }
     } else if (stepKind == "add_output") {
@@ -3139,7 +2937,7 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
                                  .WithHandle(stepModel.handle)
                                  .AutoBindToNext(stepModel.auto_bind);
       result.Recipe.AddStep(MakeAddOutputStep(stepName, std::move(decl))
-                                .Require(stepModel.required)
+                                .AbortOnFailureFlag(stepModel.abort_on_failure)
                                 .When(stepCondition));
     } else if (stepKind == "add_texture") {
       RecipeTextureDecl decl = RecipeTextureDecl{}
@@ -3156,7 +2954,7 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
       }
       decl.WithDimension(decl.Dimension);
       result.Recipe.AddStep(MakeAddTextureStep(stepName, std::move(decl))
-                                .Require(stepModel.required)
+                                .AbortOnFailureFlag(stepModel.abort_on_failure)
                                 .When(stepCondition));
     } else if (stepKind == "add_raw_resource") {
       RecipeRawResourceDecl decl = RecipeRawResourceDecl{}
@@ -3167,7 +2965,7 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
                                       .WithHandle(stepModel.handle)
                                       .AutoBindToNext(stepModel.auto_bind);
       result.Recipe.AddStep(MakeAddRawResourceStep(stepName, std::move(decl))
-                                .Require(stepModel.required)
+                                .AbortOnFailureFlag(stepModel.abort_on_failure)
                                 .When(stepCondition));
     } else if (stepKind == "add_structured_resource") {
       RecipeStructuredResourceDecl decl =
@@ -3180,7 +2978,7 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
               .AutoBindToNext(stepModel.auto_bind);
       result.Recipe.AddStep(
           MakeAddStructuredResourceStep(stepName, std::move(decl))
-              .Require(stepModel.required)
+            .AbortOnFailureFlag(stepModel.abort_on_failure)
               .When(stepCondition));
     } else if (stepKind == "add_cbuffer") {
       RecipeCBufferDecl decl = RecipeCBufferDecl{}
@@ -3198,7 +2996,7 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
       }
       decl.WithAccessPattern(decl.AccessPattern);
       result.Recipe.AddStep(MakeAddCBufferStep(stepName, std::move(decl))
-                                .Require(stepModel.required)
+                                .AbortOnFailureFlag(stepModel.abort_on_failure)
                                 .When(stepCondition));
     } else if (stepKind == "add_sampler") {
       RecipeSamplerDecl decl = RecipeSamplerDecl{}
@@ -3215,7 +3013,7 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
       }
       decl.WithMode(decl.Mode);
       result.Recipe.AddStep(MakeAddSamplerStep(stepName, std::move(decl))
-                                .Require(stepModel.required)
+                                .AbortOnFailureFlag(stepModel.abort_on_failure)
                                 .When(stepCondition));
     } else if (stepKind == "add_uav") {
       RecipeUavDecl decl = RecipeUavDecl{}
@@ -3240,7 +3038,7 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
       }
       decl.WithDimension(decl.Dimension);
       result.Recipe.AddStep(MakeAddUavStep(stepName, std::move(decl))
-                                .Require(stepModel.required)
+                                .AbortOnFailureFlag(stepModel.abort_on_failure)
                                 .When(stepCondition));
     } else {
       result.Error = sourceName.str() + ": unsupported SM5 step kind '" +

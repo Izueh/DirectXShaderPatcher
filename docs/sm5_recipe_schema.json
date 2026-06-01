@@ -1,0 +1,529 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/DirectXShaderPatcher/docs/sm5_recipe_schema.json",
+  "title": "SM5 YAML Recipe Schema",
+  "description": "JSON Schema for dxp::sm5 YAML recipes using apply_rules, explicit check_* steps, and add_* declaration steps.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "steps"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/step" }
+    }
+  },
+  "$defs": {
+    "scalar": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "number" },
+        { "type": "integer" },
+        { "type": "boolean" },
+        { "type": "null" }
+      ]
+    },
+    "stepCondition": {
+      "oneOf": [
+        { "$ref": "#/$defs/stateCondition" },
+        { "$ref": "#/$defs/inputCondition" },
+        { "$ref": "#/$defs/andCondition" },
+        { "$ref": "#/$defs/orCondition" },
+        { "$ref": "#/$defs/eqCondition" },
+        { "$ref": "#/$defs/neCondition" },
+        { "$ref": "#/$defs/gtCondition" },
+        { "$ref": "#/$defs/gteCondition" },
+        { "$ref": "#/$defs/ltCondition" },
+        { "$ref": "#/$defs/lteCondition" }
+      ]
+    },
+    "stateCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": { "type": "string", "minLength": 1 },
+        "not": { "type": "boolean", "default": false }
+      }
+    },
+    "inputCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input"],
+      "properties": {
+        "input": { "type": "string", "minLength": 1 },
+        "not": { "type": "boolean", "default": false }
+      }
+    },
+    "andCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["and"],
+      "properties": {
+        "and": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/stepCondition" }
+        },
+        "not": { "type": "boolean", "default": false }
+      }
+    },
+    "orCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["or"],
+      "properties": {
+        "or": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/stepCondition" }
+        },
+        "not": { "type": "boolean", "default": false }
+      }
+    },
+    "comparisonEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value"],
+      "properties": {
+        "state": { "type": "string", "minLength": 1 },
+        "input": { "type": "string", "minLength": 1 },
+        "value": { "$ref": "#/$defs/scalar" }
+      },
+      "oneOf": [
+        { "required": ["state"] },
+        { "required": ["input"] }
+      ]
+    },
+    "eqCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eq"],
+      "properties": {
+        "eq": { "$ref": "#/$defs/comparisonEntry" },
+        "not": { "type": "boolean", "default": false }
+      }
+    },
+    "neCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ne"],
+      "properties": {
+        "ne": { "$ref": "#/$defs/comparisonEntry" },
+        "not": { "type": "boolean", "default": false }
+      }
+    },
+    "gtCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gt"],
+      "properties": {
+        "gt": { "$ref": "#/$defs/comparisonEntry" },
+        "not": { "type": "boolean", "default": false }
+      }
+    },
+    "gteCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gte"],
+      "properties": {
+        "gte": { "$ref": "#/$defs/comparisonEntry" },
+        "not": { "type": "boolean", "default": false }
+      }
+    },
+    "ltCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lt"],
+      "properties": {
+        "lt": { "$ref": "#/$defs/comparisonEntry" },
+        "not": { "type": "boolean", "default": false }
+      }
+    },
+    "lteCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lte"],
+      "properties": {
+        "lte": { "$ref": "#/$defs/comparisonEntry" },
+        "not": { "type": "boolean", "default": false }
+      }
+    },
+    "step": {
+      "oneOf": [
+        { "$ref": "#/$defs/applyRulesStep" },
+        { "$ref": "#/$defs/checkShaderVersionStep" },
+        { "$ref": "#/$defs/checkOpcodeCountStep" },
+        { "$ref": "#/$defs/checkResourceCountStep" },
+        { "$ref": "#/$defs/declarationStep" }
+      ]
+    },
+    "applyRulesStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "rules"],
+      "properties": {
+        "kind": { "type": "string", "const": "apply_rules" },
+        "name": { "type": "string", "minLength": 1 },
+        "if": { "$ref": "#/$defs/stepCondition" },
+        "abort_on_failure": { "type": "boolean", "default": true },
+        "mode": {
+          "type": "string",
+          "enum": ["first", "last", "match_all"],
+          "default": "first"
+        },
+        "rules": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/rule" }
+        }
+      }
+    },
+    "checkShaderVersionStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name", "major", "minor"],
+      "properties": {
+        "kind": { "type": "string", "const": "check_shader_version" },
+        "name": { "type": "string", "minLength": 1 },
+        "if": { "$ref": "#/$defs/stepCondition" },
+        "abort_on_failure": { "type": "boolean", "default": true },
+        "major": { "type": "integer", "minimum": 0 },
+        "minor": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "checkOpcodeCountStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name", "opcode", "expected_count"],
+      "properties": {
+        "kind": { "type": "string", "const": "check_opcode_count" },
+        "name": { "type": "string", "minLength": 1 },
+        "if": { "$ref": "#/$defs/stepCondition" },
+        "abort_on_failure": { "type": "boolean", "default": true },
+        "opcode": { "type": "string", "minLength": 1 },
+        "expected_count": { "type": "integer" }
+      }
+    },
+    "checkResourceCountStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name", "expected_resources"],
+      "properties": {
+        "kind": { "type": "string", "const": "check_resource_count" },
+        "name": { "type": "string", "minLength": 1 },
+        "if": { "$ref": "#/$defs/stepCondition" },
+        "abort_on_failure": { "type": "boolean", "default": true },
+        "expected_resources": { "type": "integer" }
+      }
+    },
+    "declarationStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "add_temp",
+            "add_input",
+            "add_output",
+            "add_texture",
+            "add_raw_resource",
+            "add_structured_resource",
+            "add_cbuffer",
+            "add_sampler",
+            "add_uav"
+          ]
+        },
+        "name": { "type": "string", "minLength": 1 },
+        "if": { "$ref": "#/$defs/stepCondition" },
+        "abort_on_failure": { "type": "boolean", "default": true },
+        "handle": { "type": "string", "minLength": 1 },
+        "handles": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "bind_point": { "type": "integer" },
+        "auto_bind": { "type": "boolean", "default": false },
+        "dimension": {
+          "type": "string",
+          "enum": [
+            "texture_1d",
+            "texture_2d",
+            "texture_2d_array",
+            "texture_3d",
+            "texture_cube"
+          ]
+        },
+        "interpolation_mode": {
+          "type": "string",
+          "enum": [
+            "undefined",
+            "constant",
+            "linear",
+            "linear_centroid",
+            "linear_noperspective",
+            "linear_noperspective_centroid",
+            "linear_sample",
+            "linear_noperspective_sample"
+          ]
+        },
+        "elements": { "type": "integer", "minimum": 1 },
+        "access_pattern": {
+          "type": "string",
+          "enum": ["immediate_indexed", "dynamic_indexed"]
+        },
+        "sampler_mode": {
+          "type": "string",
+          "enum": ["default", "comparison", "mono"]
+        },
+        "uav_kind": {
+          "type": "string",
+          "enum": ["typed", "raw", "structured"]
+        },
+        "stride": { "type": "integer", "minimum": 0 },
+        "globally_coherent": { "type": "boolean", "default": false },
+        "has_counter": { "type": "boolean", "default": false }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "kind": { "const": "add_temp" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["handles"],
+            "not": { "required": ["handle"] }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "add_input" } },
+            "required": ["kind"]
+          },
+          "then": { "required": ["handle"] }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "add_output" } },
+            "required": ["kind"]
+          },
+          "then": { "required": ["handle"] }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "add_texture" } },
+            "required": ["kind"]
+          },
+          "then": { "required": ["handle"] }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "add_raw_resource" } },
+            "required": ["kind"]
+          },
+          "then": { "required": ["handle"] }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "add_structured_resource" } },
+            "required": ["kind"]
+          },
+          "then": { "required": ["handle"] }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "add_cbuffer" } },
+            "required": ["kind"]
+          },
+          "then": { "required": ["handle"] }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "add_sampler" } },
+            "required": ["kind"]
+          },
+          "then": { "required": ["handle"] }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "add_uav" } },
+            "required": ["kind"]
+          },
+          "then": { "required": ["handle"] }
+        }
+      ]
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "match"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "match": { "$ref": "#/$defs/instructionMatch" },
+        "emit": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/emitInstruction" }
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["first", "last", "match_all"]
+        },
+        "required_match": { "type": "boolean", "default": false }
+      }
+    },
+    "instructionMatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "opcode": { "type": "string" },
+        "capture": { "type": "string" },
+        "rewrite_mode": {
+          "type": "string",
+          "enum": ["none", "replace", "before", "after", "replace_range"]
+        },
+        "range_start_offset": { "type": "integer" },
+        "range_end_offset": { "type": "integer" },
+        "insert_relative_index": { "type": "integer" },
+        "saturate": { "type": "string" },
+        "interpolation_mode": { "type": "string" },
+        "test_boolean": { "type": "integer" },
+        "operands": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/operand" }
+        },
+        "sequence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/sequenceInstructionMatch" }
+        }
+      },
+      "anyOf": [
+        { "required": ["opcode"] },
+        { "required": ["sequence"] }
+      ]
+    },
+    "sequenceInstructionMatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["opcode"],
+      "properties": {
+        "opcode": { "type": "string" },
+        "capture": { "type": "string" },
+        "saturate": { "type": "string" },
+        "interpolation_mode": { "type": "string" },
+        "test_boolean": { "type": "integer" },
+        "operands": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/operand" }
+        }
+      }
+    },
+    "emitInstruction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["opcode"],
+      "properties": {
+        "opcode": { "type": "string" },
+        "saturate": { "type": "string" },
+        "interpolation_mode": { "type": "string" },
+        "test_boolean": { "type": "integer" },
+        "operands": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/operand" }
+        }
+      }
+    },
+    "operand": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "any": { "type": "boolean" },
+        "type": { "type": "string" },
+        "indices": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/indexEntry" }
+        },
+        "immediates_u32": { "type": "array", "items": { "$ref": "#/$defs/scalar" } },
+        "immediates_u64": { "type": "array", "items": { "$ref": "#/$defs/scalar" } },
+        "immediates_i32": { "type": "array", "items": { "$ref": "#/$defs/scalar" } },
+        "immediates_i64": { "type": "array", "items": { "$ref": "#/$defs/scalar" } },
+        "immediates_f32": { "type": "array", "items": { "$ref": "#/$defs/scalar" } },
+        "immediates_f64": { "type": "array", "items": { "$ref": "#/$defs/scalar" } },
+        "from_handle": { "type": "string", "minLength": 1 },
+        "components": { "$ref": "#/$defs/componentSelector" },
+        "mask": { "type": "string" },
+        "swizzle": { "type": "string" },
+        "select": { "type": "string" },
+        "num_components": { "type": "integer" },
+        "modifier": { "type": "string" },
+        "capture": { "type": "string" },
+        "match_capture": { "type": "string" },
+        "capture_fields": { "$ref": "#/$defs/operandFieldFlags" },
+        "match_capture_fields": { "$ref": "#/$defs/operandFieldFlags" }
+      }
+    },
+    "operandFieldFlags": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "boolean" },
+        "components": { "type": "boolean" },
+        "modifier": { "type": "boolean" },
+        "indices": { "type": "boolean" },
+        "immediates": { "type": "boolean" }
+      }
+    },
+    "componentSelector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "value"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["mask", "swizzle", "select"]
+        },
+        "value": { "$ref": "#/$defs/scalar" }
+      }
+    },
+    "indexEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "any": { "type": "boolean" },
+        "representation": {
+          "type": "string",
+          "enum": [
+            "immediate32",
+            "immediate64",
+            "relative",
+            "immediate32_plus_relative",
+            "immediate64_plus_relative"
+          ]
+        },
+        "immediate_lo": {
+          "oneOf": [
+            { "$ref": "#/$defs/scalar" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["from"],
+              "properties": {
+                "from": { "type": "string", "minLength": 1 }
+              }
+            }
+          ]
+        },
+        "immediate_hi": { "$ref": "#/$defs/scalar" },
+        "capture": { "type": "string" },
+        "match_capture": { "type": "string" }
+      }
+    }
+  }
+}

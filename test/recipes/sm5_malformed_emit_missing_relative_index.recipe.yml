@@ -7,7 +7,8 @@ steps:
     kind: apply_rules
     mode: first
     rules:
-      - match:
+      - name: malformed_index_repr_rule
+        match:
           opcode: frc
           operands:
             - capture: dst

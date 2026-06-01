@@ -61,7 +61,8 @@ int main(int argc, char **argv) {
 steps:
   - name: capture_fields_literal_override
     rules:
-      - match:
+      - name: inline_rule_1
+        match:
           opcode: mul
           operands:
             - capture: dst

@@ -1,15 +1,14 @@
-﻿version: 1
+version: 1
 steps:
-  - kind: prefilter
+  - kind: check_shader_version
     name: require_sm5_0
-    checks:
-      - kind: check_shader_version
-        major: 5
-        minor: 0
+    major: 5
+    minor: 0
 
   - name: interpolation_mode_bad_opcode
     rules:
-      - match:
+      - name: rule
+        match:
           opcode: ret
         emit:
           - opcode: mov

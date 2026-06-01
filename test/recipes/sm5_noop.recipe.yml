@@ -3,5 +3,5 @@
 version: 1
 steps:
   - name: noop
-    required: false
+    abort_on_failure: false
     rules: []

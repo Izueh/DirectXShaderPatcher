@@ -15,7 +15,7 @@ static unsigned CountOpMatches(llvm::Function &function,
 
 int main(int argc, char **argv) {
   if (argc != 2) {
-    std::cerr << "Usage: declarative_prefilter_recipe_0x56C468C3 <input.cso>\n";
+    std::cerr << "Usage: declarative_probe_recipe_0x56C468C3 <input.cso>\n";
     return 1;
   }
 
@@ -97,10 +97,10 @@ int main(int argc, char **argv) {
                     }));
   recipe.AddStep(
       MakeCustomRecipeStep(
-          "should_not_execute_after_prefilter",
+        "should_not_execute_after_probe",
           [](DxilRecipeContext &context) {
             return MakeRecipeStepFailure(
-                context, "prefilter sentinel step executed unexpectedly");
+          context, "probe sentinel step executed unexpectedly");
           })
           .When(DxilRecipeStepCondition::AllOf(
               {DxilRecipeStepCondition::FromState("detect_frc"),
@@ -127,13 +127,13 @@ int main(int argc, char **argv) {
       *missingProbe || positiveGateHit == nullptr || !*positiveGateHit ||
       anyGateHit == nullptr || !*anyGateHit || negatedGateHit == nullptr ||
       !*negatedGateHit || callbackGateHit == nullptr || !*callbackGateHit) {
-    std::cerr << "Expected DXIL prefilters to publish boolean state for later "
+    std::cerr << "Expected DXIL probes to publish boolean state for later "
                  "if-guarded steps.\n";
     return 1;
   }
 
   if (!recipeContext.lastError.empty()) {
-    std::cerr << "Expected prefilter miss to stop successfully, but saw error: "
+    std::cerr << "Expected probe miss to stop successfully, but saw error: "
               << recipeContext.lastError << "\n";
     return 1;
   }
@@ -155,7 +155,7 @@ int main(int argc, char **argv) {
   const unsigned finalFrcCount =
       CountOpMatches(*patchedEntryFunction, hlsl::OP::OpCode::Frc);
   if (finalFrcCount != initialFrcCount) {
-    std::cerr << "Expected prefilter miss to leave Frc count unchanged at "
+    std::cerr << "Expected probe miss to leave Frc count unchanged at "
               << initialFrcCount << ", but saw " << finalFrcCount << ".\n";
     return 1;
   }
@@ -170,7 +170,7 @@ rewrite_rules:
 steps:
   - kind: apply_rule
     rule: match_only_frc_probe
-    mode: First
+    mode: first
     required: true
 )YAML";
 
@@ -221,7 +221,7 @@ steps:
     return 1;
   }
 
-  std::cout << "DXIL prefilter probes now drive generic if-guarded steps and "
+  std::cout << "DXIL probe steps now drive generic if-guarded steps and "
                "SM6 match-only rules preserved Frc count at "
             << postMatchOnlyFrcCount << ".\n";
   std::cout.flush();

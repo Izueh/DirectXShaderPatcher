@@ -3,7 +3,8 @@ steps:
   - kind: apply_rules
     name: replay_object_index_lo
     rules:
-      - match:
+      - name: rule
+        match:
           opcode: mul
           operands:
             - type: temp

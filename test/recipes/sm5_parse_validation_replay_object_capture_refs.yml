@@ -3,10 +3,12 @@ steps:
   - kind: apply_rules
     name: replay_object_capture_refs
     rules:
-      - match:
+      - name: rule
+        match:
           opcode: mul
           capture: inst
           rewrite_mode: before
+          insert_relative_index: 0
           operands:
             - type: temp
               capture: dst
@@ -14,7 +16,6 @@ steps:
                 - representation: immediate32
                   capture: dst_reg
             - match_capture: { from: dst }
-        replace: { from: inst }
         emit:
           - opcode: mov
             operands:

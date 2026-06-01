@@ -1,23 +1,21 @@
 version: 1
 steps:
-  - kind: prefilter
+  - kind: check_shader_version
     name: require_sm5_0
-    checks:
-      - kind: check_shader_version
-        major: 5
-        minor: 0
+    major: 5
+    minor: 0
 
   - kind: add_temp
     name: add_raw_probe_temp
     if:
       state: require_sm5_0
-    handle: raw_probe
+    handles: [raw_probe]
 
   - kind: add_temp
     name: add_uav_probe_temp
     if:
       state: require_sm5_0
-    handle: uav_probe
+    handles: [uav_probe]
 
   - kind: add_raw_resource
     name: add_injected_raw_srv
@@ -42,12 +40,13 @@ steps:
     auto_bind: true
     uav_kind: raw
 
-  - name: verify_bind_handles_in_emit
+  - name: verify_from_handles_in_emit
     if:
       state: require_sm5_0
     rules:
-      - match:
-          rewrite_mode: ReplaceRange
+      - name: verify_from_handles_rule
+        match:
+          rewrite_mode: replace_range
           sequence:
             - opcode: mul
               operands:
@@ -61,12 +60,12 @@ steps:
           - opcode: mov
             operands:
               - type: temp
-                bind_handle: raw_probe
+                from_handle: raw_probe
               - type: resource
-                bind_handle: injected_raw_srv
+                from_handle: injected_raw_srv
           - opcode: mov
             operands:
               - type: temp
-                bind_handle: uav_probe
+                from_handle: uav_probe
               - type: unordered_access_view
-                bind_handle: injected_raw_uav
+                from_handle: injected_raw_uav

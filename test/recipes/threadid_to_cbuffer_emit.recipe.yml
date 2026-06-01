@@ -86,5 +86,5 @@ steps:
     id: frame_constants
   - kind: apply_rule
     rule: group_id_x_to_cbuffer
-    mode: MatchAll
+    mode: match_all
     required: true

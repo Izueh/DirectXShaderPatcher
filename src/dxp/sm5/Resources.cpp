@@ -643,22 +643,4 @@ bool AddUavDeclaration(Program &program, const RecipeUavDecl &decl,
   return true;
 }
 
-RecipeStep MakeRefreshResourcesStep(std::string name) {
-  RecipeStep step;
-  step.Name = std::move(name);
-  step.Execute = [](RecipeContext &context) {
-    if (context.ProgramHandle == nullptr) {
-      return MakeRecipeStepFailure(
-          context, "recipe context is missing active SM5 program");
-    }
-
-    RebuildProgramMetadata(*context.ProgramHandle);
-    RecipeStepResult result;
-    result.Success = true;
-    result.ResourcesRefreshed = true;
-    return result;
-  };
-  return step;
-}
-
 } // namespace dxp::sm5

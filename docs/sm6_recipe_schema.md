@@ -1,5 +1,7 @@
 # SM6 YAML Recipe Schema
 
+JSON Schema companion: [sm6_recipe_schema.json](sm6_recipe_schema.json)
+
 DXIL recipes use schema version `1`.
 
 ## Top-Level Shape
@@ -21,7 +23,7 @@ steps: []
 Notes:
 
 - Execution order is defined only by `steps`.
-- `resources`, `prefilters`, and `rewrite_rules` declare named objects that steps reference later.
+- `resources`, `prefilters` (probe definitions), and `rewrite_rules` declare named objects that steps reference later.
 - `options.restore_reflection` defaults to `true`.
 - Final resource refresh runs automatically after resource-binding mutations unless the recipe already performs an explicit `refresh_resources` step.
 - Final LLVM verification and DXC container validation run automatically at the end of patching.
@@ -81,9 +83,9 @@ resources:
       name: <sampler_name>
 ```
 
-## Prefilters
+## Probe Definitions (`prefilters`)
 
-Prefilters are named probe patterns used for fast shader triage before the mutating steps run.
+Prefilters are named probe patterns used to gate later mutating steps.
 
 Shape:
 
@@ -94,7 +96,7 @@ Example:
 
 ```yaml
 prefilters:
-  - id: <prefilter_id>
+  - id: <probe_id>
     opcode: <opcode>
     capture: <capture_name>
     operands:
@@ -182,6 +184,7 @@ Notes:
 
 - `resource_name_like` uses LLVM regex syntax and invalid patterns are rejected while parsing.
 - `resource_handle` operands may additionally constrain `resource_class`, `resource_kind`, `resource_name`, `resource_name_like`, `bind`, and `space`.
+- `resource_kind` accepts canonical DXIL names (for example `Texture2DArray`) and also accepts `texture_2d_array` as an alias for `Texture2DArray`.
 - Auxiliary `bindings` currently support only `kind: dxop`.
 - `range_start_offset` is zero-based from the matched anchor instruction.
 - `range_end_offset` is zero-based from the matched anchor instruction; `-1` defaults to the same instruction as `range_start_offset` in the current declarative matcher.
@@ -207,9 +210,9 @@ Supported step kinds:
 Step semantics:
 
 - Resource steps (`add_texture`, `add_texture_uav`, `add_cbuffer`, `add_sampler`) use `id` to reference an entry under `resources`.
-- `apply_rule` uses `rule`, defaults `mode` to `First`, and accepts `First`, `Last`, or `MatchAll`.
-- `apply_rules` uses `rules`, defaults `mode` to `MatchAll`, and only supports `MatchAll`.
-- `prefilter` requires exactly one of `pattern` or `patterns` and may optionally define `set` to choose the context key it writes.
+- `apply_rule` uses `rule`, defaults `mode` to `first`, and accepts `first`, `last`, or `match_all`.
+- `apply_rules` uses `rules`, defaults `mode` to `match_all`, and only supports `match_all`.
+- `prefilter` requires exactly one of `pattern` or `patterns` and may optionally define `set` to choose the state key it writes.
 - `required` defaults to `true` on `apply_rule` and `apply_rules`.
 - `refresh_resources` and `prune_dead_code` take no extra fields.
 - `if` may select one of `state`, `all`, or `any`; `not: true` negates the selected condition result.
@@ -219,7 +222,7 @@ Conditional step example:
 ```yaml
 steps:
   - kind: prefilter
-    pattern: <prefilter_id>
+    pattern: <probe_id>
     set: expected_shader
 
   - kind: add_texture
@@ -237,8 +240,8 @@ steps:
   - kind: prefilter
     set: expected_shader
     patterns:
-      - <prefilter_id_a>
-      - <prefilter_id_b>
+      - <probe_id_a>
+      - <probe_id_b>
   - kind: add_texture
     if:
       state: expected_shader
@@ -250,7 +253,7 @@ steps:
         - state: skip_rewrite
           not: true
     rule: <rule_id>
-    mode: MatchAll
+    mode: match_all
     required: false
   - kind: apply_rules
     if:
@@ -258,7 +261,7 @@ steps:
     rules:
       - <rule_id_a>
       - <rule_id_b>
-    mode: MatchAll
+    mode: match_all
     required: false
 ```
 
@@ -269,5 +272,5 @@ Notes:
 - `if.any` requires at least one nested condition to evaluate to true.
 - `if.not: true` negates the result of `state`, `all`, or `any`.
 - Missing state values are treated as `false`.
-- `prefilter` is a probe step; it does not stop the recipe directly and instead publishes a boolean state value for later guards.
-- For simple identity-style matcher probes, prefer `mode: First` or `mode: Last` on `apply_rule` so the step selects one stable match instead of depending on whole-pass side effects.
+- `kind: prefilter` is a probe step; it does not stop the recipe directly and instead publishes a boolean state value for later guards.
+- For simple identity-style matcher probes, prefer `mode: first` or `mode: last` on `apply_rule` so the step selects one stable match instead of depending on whole-pass side effects.

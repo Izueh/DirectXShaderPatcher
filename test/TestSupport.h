@@ -18,8 +18,6 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/Verifier.h"
-#include "llvm/Support/raw_ostream.h"
 
 class ScopedCoInitialize {
 public:
@@ -76,10 +74,6 @@ unsigned CountIgnNoiseChains(llvm::Function &function);
 unsigned CountBlueNoiseTextureLoads(llvm::Function &function,
                                     hlsl::DxilModule &dxilModule);
 bool ReplaceIgnNoiseInComputeShaderWithTextureLoad(
-    llvm::Module &module, hlsl::DxilModule &dxilModule,
-    const TextureResourceDesc &textureDesc,
-    const CBufferDesc &frameIndexCBufferDesc, bool traceEnabled = false);
-bool ApplyComputeNoiseRewriteUsingRules(
     llvm::Module &module, hlsl::DxilModule &dxilModule,
     const TextureResourceDesc &textureDesc,
     const CBufferDesc &frameIndexCBufferDesc, bool traceEnabled = false);

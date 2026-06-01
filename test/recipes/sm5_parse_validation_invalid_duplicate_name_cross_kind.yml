@@ -1,12 +1,13 @@
 version: 1
 steps:
   - kind: add_temp
-    name: add_tmp_missing_handle
+    name: shared_name
+    handles: [tmp0]
 
   - kind: apply_rules
-    name: followup_apply_rules
+    name: rewrite_stage
     rules:
-      - name: rule
+      - name: shared_name
         match:
-          opcode: mov
+          opcode: frc
           rewrite_mode: none

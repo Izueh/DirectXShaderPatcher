@@ -1,0 +1,411 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/DirectXShaderPatcher/docs/sm6_recipe_schema.json",
+  "title": "SM6 YAML Recipe Schema",
+  "description": "JSON Schema for dxp::sm6 YAML recipes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "steps"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "options": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "restore_reflection": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "textures": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/textureResource" }
+        },
+        "texture_uavs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/textureResource" }
+        },
+        "cbuffers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/cbufferResource" }
+        },
+        "samplers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/samplerResource" }
+        }
+      }
+    },
+    "prefilters": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/prefilterDefinition" }
+    },
+    "rewrite_rules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/rewriteRuleDefinition" }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/step" }
+    }
+  },
+  "$defs": {
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bind": {
+          "type": "string",
+          "pattern": "^(auto|[0-9]+)$",
+          "default": "auto"
+        },
+        "space": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        }
+      }
+    },
+    "textureResource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "kind", "element", "width"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "minLength": 1 },
+        "element": { "type": "string", "minLength": 1 },
+        "width": { "type": "integer", "minimum": 0 },
+        "binding": { "$ref": "#/$defs/binding" }
+      }
+    },
+    "cbufferField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type", "width", "offset"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
+        "width": { "type": "integer", "minimum": 0 },
+        "offset": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "cbufferResource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "type", "size", "fields"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
+        "size": { "type": "integer", "minimum": 0 },
+        "binding": { "$ref": "#/$defs/binding" },
+        "fields": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/cbufferField" }
+        }
+      }
+    },
+    "samplerResource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "binding": { "$ref": "#/$defs/binding" }
+      }
+    },
+    "stepCondition": {
+      "oneOf": [
+        { "$ref": "#/$defs/stateCondition" },
+        { "$ref": "#/$defs/allCondition" },
+        { "$ref": "#/$defs/anyCondition" }
+      ]
+    },
+    "stateCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": { "type": "string", "minLength": 1 },
+        "not": { "type": "boolean", "default": false }
+      }
+    },
+    "allCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["all"],
+      "properties": {
+        "all": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/stepCondition" }
+        },
+        "not": { "type": "boolean", "default": false }
+      }
+    },
+    "anyCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["any"],
+      "properties": {
+        "any": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/stepCondition" }
+        },
+        "not": { "type": "boolean", "default": false }
+      }
+    },
+    "operandPattern": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "kind"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0 },
+        "kind": {
+          "type": "string",
+          "enum": ["any", "constant_int", "instruction", "dxop", "resource_handle"]
+        },
+        "capture": { "type": "string" },
+        "value": { "type": "integer", "minimum": 0 },
+        "opcode": { "type": "string" },
+        "resource_class": { "type": "string" },
+        "resource_kind": { "type": "string" },
+        "resource_name": { "type": "string" },
+        "resource_name_like": { "type": "string" },
+        "bind": { "type": "integer", "minimum": -1 },
+        "space": { "type": "integer", "minimum": -1 },
+        "operands": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/operandPattern" }
+        }
+      }
+    },
+    "prefilterDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "opcode"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "opcode": { "type": "string", "minLength": 1 },
+        "capture": { "type": "string" },
+        "operands": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/operandPattern" }
+        }
+      }
+    },
+    "rewriteBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "capture", "opcode"],
+      "properties": {
+        "kind": { "type": "string", "const": "dxop" },
+        "capture": { "type": "string", "minLength": 1 },
+        "opcode": { "type": "string", "minLength": 1 },
+        "operands": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/operandPattern" }
+        }
+      }
+    },
+    "emitOperand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "kind"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0 },
+        "kind": {
+          "type": "string",
+          "enum": ["capture", "temporary", "constant_int", "resource", "undef"]
+        },
+        "capture": { "type": "string" },
+        "id": { "type": "string" },
+        "value": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "emitValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["create_handle", "annotate_handle", "call", "extract", "binop", "cast"]
+        },
+        "id": { "type": "string" },
+        "resource": { "type": "string" },
+        "handle": { "type": "string" },
+        "opcode": { "type": "string" },
+        "type": { "type": "string" },
+        "aggregate": { "type": "string" },
+        "index": { "type": "integer", "minimum": 0 },
+        "operands": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/emitOperand" }
+        }
+      }
+    },
+    "rewriteMatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["opcode"],
+      "properties": {
+        "opcode": { "type": "string", "minLength": 1 },
+        "capture": { "type": "string" },
+        "mode": {
+          "type": "string",
+          "enum": ["None", "Replace", "ReplaceRange"],
+          "default": "Replace"
+        },
+        "range_start_offset": { "type": "integer" },
+        "range_end_offset": { "type": "integer" },
+        "prune_dead": { "type": "boolean", "default": true },
+        "prune_captures": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "operands": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/operandPattern" }
+        }
+      }
+    },
+    "rewriteRuleDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "match"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "match": { "$ref": "#/$defs/rewriteMatch" },
+        "bindings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/rewriteBinding" }
+        },
+        "emit": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/emitValue" }
+        },
+        "replace_with": { "type": "string" },
+        "replace_with_capture": { "type": "string" }
+      }
+    },
+    "step": {
+      "oneOf": [
+        { "$ref": "#/$defs/addResourceStep" },
+        { "$ref": "#/$defs/applyRuleStep" },
+        { "$ref": "#/$defs/applyRulesStep" },
+        { "$ref": "#/$defs/prefilterStep" },
+        { "$ref": "#/$defs/refreshResourcesStep" },
+        { "$ref": "#/$defs/pruneDeadCodeStep" }
+      ]
+    },
+    "addResourceStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["add_texture", "add_texture_uav", "add_cbuffer", "add_sampler"]
+        },
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "required": { "type": "boolean", "default": true },
+        "if": { "$ref": "#/$defs/stepCondition" }
+      }
+    },
+    "applyRuleStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "rule"],
+      "properties": {
+        "kind": { "type": "string", "const": "apply_rule" },
+        "rule": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "required": { "type": "boolean", "default": true },
+        "if": { "$ref": "#/$defs/stepCondition" },
+        "mode": {
+          "type": "string",
+          "enum": ["first", "last", "match_all"],
+          "default": "first"
+        }
+      }
+    },
+    "applyRulesStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "rules"],
+      "properties": {
+        "kind": { "type": "string", "const": "apply_rules" },
+        "rules": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "name": { "type": "string" },
+        "required": { "type": "boolean", "default": true },
+        "if": { "$ref": "#/$defs/stepCondition" },
+        "mode": {
+          "type": "string",
+          "enum": ["match_all"],
+          "default": "match_all"
+        }
+      }
+    },
+    "prefilterStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "type": "string", "const": "prefilter" },
+        "pattern": { "type": "string", "minLength": 1 },
+        "patterns": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "set": { "type": "string" },
+        "name": { "type": "string" },
+        "required": { "type": "boolean", "default": true },
+        "if": { "$ref": "#/$defs/stepCondition" }
+      },
+      "oneOf": [
+        { "required": ["pattern"] },
+        { "required": ["patterns"] }
+      ]
+    },
+    "refreshResourcesStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "type": "string", "const": "refresh_resources" },
+        "required": { "type": "boolean", "default": true },
+        "if": { "$ref": "#/$defs/stepCondition" }
+      }
+    },
+    "pruneDeadCodeStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "type": "string", "const": "prune_dead_code" },
+        "required": { "type": "boolean", "default": true },
+        "if": { "$ref": "#/$defs/stepCondition" }
+      }
+    }
+  }
+}

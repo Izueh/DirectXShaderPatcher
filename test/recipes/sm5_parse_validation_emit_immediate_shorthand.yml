@@ -3,7 +3,8 @@ steps:
   - kind: apply_rules
     name: emit_immediate_shorthand
     rules:
-      - match:
+      - name: emit_immediate_shorthand_rule
+        match:
           opcode: mov
           operands:
             - capture: dst

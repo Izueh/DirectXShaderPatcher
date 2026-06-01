@@ -1,0 +1,8 @@
+version: 1
+steps:
+  - kind: apply_rules
+    name: missing_rule_name_step
+    rules:
+      - match:
+          opcode: frc
+          rewrite_mode: none

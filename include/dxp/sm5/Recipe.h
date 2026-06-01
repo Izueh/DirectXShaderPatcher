@@ -176,20 +176,6 @@ enum class RecipeRuleRewriteMode {
   ReplaceRange,
 };
 
-/// @brief Identifies the supported prefilter checks.
-enum class PrefilterKind {
-  CheckShaderVersion,
-  CheckOpcodeCount,
-  CheckResourceCount,
-  CheckPatternMatch,
-};
-
-/// @brief Controls how multiple SM5 prefilter checks are combined.
-enum class RecipePrefilterMode {
-  All,
-  Any,
-};
-
 /// @brief Declares a texture binding to add or reference in a recipe.
 struct RecipeTextureDecl {
   uint32_t BindPoint = 0;
@@ -897,11 +883,14 @@ private:
 /// `Mask/Swizzle/Select`, `NumComponents`, `Modifier`.
 ///
 /// **Emit fields**: `Capture` (copy a captured operand wholesale),
-/// `BindHandle`, `Type`, `IndexPatterns`, `Mask/Swizzle/Select`,
+/// `FromHandle`, `Type`, `IndexPatterns`, `Mask/Swizzle/Select`,
 /// `NumComponents`, `Modifier`.
 ///
 /// `IndexPatterns` carries an ordered list of `RecipeOperandIndexPattern`
 /// objects, one per expected index slot.
+///
+/// YAML selector note: `components.kind`/`components.value` are normalized to
+/// `Mask`, `Swizzle`, or `Select` during parsing.
 ///
 /// YAML note: emit operands may use either explicit `indices` entries or the
 /// operand-level shorthand arrays `immediates_u32` / `immediates_u64` /
@@ -922,7 +911,7 @@ struct RecipeOperandPattern {
   /// `immediates_u32`, `immediates_u64`, `immediates_i32`, `immediates_i64`,
   /// `immediates_f32`, and `immediates_f64` shorthand arrays.
   std::vector<RecipeOperandIndexPattern> IndexPatterns;
-  std::string BindHandle;
+  std::string FromHandle;
   std::string Mask;
   std::string Swizzle;
   std::string Select;
@@ -977,13 +966,13 @@ struct RecipeOperandPattern {
     return std::move(*this);
   }
 
-  RecipeOperandPattern &WithBindHandle(std::string bindHandle) & {
-    BindHandle = std::move(bindHandle);
+  RecipeOperandPattern &WithFromHandle(std::string fromHandle) & {
+    FromHandle = std::move(fromHandle);
     return *this;
   }
 
-  RecipeOperandPattern &&WithBindHandle(std::string bindHandle) && {
-    BindHandle = std::move(bindHandle);
+  RecipeOperandPattern &&WithFromHandle(std::string fromHandle) && {
+    FromHandle = std::move(fromHandle);
     return std::move(*this);
   }
 
@@ -1176,8 +1165,8 @@ public:
     return *this;
   }
 
-  RecipeOperandPatternBuilder &WithBindHandle(std::string bindHandle) {
-    pattern_.BindHandle = std::move(bindHandle);
+  RecipeOperandPatternBuilder &WithFromHandle(std::string fromHandle) {
+    pattern_.FromHandle = std::move(fromHandle);
     return *this;
   }
 
@@ -1450,8 +1439,7 @@ struct RecipeInstructionTemplate {
   }
 };
 
-/// @brief Describes the top-level match criteria for a recipe rule or
-/// prefilter.
+/// @brief Describes the top-level match criteria for a recipe rule.
 struct RecipeMatchPattern {
   std::string Opcode;
   std::string Capture;
@@ -1532,95 +1520,6 @@ struct RecipeMatchPattern {
   }
 };
 
-/// @brief Describes one SM5 prefilter check used by a prefilter step.
-struct RecipePrefilter {
-  PrefilterKind Kind = PrefilterKind::CheckShaderVersion;
-  std::string Name;
-  bool Required = true;
-  uint32_t ExpectedMajorVersion = 0;
-  uint32_t ExpectedMinorVersion = 0;
-  std::string Opcode;
-  int32_t ExpectedCount = 0;
-  int32_t ExpectedResourceCount = 0;
-  RecipeMatchPattern Match;
-
-  RecipePrefilter &Named(std::string name) & {
-    Name = std::move(name);
-    return *this;
-  }
-
-  RecipePrefilter &&Named(std::string name) && {
-    Name = std::move(name);
-    return std::move(*this);
-  }
-
-  RecipePrefilter &Require(bool required) & {
-    Required = required;
-    return *this;
-  }
-
-  RecipePrefilter &&Require(bool required) && {
-    Required = required;
-    return std::move(*this);
-  }
-
-  RecipePrefilter &CheckShaderVersion(uint32_t majorVersion,
-                                      uint32_t minorVersion) & {
-    Kind = PrefilterKind::CheckShaderVersion;
-    ExpectedMajorVersion = majorVersion;
-    ExpectedMinorVersion = minorVersion;
-    return *this;
-  }
-
-  RecipePrefilter &&CheckShaderVersion(uint32_t majorVersion,
-                                       uint32_t minorVersion) && {
-    Kind = PrefilterKind::CheckShaderVersion;
-    ExpectedMajorVersion = majorVersion;
-    ExpectedMinorVersion = minorVersion;
-    return std::move(*this);
-  }
-
-  RecipePrefilter &CheckOpcodeCount(std::string opcode,
-                                    int32_t expectedCount) & {
-    Kind = PrefilterKind::CheckOpcodeCount;
-    Opcode = std::move(opcode);
-    ExpectedCount = expectedCount;
-    return *this;
-  }
-
-  RecipePrefilter &&CheckOpcodeCount(std::string opcode,
-                                     int32_t expectedCount) && {
-    Kind = PrefilterKind::CheckOpcodeCount;
-    Opcode = std::move(opcode);
-    ExpectedCount = expectedCount;
-    return std::move(*this);
-  }
-
-  RecipePrefilter &CheckResourceCount(int32_t expectedResourceCount) & {
-    Kind = PrefilterKind::CheckResourceCount;
-    ExpectedResourceCount = expectedResourceCount;
-    return *this;
-  }
-
-  RecipePrefilter &&CheckResourceCount(int32_t expectedResourceCount) && {
-    Kind = PrefilterKind::CheckResourceCount;
-    ExpectedResourceCount = expectedResourceCount;
-    return std::move(*this);
-  }
-
-  RecipePrefilter &CheckPatternMatch(RecipeMatchPattern match) & {
-    Kind = PrefilterKind::CheckPatternMatch;
-    Match = std::move(match);
-    return *this;
-  }
-
-  RecipePrefilter &&CheckPatternMatch(RecipeMatchPattern match) && {
-    Kind = PrefilterKind::CheckPatternMatch;
-    Match = std::move(match);
-    return std::move(*this);
-  }
-};
-
 /// @brief Stores one callback-supplied SM5 rule match and its captures.
 ///
 /// Callback matches are normalized into the same runtime rewrite flow used by
@@ -1678,7 +1577,7 @@ enum class RecipeRewriteActionKind {
 /// @brief Describes one callback-generated SM5 rewrite operation.
 ///
 /// These actions are only produced by code callbacks. YAML recipes continue to
-/// use declarative `emit`, `replace`, and `match.rewrite_mode` fields instead.
+/// use declarative `emit` and `match.rewrite_mode` fields instead.
 struct RecipeRewriteAction {
   RecipeRewriteActionKind Kind = RecipeRewriteActionKind::ReplaceOne;
   uint32_t ReplaceIndex = 0;
@@ -1713,28 +1612,43 @@ using RecipeRulePredicate = std::function<bool(RecipeContext &)>;
 
 /// @brief Produces rewrite actions for one callback-supplied match.
 ///
-/// Callback rewriting is mutually exclusive with declarative `Emit`, `Replace`,
-/// and `RewriteMode` fields on the same rule.
+/// Callback rewriting is mutually exclusive with declarative `Emit` and
+/// `RewriteMode` fields on the same rule.
 using RecipeRewriteCallback = std::function<std::vector<RecipeRewriteAction>(
     const Program &, const RecipeRuleMatch &, RecipeContext &)>;
 
 /// @brief Describes one SM5 rewrite rule.
 ///
-/// A rule may be fully declarative through `Match`, `Emit`, `Replace`, and
-/// `RewriteMode`, or it may use callback overloads for matching and/or
+/// A rule may be fully declarative through `Match`, `Emit`, and `RewriteMode`,
+/// or it may use callback overloads for matching and/or
 /// rewriting. Callback and declarative forms are compiled through the same
 /// runtime path, but they must not be mixed for the same stage.
+///
+/// In YAML schema v1, rule names are required and rule outcomes are published
+/// into recipe context state under `Name`.
 struct RecipeRule {
+  std::string Name;
   RecipeMatchPattern Match;
   RecipeMatchCallback MatchCallback;
   std::vector<RecipeInstructionTemplate> Emit;
-  std::string Replace;
   int32_t RangeStartOffset = 0;
   int32_t RangeEndOffset = -1;
+  int32_t InsertRelativeIndex = -1;
+  bool RequiredMatch = false;
   RecipeRuleApplicationMode ApplicationMode = RecipeRuleApplicationMode::First;
   RecipeRuleRewriteMode RewriteMode = RecipeRuleRewriteMode::Replace;
   RecipeRulePredicate Predicate;
   RecipeRewriteCallback RewriteCallback;
+
+  RecipeRule &Named(std::string name) & {
+    Name = std::move(name);
+    return *this;
+  }
+
+  RecipeRule &&Named(std::string name) && {
+    Name = std::move(name);
+    return std::move(*this);
+  }
 
   /// @brief Uses declarative pattern matching for this rule.
   RecipeRule &WithMatch(RecipeMatchPattern match) & {
@@ -1775,22 +1689,6 @@ struct RecipeRule {
   RecipeRule &&AddEmit(RecipeInstructionTemplate instruction) && {
     RewriteCallback = {};
     Emit.push_back(std::move(instruction));
-    return std::move(*this);
-  }
-
-  /// @brief Selects the captured instruction targeted by declarative Before or
-  /// After rewriting.
-  RecipeRule &ReplaceCapture(std::string capture) & {
-    RewriteCallback = {};
-    Replace = std::move(capture);
-    return *this;
-  }
-
-  /// @brief Selects the captured instruction targeted by declarative Before or
-  /// After rewriting.
-  RecipeRule &&ReplaceCapture(std::string capture) && {
-    RewriteCallback = {};
-    Replace = std::move(capture);
     return std::move(*this);
   }
 
@@ -1838,6 +1736,22 @@ struct RecipeRule {
     return std::move(*this);
   }
 
+  /// @brief Sets a sequence-window-relative anchor index for Before/After
+  /// rewriting.
+  RecipeRule &InsertAfterRelativeIndex(int32_t index) & {
+    RewriteCallback = {};
+    InsertRelativeIndex = index;
+    return *this;
+  }
+
+  /// @brief Sets a sequence-window-relative anchor index for Before/After
+  /// rewriting.
+  RecipeRule &&InsertAfterRelativeIndex(int32_t index) && {
+    RewriteCallback = {};
+    InsertRelativeIndex = index;
+    return std::move(*this);
+  }
+
   RecipeRule &ApplyMode(RecipeRuleApplicationMode applicationMode) & {
     ApplicationMode = applicationMode;
     return *this;
@@ -1845,6 +1759,18 @@ struct RecipeRule {
 
   RecipeRule &&ApplyMode(RecipeRuleApplicationMode applicationMode) && {
     ApplicationMode = applicationMode;
+    return std::move(*this);
+  }
+
+  /// @brief When enabled, the rule fails the step if no match is applied.
+  RecipeRule &RequireMatch(bool requiredMatch = true) & {
+    RequiredMatch = requiredMatch;
+    return *this;
+  }
+
+  /// @brief When enabled, the rule fails the step if no match is applied.
+  RecipeRule &&RequireMatch(bool requiredMatch = true) && {
+    RequiredMatch = requiredMatch;
     return std::move(*this);
   }
 
@@ -1865,9 +1791,9 @@ struct RecipeRule {
   /// @brief Uses callback-driven rewriting and clears declarative rewrite data.
   RecipeRule &Rewrite(RecipeRewriteCallback callback) & {
     Emit.clear();
-    Replace.clear();
     RangeStartOffset = 0;
     RangeEndOffset = -1;
+    InsertRelativeIndex = -1;
     RewriteMode = RecipeRuleRewriteMode::Replace;
     RewriteCallback = std::move(callback);
     return *this;
@@ -1876,9 +1802,9 @@ struct RecipeRule {
   /// @brief Uses callback-driven rewriting and clears declarative rewrite data.
   RecipeRule &&Rewrite(RecipeRewriteCallback callback) && {
     Emit.clear();
-    Replace.clear();
     RangeStartOffset = 0;
     RangeEndOffset = -1;
+    InsertRelativeIndex = -1;
     RewriteMode = RecipeRuleRewriteMode::Replace;
     RewriteCallback = std::move(callback);
     return std::move(*this);
@@ -1909,12 +1835,71 @@ struct RecipeStepResult {
   std::vector<dxp::PatchSideEffect> SideEffects;
 };
 
+enum class RecipeConditionCompareOp {
+  None,
+  Eq,
+  Ne,
+  Gt,
+  Gte,
+  Lt,
+  Lte,
+};
+
+struct RecipeStepComparison {
+  std::string State;
+  std::string Input;
+  std::string Value;
+
+  RecipeStepComparison &FromState(std::string state) & {
+    State = std::move(state);
+    Input.clear();
+    return *this;
+  }
+
+  RecipeStepComparison &&FromState(std::string state) && {
+    State = std::move(state);
+    Input.clear();
+    return std::move(*this);
+  }
+
+  RecipeStepComparison &FromInput(std::string input) & {
+    Input = std::move(input);
+    State.clear();
+    return *this;
+  }
+
+  RecipeStepComparison &&FromInput(std::string input) && {
+    Input = std::move(input);
+    State.clear();
+    return std::move(*this);
+  }
+
+  RecipeStepComparison &WithValue(std::string value) & {
+    Value = std::move(value);
+    return *this;
+  }
+
+  RecipeStepComparison &&WithValue(std::string value) && {
+    Value = std::move(value);
+    return std::move(*this);
+  }
+
+  bool IsSet() const {
+    return !State.empty() || !Input.empty() || !Value.empty();
+  }
+};
+
 /// @brief Describes a generic step guard based on recipe context state.
+///
+/// This is the programmatic equivalent of YAML `if` conditions. Exactly one of
+/// `State`, `Input`, `All`, `Any`, or `CompareOp`/`Compare` should be set.
 struct RecipeStepCondition {
   std::string State;
   std::string Input;
   std::vector<RecipeStepCondition> All;
   std::vector<RecipeStepCondition> Any;
+  RecipeConditionCompareOp CompareOp = RecipeConditionCompareOp::None;
+  RecipeStepComparison Compare;
   bool Negate = false;
 
   static RecipeStepCondition FromState(std::string state,
@@ -1949,8 +1934,19 @@ struct RecipeStepCondition {
     return condition;
   }
 
+  static RecipeStepCondition CompareValue(RecipeConditionCompareOp op,
+                                          RecipeStepComparison comparison,
+                                          bool negate = false) {
+    RecipeStepCondition condition;
+    condition.CompareOp = op;
+    condition.Compare = std::move(comparison);
+    condition.Negate = negate;
+    return condition;
+  }
+
   bool IsSet() const {
-    return !State.empty() || !Input.empty() || !All.empty() || !Any.empty();
+    return !State.empty() || !Input.empty() || !All.empty() || !Any.empty() ||
+           CompareOp != RecipeConditionCompareOp::None;
   }
 };
 
@@ -1959,22 +1955,28 @@ using RecipeStepExecutor = std::function<RecipeStepResult(RecipeContext &)>;
 using RecipeStepPredicate = std::function<bool(RecipeContext &)>;
 
 /// @brief Represents one executable step in a recipe.
+///
+/// In YAML schema v1, step names are required and step outcomes are published
+/// into recipe context state under `Name`. `AbortOnFailure` is the step-level
+/// fail-stop flag formerly exposed as `required` in YAML.
 struct RecipeStep {
   std::string Name;
   std::vector<RecipeRule> Rules;
   RecipeRuleApplicationMode ApplicationMode = RecipeRuleApplicationMode::First;
-  bool Required = true;
+  bool AbortOnFailure = true;
   RecipeStepCondition If;
   RecipeStepExecutor Execute;
   RecipeStepPredicate Predicate;
 
-  RecipeStep &Require(bool required) & {
-    Required = required;
+  /// @brief Controls whether a failed step stops recipe execution.
+  RecipeStep &AbortOnFailureFlag(bool abortOnFailure) & {
+    AbortOnFailure = abortOnFailure;
     return *this;
   }
 
-  RecipeStep &&Require(bool required) && {
-    Required = required;
+  /// @brief Controls whether a failed step stops recipe execution.
+  RecipeStep &&AbortOnFailureFlag(bool abortOnFailure) && {
+    AbortOnFailure = abortOnFailure;
     return std::move(*this);
   }
 
@@ -2022,21 +2024,51 @@ RecipeStepResult MakeRecipeStepFailure(RecipeContext &context,
                                        std::string message);
 
 /// @brief Wraps a custom executor as a named recipe step.
+///
+/// The returned step uses `name` as both its public identifier and the state
+/// publication key for the step result.
 RecipeStep MakeCustomRecipeStep(std::string name, RecipeStepExecutor execute);
 
 /// @brief Creates a step that applies declarative rewrite rules.
+/// @param name Unique step/state name.
+/// @param rules Declarative or callback-backed rules to execute.
+/// @param mode Default application mode inherited by rules that do not
+/// override it.
+/// @param abortOnFailure When `true`, a step failure stops recipe execution.
 RecipeStep MakeRewriteRulesStep(
     std::string name, std::vector<RecipeRule> rules,
     RecipeRuleApplicationMode mode = RecipeRuleApplicationMode::First,
-  bool required = true);
+  bool abortOnFailure = true);
 
-/// @brief Creates a step that evaluates one or more SM5 prefilter checks.
-RecipeStep MakePrefilterStep(
-  std::string name, std::vector<RecipePrefilter> checks,
-  std::string setState = {},
-  RecipePrefilterMode mode = RecipePrefilterMode::All);
+/// @brief Creates a step that checks the active shader model version.
+///
+/// The step publishes `true` under `name` on a version match. On mismatch it
+/// publishes `false` and returns a failed step result.
+RecipeStep MakeCheckShaderVersionStep(std::string name, uint32_t majorVersion,
+                                      uint32_t minorVersion,
+                                      bool abortOnFailure = true);
+
+/// @brief Creates a step that checks the number of matching opcodes.
+///
+/// Positive `expectedCount` means at least that many occurrences; `0` means no
+/// occurrences; negative values mean at most `-expectedCount` occurrences.
+RecipeStep MakeCheckOpcodeCountStep(std::string name, std::string opcode,
+                                    int32_t expectedCount,
+                                    bool abortOnFailure = true);
+
+/// @brief Creates a step that checks the number of declared resources.
+///
+/// The step publishes `true` under `name` when the program contains at least
+/// `expectedResourceCount` resources. Otherwise it publishes `false` and
+/// returns a failed step result.
+RecipeStep MakeCheckResourceCountStep(std::string name,
+                                      int32_t expectedResourceCount,
+                                      bool abortOnFailure = true);
 
 /// @brief Creates a step that adds a temp declaration.
+///
+/// YAML `add_temp` accepts a `handles` list, but the public API creates one
+/// temp step per declaration handle.
 RecipeStep MakeAddTempStep(std::string id, RecipeTempDecl decl);
 
 /// @brief Creates a step that adds an input declaration.
@@ -2063,34 +2095,6 @@ RecipeStep MakeAddSamplerStep(std::string id, RecipeSamplerDecl decl);
 
 /// @brief Creates a step that adds a UAV declaration.
 RecipeStep MakeAddUavStep(std::string id, RecipeUavDecl decl);
-
-/// @brief Creates a step that refreshes derived resource metadata.
-RecipeStep MakeRefreshResourcesStep(std::string name = "refresh_resources");
-
-/// @brief Creates a step that verifies the decoded program state.
-RecipeStep MakeVerifyProgramStep(std::string name = "verify_program");
-
-/// @brief Creates a shader-version prefilter.
-RecipePrefilter MakeShaderVersionPrefilter(uint32_t majorVersion,
-                                           uint32_t minorVersion,
-                                           std::string name = {},
-                                           bool required = true);
-
-/// @brief Creates an opcode-count prefilter.
-RecipePrefilter MakeOpcodeCountPrefilter(std::string opcode,
-                                         int32_t expectedCount,
-                                         std::string name = {},
-                                         bool required = true);
-
-/// @brief Creates a resource-count prefilter.
-RecipePrefilter MakeResourceCountPrefilter(int32_t expectedResourceCount,
-                                           std::string name = {},
-                                           bool required = true);
-
-/// @brief Creates a pattern-match prefilter.
-RecipePrefilter MakePatternPrefilter(RecipeMatchPattern match,
-                                     std::string name = {},
-                                     bool required = true);
 
 /// @brief Owns the declarative SM5 recipe definition.
 class Recipe {

@@ -85,7 +85,8 @@ int main(int argc, char **argv) {
 steps:
   - name: operand_index_capture_regression
     rules:
-      - match:
+      - name: inline_rule_1
+        match:
           opcode: mul
           operands:
             - type: temp

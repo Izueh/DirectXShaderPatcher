@@ -143,9 +143,10 @@ struct RuntimeRule {
   bool HasMatchSequence = false;
   RecipeMatchCallback MatchCallback;
   std::vector<Instruction> Emit;
-  std::string Replace;
   int32_t RangeStartOffset = 0;
   int32_t RangeEndOffset = -1;
+  int32_t InsertRelativeIndex = -1;
+  bool RequiredMatch = false;
   RecipeRuleApplicationMode ApplicationMode = RecipeRuleApplicationMode::First;
   RecipeRuleRewriteMode RewriteMode = RecipeRuleRewriteMode::Replace;
   std::function<bool(RecipeContext &)> Predicate;
@@ -160,7 +161,7 @@ static bool HasDeclarativeMatchPattern(const RecipeMatchPattern &match) {
 }
 
 static bool HasDeclarativeRewritePlan(const RecipeRule &rule) {
-  return !rule.Emit.empty() || !rule.Replace.empty() ||
+  return !rule.Emit.empty() ||
          rule.RewriteMode != RecipeRuleRewriteMode::Replace;
 }
 
@@ -305,14 +306,6 @@ static bool ValidateRuleCaptureReferences(const RecipeRule &rule,
   CaptureNameTables captures;
   CollectMatchCaptures(rule.Match, captures);
 
-  if (!rule.Replace.empty()) {
-    if (!ValidateCaptureReference(captures, rule.Replace, "instruction",
-                                  captures.Instructions, "replace capture",
-                                  error)) {
-      return false;
-    }
-  }
-
   for (const RecipeOperandPattern &operand : rule.Match.Operands) {
     if (!ValidateOperandCaptureReferences(operand, captures, false, error)) {
       return false;
@@ -389,21 +382,6 @@ static uint32_t GetRewriteActionAnchorIndex(const RewriteAction &action) {
   return 0;
 }
 
-struct RuntimePrefilter {
-  PrefilterKind Kind = PrefilterKind::CheckShaderVersion;
-  std::string Name;
-  bool Required = true;
-  uint32_t ExpectedMajorVersion = 0;
-  uint32_t ExpectedMinorVersion = 0;
-  Opcode FilterOpcode = Opcode::Unknown();
-  int32_t ExpectedCount = 0;
-  int32_t ExpectedResourceCount = 0;
-  InstructionMatch Match;
-  std::vector<InstructionMatch> MatchSequence;
-  bool HasMatch = false;
-  bool HasMatchSequence = false;
-};
-
 static bool ResolveRangeReplacement(const RuntimeRule &rule,
                                     const MatchResult &match,
                                     const std::string &rewritePath,
@@ -463,25 +441,23 @@ static bool ParseInterpolationModeToken(const std::string &value,
     mode = D3D10_SB_INTERPOLATION_LINEAR;
     return true;
   }
-  if (lowered == "linear_centroid" || lowered == "linearcentroid") {
+  if (lowered == "linear_centroid") {
     mode = D3D10_SB_INTERPOLATION_LINEAR_CENTROID;
     return true;
   }
-  if (lowered == "linear_noperspective" || lowered == "linearnoperspective") {
+  if (lowered == "linear_noperspective") {
     mode = D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE;
     return true;
   }
-  if (lowered == "linear_noperspective_centroid" ||
-      lowered == "linearnoperspectivecentroid") {
+  if (lowered == "linear_noperspective_centroid") {
     mode = D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_CENTROID;
     return true;
   }
-  if (lowered == "linear_sample" || lowered == "linearsample") {
+  if (lowered == "linear_sample") {
     mode = D3D10_SB_INTERPOLATION_LINEAR_SAMPLE;
     return true;
   }
-  if (lowered == "linear_noperspective_sample" ||
-      lowered == "linearnoperspectivesample") {
+  if (lowered == "linear_noperspective_sample") {
     mode = D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_SAMPLE;
     return true;
   }
@@ -565,7 +541,7 @@ static bool ParseOperandModifierToken(const std::string &value,
     modifier = D3D10_SB_OPERAND_MODIFIER_ABS;
     return true;
   }
-  if (lowered == "absneg" || lowered == "abs_neg") {
+  if (lowered == "abs_neg") {
     modifier = D3D10_SB_OPERAND_MODIFIER_ABSNEG;
     return true;
   }
@@ -757,8 +733,8 @@ static bool CompileEmitOperand(const RecipeOperandPattern &operandModel,
     return false;
   }
 
-  if (!operandModel.Capture.empty() && !operandModel.BindHandle.empty()) {
-    error = "SM5 emit operand cannot use both capture and bind_handle";
+  if (!operandModel.Capture.empty() && !operandModel.FromHandle.empty()) {
+    error = "SM5 emit operand cannot use both capture and from_handle";
     return false;
   }
 
@@ -782,8 +758,8 @@ static bool CompileEmitOperand(const RecipeOperandPattern &operandModel,
     return false;
   }
 
-  if (!operandModel.BindHandle.empty() && operandModel.Type.empty()) {
-    error = "SM5 bind_handle emit operands require explicit operand type";
+  if (!operandModel.FromHandle.empty() && operandModel.Type.empty()) {
+    error = "SM5 from_handle emit operands require explicit operand type";
     return false;
   }
 
@@ -881,7 +857,7 @@ static bool CompileEmitOperand(const RecipeOperandPattern &operandModel,
     operand.Indices.clear();
   }
 
-  operand.BindHandle = operandModel.BindHandle;
+  operand.FromHandle = operandModel.FromHandle;
 
   if (!operandModel.Modifier.empty() &&
       !ParseOperandModifierToken(operandModel.Modifier, operand.Modifier,
@@ -1133,9 +1109,10 @@ static bool CompileRule(const RecipeRule &ruleModel,
     }
   }
 
-  rule.Replace = ruleModel.Replace;
   rule.RangeStartOffset = ruleModel.RangeStartOffset;
   rule.RangeEndOffset = ruleModel.RangeEndOffset;
+  rule.InsertRelativeIndex = ruleModel.InsertRelativeIndex;
+  rule.RequiredMatch = ruleModel.RequiredMatch;
   rule.RewriteMode = ruleModel.RewriteMode;
   rule.RewriteCallback = ruleModel.RewriteCallback;
 
@@ -1146,12 +1123,26 @@ static bool CompileRule(const RecipeRule &ruleModel,
       return false;
     }
   } else if (!IsMutatingRewriteMode(rule.RewriteMode)) {
-    if (!rule.Replace.empty() || !ruleModel.Emit.empty()) {
-      error = "SM5 rewrite mode None cannot be combined with replace or emit";
+    if (!ruleModel.Emit.empty() || rule.InsertRelativeIndex >= 0) {
+      error =
+          "SM5 rewrite mode None cannot be combined with emit or "
+          "insert_relative_index";
       return false;
     }
   } else if (ruleModel.Emit.empty()) {
     error = "SM5 rules without emit must use match.rewrite_mode: None";
+    return false;
+  }
+
+  if (rule.RewriteMode == RecipeRuleRewriteMode::Before ||
+      rule.RewriteMode == RecipeRuleRewriteMode::After) {
+    if (rule.InsertRelativeIndex < 0) {
+      error = "SM5 before/after rewrites require match.insert_relative_index";
+      return false;
+    }
+  } else if (rule.InsertRelativeIndex >= 0) {
+    error = "SM5 match.insert_relative_index requires match.rewrite_mode: "
+            "before or after";
     return false;
   }
 
@@ -1354,44 +1345,6 @@ static bool EvaluateRuleRewriteCallback(const RuntimeRule &rule,
   return true;
 }
 
-static bool CompilePrefilter(const RecipePrefilter &prefilterModel,
-                             RuntimePrefilter &prefilter, std::string &error) {
-  prefilter = RuntimePrefilter{};
-  prefilter.Kind = prefilterModel.Kind;
-  prefilter.Name = prefilterModel.Name;
-  prefilter.Required = prefilterModel.Required;
-  prefilter.ExpectedMajorVersion = prefilterModel.ExpectedMajorVersion;
-  prefilter.ExpectedMinorVersion = prefilterModel.ExpectedMinorVersion;
-  prefilter.ExpectedCount = prefilterModel.ExpectedCount;
-  prefilter.ExpectedResourceCount = prefilterModel.ExpectedResourceCount;
-  switch (prefilter.Kind) {
-  case PrefilterKind::CheckShaderVersion:
-  case PrefilterKind::CheckResourceCount:
-    return true;
-  case PrefilterKind::CheckOpcodeCount:
-    if (!prefilterModel.Opcode.empty() &&
-        !ParseOpcode(prefilterModel.Opcode, prefilter.FilterOpcode)) {
-      error = "Unknown SM5 opcode in prefilter: " + prefilterModel.Opcode;
-      return false;
-    }
-    return true;
-  case PrefilterKind::CheckPatternMatch:
-    if (!CompileMatchPattern(prefilterModel.Match, prefilter.Match,
-                             prefilter.MatchSequence,
-                             prefilter.HasMatchSequence, error)) {
-      if (error ==
-          "SM5 match patterns require match.opcode or match.sequence") {
-        error = "SM5 pattern prefilter requires match.opcode or match.sequence";
-      }
-      return false;
-    }
-    prefilter.HasMatch = !prefilter.HasMatchSequence;
-    return true;
-  }
-
-  return false;
-}
-
 static Instruction FinalizeInstruction(Instruction instruction) {
   instruction.RawTokens = EncodeInstruction(instruction);
   instruction.LengthInDwords =
@@ -1491,24 +1444,33 @@ SelectMatchIndices(const std::vector<MatchResult> &matches,
   return selected;
 }
 
-static bool ResolveReplaceIndex(const RuntimeRule &rule,
-                                const MatchResult &match,
-                                const std::string &rewritePath,
-                                uint32_t &replaceIndex, std::string &error) {
-  replaceIndex = match.RangeStartIndex;
-  if (rule.Replace.empty()) {
-    return true;
-  }
-
-  const uint32_t *capturedIndex =
-      match.GetCapturedInstructionIndex(rule.Replace);
-  if (capturedIndex == nullptr) {
-    error = rewritePath + ": missing captured instruction '" + rule.Replace +
-            "'";
+static bool ResolveInsertAnchorIndex(const RuntimeRule &rule,
+                                     const MatchResult &match,
+                                     const std::string &rewritePath,
+                                     uint32_t &insertIndex,
+                                     std::string &error) {
+  if (rule.InsertRelativeIndex < 0) {
+    error = rewritePath +
+            ": before/after rewrites require non-negative insert index";
     return false;
   }
 
-  replaceIndex = *capturedIndex;
+  const uint32_t windowStart = match.RangeStartIndex;
+  const uint32_t windowEnd = match.RangeEndIndex;
+  if (windowStart > windowEnd) {
+    error = rewritePath + ": invalid SM5 match window";
+    return false;
+  }
+
+  const uint32_t windowLength = windowEnd - windowStart + 1;
+  const uint32_t relativeIndex = static_cast<uint32_t>(rule.InsertRelativeIndex);
+  if (relativeIndex >= windowLength) {
+    error = rewritePath +
+            ": insert_relative_index is out of match window bounds";
+    return false;
+  }
+
+  insertIndex = windowStart + relativeIndex;
   return true;
 }
 
@@ -1740,7 +1702,8 @@ static bool ResolveRangeReplacement(const RuntimeRule &rule,
 
   if (rule.RewriteMode == RecipeRuleRewriteMode::Before) {
     uint32_t insertIndex = 0;
-    if (!ResolveReplaceIndex(rule, match, rewritePath, insertIndex, error)) {
+    if (!ResolveInsertAnchorIndex(rule, match, rewritePath, insertIndex,
+                                  error)) {
       return false;
     }
     action.Type = RewriteActionType::InsertBefore;
@@ -1750,7 +1713,8 @@ static bool ResolveRangeReplacement(const RuntimeRule &rule,
 
   if (rule.RewriteMode == RecipeRuleRewriteMode::After) {
     uint32_t insertIndex = 0;
-    if (!ResolveReplaceIndex(rule, match, rewritePath, insertIndex, error)) {
+    if (!ResolveInsertAnchorIndex(rule, match, rewritePath, insertIndex,
+                                  error)) {
       return false;
     }
     action.Type = RewriteActionType::InsertAfter;
@@ -1961,67 +1925,67 @@ static bool InstantiateOperand(const Operand &operandTemplate,
   if (operandTemplate.CaptureName.empty()) {
     operand = operandTemplate;
   }
-  if (!operand.BindHandle.empty()) {
+  if (!operand.FromHandle.empty()) {
     const uint32_t *resolvedBindPoint = nullptr;
     if (operand.Type == D3D10_SB_OPERAND_TYPE_TEMP) {
-      const auto it = context.TempBindings.find(operand.BindHandle);
+      const auto it = context.TempBindings.find(operand.FromHandle);
       if (it != context.TempBindings.end()) {
         resolvedBindPoint = &it->second;
       }
     } else if (operand.Type == D3D10_SB_OPERAND_TYPE_INPUT) {
-      const auto it = context.InputBindings.find(operand.BindHandle);
+      const auto it = context.InputBindings.find(operand.FromHandle);
       if (it != context.InputBindings.end()) {
         resolvedBindPoint = &it->second;
       }
     } else if (operand.Type == D3D10_SB_OPERAND_TYPE_OUTPUT) {
-      const auto it = context.OutputBindings.find(operand.BindHandle);
+      const auto it = context.OutputBindings.find(operand.FromHandle);
       if (it != context.OutputBindings.end()) {
         resolvedBindPoint = &it->second;
       }
     } else if (operand.Type == D3D10_SB_OPERAND_TYPE_RESOURCE) {
-      const auto it = context.TextureBindings.find(operand.BindHandle);
+      const auto it = context.TextureBindings.find(operand.FromHandle);
       if (it != context.TextureBindings.end()) {
         resolvedBindPoint = &it->second;
       }
       if (resolvedBindPoint == nullptr) {
-        const auto rawIt = context.RawResourceBindings.find(operand.BindHandle);
+        const auto rawIt = context.RawResourceBindings.find(operand.FromHandle);
         if (rawIt != context.RawResourceBindings.end()) {
           resolvedBindPoint = &rawIt->second;
         }
       }
       if (resolvedBindPoint == nullptr) {
         const auto structuredIt =
-            context.StructuredResourceBindings.find(operand.BindHandle);
+            context.StructuredResourceBindings.find(operand.FromHandle);
         if (structuredIt != context.StructuredResourceBindings.end()) {
           resolvedBindPoint = &structuredIt->second;
         }
       }
     } else if (operand.Type == D3D10_SB_OPERAND_TYPE_SAMPLER) {
-      const auto it = context.SamplerBindings.find(operand.BindHandle);
+      const auto it = context.SamplerBindings.find(operand.FromHandle);
       if (it != context.SamplerBindings.end()) {
         resolvedBindPoint = &it->second;
       }
     } else if (operand.Type == D3D10_SB_OPERAND_TYPE_CONSTANT_BUFFER) {
-      const auto it = context.CBufferBindings.find(operand.BindHandle);
+      const auto it = context.CBufferBindings.find(operand.FromHandle);
       if (it != context.CBufferBindings.end()) {
         resolvedBindPoint = &it->second;
       }
     } else if (operand.Type == D3D11_SB_OPERAND_TYPE_UNORDERED_ACCESS_VIEW) {
-      const auto it = context.UavBindings.find(operand.BindHandle);
+      const auto it = context.UavBindings.find(operand.FromHandle);
       if (it != context.UavBindings.end()) {
         resolvedBindPoint = &it->second;
       }
     } else {
       error =
           path +
-          ": SM5 bind_handle operand type is unsupported for resource "
+          ": SM5 from_handle operand type is unsupported for resource "
           "binding";
       return false;
     }
 
     if (resolvedBindPoint == nullptr) {
       error = path + ": missing SM5 declaration handle binding '" +
-              operand.BindHandle + "'";
+              operand.FromHandle + "'";
       return false;
     }
 
@@ -2142,7 +2106,7 @@ static bool InstantiateOperand(const Operand &operandTemplate,
       }
     }
 
-    // Binding resolution can append legacy indices (for example CB range index).
+    // Binding resolution can append extra binding indices (for example CB range index).
     // Preserve those values in IndexEntries so serialization keeps operands intact.
     while (immediateCursor < operand.Indices.size()) {
       Operand::Index appendedIndex;
@@ -2240,75 +2204,155 @@ static bool BuildRewriteInstructions(const std::vector<Instruction> &templates,
   return true;
 }
 
-static bool PrefilterMatches(const Program &program,
-                             const RuntimePrefilter &prefilter) {
-  switch (prefilter.Kind) {
-  case PrefilterKind::CheckShaderVersion:
-    return program.MajorVersion == prefilter.ExpectedMajorVersion &&
-           program.MinorVersion == prefilter.ExpectedMinorVersion;
-  case PrefilterKind::CheckOpcodeCount: {
-    uint32_t count = 0;
-    for (const auto &instruction : program.Instructions) {
-      if (instruction.Opcode == prefilter.FilterOpcode) {
-        ++count;
-      }
-    }
-    if (prefilter.ExpectedCount < 0) {
-      return count <= static_cast<uint32_t>(-prefilter.ExpectedCount);
-    }
-    if (prefilter.ExpectedCount == 0) {
-      return count == 0;
-    }
-    return count >= static_cast<uint32_t>(prefilter.ExpectedCount);
+static bool MatchesOpcodeCount(uint32_t count, int32_t expectedCount) {
+  if (expectedCount < 0) {
+    return count <= static_cast<uint32_t>(-expectedCount);
   }
-  case PrefilterKind::CheckResourceCount:
-    return static_cast<int32_t>(program.Resources.size()) >=
-           prefilter.ExpectedResourceCount;
-  case PrefilterKind::CheckPatternMatch:
-    if (prefilter.HasMatchSequence) {
-      return !CollectSequenceMatches(program, prefilter.MatchSequence).empty();
+  if (expectedCount == 0) {
+    return count == 0;
+  }
+  return count >= static_cast<uint32_t>(expectedCount);
+}
+
+static uint32_t CountOpcodeMatches(const Program &program, Opcode opcode) {
+  uint32_t count = 0;
+  for (const auto &instruction : program.Instructions) {
+    if (instruction.Opcode == opcode) {
+      ++count;
     }
-    if (prefilter.HasMatch) {
-      return !CollectMatches(program, prefilter.Match).empty();
-    }
+  }
+  return count;
+}
+
+static bool TryParseBoolLiteral(const std::string &text, bool &value) {
+  if (_stricmp(text.c_str(), "true") == 0) {
+    value = true;
+    return true;
+  }
+  if (_stricmp(text.c_str(), "false") == 0) {
+    value = false;
+    return true;
+  }
+  return false;
+}
+
+static bool TryParseSignedLiteral(const std::string &text, int64_t &value) {
+  char *end = nullptr;
+  const long long parsed = std::strtoll(text.c_str(), &end, 0);
+  if (end == nullptr || *end != '\0') {
+    return false;
+  }
+  value = static_cast<int64_t>(parsed);
+  return true;
+}
+
+static bool TryParseUnsignedLiteral(const std::string &text, uint64_t &value) {
+  char *end = nullptr;
+  const unsigned long long parsed = std::strtoull(text.c_str(), &end, 0);
+  if (end == nullptr || *end != '\0') {
+    return false;
+  }
+  value = static_cast<uint64_t>(parsed);
+  return true;
+}
+
+static bool TryParseFloatLiteral(const std::string &text, double &value) {
+  char *end = nullptr;
+  const double parsed = std::strtod(text.c_str(), &end);
+  if (end == nullptr || *end != '\0') {
+    return false;
+  }
+  value = parsed;
+  return true;
+}
+
+template <typename TValue>
+static bool ApplyComparison(RecipeConditionCompareOp op, const TValue &lhs,
+                            const TValue &rhs) {
+  switch (op) {
+  case RecipeConditionCompareOp::Eq:
+    return lhs == rhs;
+  case RecipeConditionCompareOp::Ne:
+    return lhs != rhs;
+  case RecipeConditionCompareOp::Gt:
+    return lhs > rhs;
+  case RecipeConditionCompareOp::Gte:
+    return lhs >= rhs;
+  case RecipeConditionCompareOp::Lt:
+    return lhs < rhs;
+  case RecipeConditionCompareOp::Lte:
+    return lhs <= rhs;
+  case RecipeConditionCompareOp::None:
     return false;
   }
 
   return false;
 }
 
-static RecipeStepResult ExecutePrefilterStep(
-    const Program &program, const std::vector<RecipePrefilter> &prefilterModels,
-  RecipePrefilterMode mode, const std::string &stateKey,
-  RecipeContext &context) {
-  uint32_t matchedChecks = 0;
-  for (const RecipePrefilter &prefilterModel : prefilterModels) {
-    RuntimePrefilter prefilter;
-    std::string compileError;
-    if (!CompilePrefilter(prefilterModel, prefilter, compileError)) {
-      return MakeRecipeStepFailure(context, std::move(compileError));
-    }
-
-    if (PrefilterMatches(program, prefilter)) {
-      ++matchedChecks;
-      if (mode == RecipePrefilterMode::Any) {
-        return MakeRecipeStepSuccess(false, matchedChecks);
-      }
-      continue;
-    }
-
-    if (mode == RecipePrefilterMode::All) {
-      break;
-    }
+static bool EvaluateComparison(const RecipeStepCondition &condition,
+                               const RecipeContext &context) {
+  if (condition.CompareOp == RecipeConditionCompareOp::None) {
+    return false;
   }
 
-  const bool matched = mode == RecipePrefilterMode::All
-                           ? matchedChecks == prefilterModels.size()
-                           : matchedChecks != 0;
-  if (!stateKey.empty()) {
-    context.SetState<bool>(stateKey, matched);
+  const std::any *lhsValue = nullptr;
+  if (!condition.Compare.State.empty()) {
+    const auto stateIt = context.State.find(condition.Compare.State);
+    if (stateIt != context.State.end()) {
+      lhsValue = &stateIt->second;
+    }
+  } else if (!condition.Compare.Input.empty()) {
+    lhsValue = context.FindVariableAny(condition.Compare.Input);
   }
-  return MakeRecipeStepSuccess(false, matchedChecks);
+
+  if (lhsValue == nullptr) {
+    return false;
+  }
+
+  const std::string &rhsText = condition.Compare.Value;
+  if (const bool *lhs = std::any_cast<bool>(lhsValue)) {
+    bool rhs = false;
+    return TryParseBoolLiteral(rhsText, rhs) &&
+           ApplyComparison(condition.CompareOp, *lhs, rhs);
+  }
+  if (const uint32_t *lhs = std::any_cast<uint32_t>(lhsValue)) {
+    uint64_t rhs = 0;
+    return TryParseUnsignedLiteral(rhsText, rhs) &&
+           ApplyComparison(condition.CompareOp, *lhs,
+                           static_cast<uint32_t>(rhs));
+  }
+  if (const int32_t *lhs = std::any_cast<int32_t>(lhsValue)) {
+    int64_t rhs = 0;
+    return TryParseSignedLiteral(rhsText, rhs) &&
+           ApplyComparison(condition.CompareOp, *lhs,
+                           static_cast<int32_t>(rhs));
+  }
+  if (const uint64_t *lhs = std::any_cast<uint64_t>(lhsValue)) {
+    uint64_t rhs = 0;
+    return TryParseUnsignedLiteral(rhsText, rhs) &&
+           ApplyComparison(condition.CompareOp, *lhs, rhs);
+  }
+  if (const int64_t *lhs = std::any_cast<int64_t>(lhsValue)) {
+    int64_t rhs = 0;
+    return TryParseSignedLiteral(rhsText, rhs) &&
+           ApplyComparison(condition.CompareOp, *lhs, rhs);
+  }
+  if (const float *lhs = std::any_cast<float>(lhsValue)) {
+    double rhs = 0.0;
+    return TryParseFloatLiteral(rhsText, rhs) &&
+           ApplyComparison(condition.CompareOp, *lhs,
+                           static_cast<float>(rhs));
+  }
+  if (const double *lhs = std::any_cast<double>(lhsValue)) {
+    double rhs = 0.0;
+    return TryParseFloatLiteral(rhsText, rhs) &&
+           ApplyComparison(condition.CompareOp, *lhs, rhs);
+  }
+  if (const std::string *lhs = std::any_cast<std::string>(lhsValue)) {
+    return ApplyComparison(condition.CompareOp, *lhs, rhsText);
+  }
+
+  return false;
 }
 
 static bool EvaluateStepCondition(const RecipeStepCondition &condition,
@@ -2374,6 +2418,8 @@ static bool EvaluateStepCondition(const RecipeStepCondition &condition,
         break;
       }
     }
+  } else if (condition.CompareOp != RecipeConditionCompareOp::None) {
+    value = EvaluateComparison(condition, context);
   }
 
   return condition.Negate ? !value : value;
@@ -2418,7 +2464,9 @@ ExecuteRewriteRules(Program &program, const std::string &stepName,
     }
 
     dxp::PatchRuleReport ruleReport;
-    ruleReport.Name = stepName + ".rule" + std::to_string(ruleIndex);
+    ruleReport.Name = ruleModel.Name.empty()
+                ? (stepName + ".rule" + std::to_string(ruleIndex))
+                : ruleModel.Name;
 
     std::vector<MatchResult> matches;
     std::string matchError;
@@ -2426,11 +2474,15 @@ ExecuteRewriteRules(Program &program, const std::string &stepName,
                      matches, matchError)) {
       return MakeRecipeStepFailure(context, std::move(matchError));
     }
+    const bool matchedRule = !matches.empty();
+    if (!ruleModel.Name.empty()) {
+      context.SetState<bool>(ruleModel.Name, matchedRule);
+    }
     result.MatchCount += static_cast<uint32_t>(matches.size());
     ruleReport.MatchCount = static_cast<uint32_t>(matches.size());
     if (matches.empty()) {
       result.RuleReports.push_back(std::move(ruleReport));
-      if (required)
+      if (required || rule.RequiredMatch)
         return MakeRecipeStepFailure(
             context, "step[" + stepName + "].rule[" +
                          std::to_string(ruleIndex) +
@@ -2585,38 +2637,118 @@ RecipeStep MakeCustomRecipeStep(std::string name, RecipeStepExecutor execute) {
 }
 
 RecipeStep MakeRewriteRulesStep(std::string name, std::vector<RecipeRule> rules,
-                                RecipeRuleApplicationMode mode, bool required) {
+                                RecipeRuleApplicationMode mode,
+                                bool abortOnFailure) {
   RecipeStep step;
   step.Name = std::move(name);
-  step.Required = required;
+  step.AbortOnFailure = abortOnFailure;
   step.Execute = [name = step.Name, rules = std::move(rules), mode,
-                  required](RecipeContext &context) {
+                  abortOnFailure](RecipeContext &context) {
     if (context.ProgramHandle == nullptr) {
       return MakeRecipeStepFailure(
           context, "recipe context is missing active SM5 program");
     }
     return ExecuteRewriteRules(*context.ProgramHandle, name, rules, mode,
-                               required, context);
+                               abortOnFailure, context);
   };
   return step;
 }
 
-RecipeStep MakePrefilterStep(std::string name,
-                             std::vector<RecipePrefilter> checks,
-                             std::string setState,
-                             RecipePrefilterMode mode) {
+RecipeStep MakeCheckShaderVersionStep(std::string name, uint32_t majorVersion,
+                                      uint32_t minorVersion,
+                                      bool abortOnFailure) {
   RecipeStep step;
   step.Name = std::move(name);
-  step.Execute = [stepName = step.Name, checks = std::move(checks),
-                  setState = std::move(setState), mode](RecipeContext &context) {
+  step.AbortOnFailure = abortOnFailure;
+  step.Execute = [stepName = step.Name, majorVersion,
+                  minorVersion](RecipeContext &context) {
     if (context.ProgramHandle == nullptr) {
       return MakeRecipeStepFailure(
           context, stepName + ": recipe context is missing active SM5 program");
     }
 
-    const std::string &stateKey = setState.empty() ? stepName : setState;
-    return ExecutePrefilterStep(*context.ProgramHandle, checks, mode, stateKey,
-                                context);
+    const Program &program = *context.ProgramHandle;
+    const bool matched = program.MajorVersion == majorVersion &&
+                         program.MinorVersion == minorVersion;
+    context.SetState<bool>(stepName, matched);
+    if (matched) {
+      return MakeRecipeStepSuccess(false, 1);
+    }
+
+    return MakeRecipeStepFailure(
+        context, stepName + ": expected shader version " +
+                     std::to_string(majorVersion) + "_" +
+                     std::to_string(minorVersion) + ", found " +
+                     std::to_string(program.MajorVersion) + "_" +
+                     std::to_string(program.MinorVersion));
+  };
+  return step;
+}
+
+RecipeStep MakeCheckOpcodeCountStep(std::string name, std::string opcode,
+                                    int32_t expectedCount,
+                                    bool abortOnFailure) {
+  RecipeStep step;
+  step.Name = std::move(name);
+  step.AbortOnFailure = abortOnFailure;
+  step.Execute = [stepName = step.Name, opcode = std::move(opcode),
+                  expectedCount](RecipeContext &context) {
+    if (context.ProgramHandle == nullptr) {
+      return MakeRecipeStepFailure(
+          context, stepName + ": recipe context is missing active SM5 program");
+    }
+
+    Opcode parsedOpcode;
+    if (!ParseOpcode(opcode, parsedOpcode)) {
+      context.SetState<bool>(stepName, false);
+      return MakeRecipeStepFailure(context,
+                                   "Unknown SM5 opcode in step '" + stepName +
+                                       "': " + opcode);
+    }
+
+    const uint32_t count =
+        CountOpcodeMatches(*context.ProgramHandle, parsedOpcode);
+    const bool matched = MatchesOpcodeCount(count, expectedCount);
+    context.SetState<bool>(stepName, matched);
+    if (matched) {
+      return MakeRecipeStepSuccess(false, count > 0 ? 1u : 0u);
+    }
+
+    return MakeRecipeStepFailure(
+        context, stepName + ": opcode '" + opcode + "' count was " +
+                     std::to_string(count) +
+                     " and did not satisfy expected_count " +
+                     std::to_string(expectedCount));
+  };
+  return step;
+}
+
+RecipeStep MakeCheckResourceCountStep(std::string name,
+                                      int32_t expectedResourceCount,
+                                      bool abortOnFailure) {
+  RecipeStep step;
+  step.Name = std::move(name);
+  step.AbortOnFailure = abortOnFailure;
+  step.Execute = [stepName = step.Name,
+                  expectedResourceCount](RecipeContext &context) {
+    if (context.ProgramHandle == nullptr) {
+      return MakeRecipeStepFailure(
+          context, stepName + ": recipe context is missing active SM5 program");
+    }
+
+    const int32_t resourceCount =
+        static_cast<int32_t>(context.ProgramHandle->Resources.size());
+    const bool matched = resourceCount >= expectedResourceCount;
+    context.SetState<bool>(stepName, matched);
+    if (matched) {
+      return MakeRecipeStepSuccess(false, resourceCount > 0 ? 1u : 0u);
+    }
+
+    return MakeRecipeStepFailure(
+        context, stepName + ": resource count was " +
+                     std::to_string(resourceCount) +
+                     " and did not satisfy expected_resources " +
+                     std::to_string(expectedResourceCount));
   };
   return step;
 }
@@ -2887,70 +3019,6 @@ RecipeStep MakeAddUavStep(std::string id, RecipeUavDecl decl) {
       });
 }
 
-RecipeStep MakeVerifyProgramStep(std::string name) {
-  RecipeStep step;
-  step.Name = std::move(name);
-  step.Execute = [](RecipeContext &context) {
-    if (context.ProgramHandle == nullptr) {
-      return MakeRecipeStepFailure(
-          context, "recipe context is missing active SM5 program");
-    }
-
-    std::string validationError;
-    if (!ValidateProgramStructure(*context.ProgramHandle, validationError)) {
-      return MakeRecipeStepFailure(
-          context, "verify_program: SM5 runtime structural validation failed: " +
-                       validationError);
-    }
-
-    std::vector<uint8_t> serializedProgram;
-    if (!RebuildShaderChunk(*context.ProgramHandle, serializedProgram)) {
-      return MakeRecipeStepFailure(
-          context, "verify_program: failed to serialize SM5 program");
-    }
-
-    RecipeStepResult result;
-    result.Success = true;
-    result.ModuleVerified = true;
-    return result;
-  };
-  return step;
-}
-
-RecipePrefilter MakeShaderVersionPrefilter(uint32_t majorVersion,
-                                           uint32_t minorVersion,
-                                           std::string name, bool required) {
-  return RecipePrefilter{}
-      .Named(std::move(name))
-      .Require(required)
-      .CheckShaderVersion(majorVersion, minorVersion);
-}
-
-RecipePrefilter MakeOpcodeCountPrefilter(std::string opcode,
-                                         int32_t expectedCount,
-                                         std::string name, bool required) {
-  return RecipePrefilter{}
-      .Named(std::move(name))
-      .Require(required)
-      .CheckOpcodeCount(std::move(opcode), expectedCount);
-}
-
-RecipePrefilter MakeResourceCountPrefilter(int32_t expectedResourceCount,
-                                           std::string name, bool required) {
-  return RecipePrefilter{}
-      .Named(std::move(name))
-      .Require(required)
-      .CheckResourceCount(expectedResourceCount);
-}
-
-RecipePrefilter MakePatternPrefilter(RecipeMatchPattern match, std::string name,
-                                     bool required) {
-  return RecipePrefilter{}
-      .Named(std::move(name))
-      .Require(required)
-      .CheckPatternMatch(std::move(match));
-}
-
 static bool ReserveTempRegisters(RecipeContext &context, uint32_t count,
                                  uint32_t &baseIndex) {
   if (context.ProgramHandle == nullptr) {
@@ -2985,7 +3053,8 @@ static RecipeStepResult ExecuteRecipeStep(Program &program,
   }
 
   return ExecuteRewriteRules(program, step.Name, step.Rules,
-                             step.ApplicationMode, step.Required, context);
+                             step.ApplicationMode, step.AbortOnFailure,
+                             context);
 }
 
 bool ExecuteRecipe(Program &program, const Recipe &recipe,
@@ -3036,9 +3105,10 @@ bool ExecuteRecipe(Program &program, const Recipe &recipe,
         stepReport.Executed = false;
         stepReport.Skipped = true;
         stepReport.Success = true;
-        stepReport.Required = step.Required;
+        stepReport.Required = step.AbortOnFailure;
         report->Steps.push_back(std::move(stepReport));
       }
+      context.SetState<bool>(step.Name, false);
       if (afterStep != nullptr && *afterStep) {
         RecipeStepResult skipped;
         skipped.Success = true;
@@ -3047,7 +3117,14 @@ bool ExecuteRecipe(Program &program, const Recipe &recipe,
       continue;
     }
 
-    const auto result = ExecuteRecipeStep(program, step, context);
+    auto result = ExecuteRecipeStep(program, step, context);
+    if (context.State.find(step.Name) == context.State.end()) {
+      context.SetState<bool>(step.Name, result.Success);
+    }
+    if (result.Success && result.ResourceBindingsChanged) {
+      RebuildProgramMetadata(program);
+      result.ResourcesRefreshed = true;
+    }
     if (afterStep != nullptr && *afterStep) {
       (*afterStep)(step.Name, result, context);
     }
@@ -3059,7 +3136,7 @@ bool ExecuteRecipe(Program &program, const Recipe &recipe,
       stepReport.Success = result.Success;
       stepReport.Changed = result.Changed;
       stepReport.StopRecipe = result.StopRecipe;
-      stepReport.Required = step.Required;
+      stepReport.Required = step.AbortOnFailure;
       stepReport.MatchCount = result.MatchCount;
       stepReport.Rules = result.RuleReports;
       stepReport.SideEffects = result.SideEffects;
@@ -3078,7 +3155,7 @@ bool ExecuteRecipe(Program &program, const Recipe &recipe,
     context.ResourcesRefreshed =
         context.ResourcesRefreshed || result.ResourcesRefreshed;
     context.ModuleVerified = context.ModuleVerified || result.ModuleVerified;
-    if (!result.Success && step.Required)
+    if (!result.Success && step.AbortOnFailure)
       return false;
     if (result.StopRecipe)
       break;

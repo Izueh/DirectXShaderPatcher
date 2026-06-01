@@ -18,6 +18,6 @@ steps:
   - kind: apply_rule
     rule: strip_outer_frc
     name: strip_outer_frc
-    mode: MatchAll
+    mode: match_all
     required: true
   - kind: prune_dead_code

@@ -32,13 +32,6 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 
-unsigned CountIgnNoiseChains(llvm::Function &function);
-unsigned CountBlueNoiseTextureLoads(llvm::Function &function,
-                                    hlsl::DxilModule &dxilModule);
-bool ReplaceIgnNoiseInComputeShaderWithTextureLoad(
-    llvm::Module &module, hlsl::DxilModule &dxilModule,
-    const TextureResourceDesc &textureDesc,
-    const CBufferDesc &frameIndexCBufferDesc, bool traceEnabled);
 bool ReplaceIgnNoiseInComputeShaderWithTextureLoadUsingRules(
     llvm::Module &module, hlsl::DxilModule &dxilModule,
     const TextureResourceDesc &textureDesc,
@@ -328,14 +321,6 @@ unsigned CountDxOpCalls(const llvm::Function &function,
   return count;
 }
 
-bool ApplyComputeNoiseRewriteUsingRules(
-    llvm::Module &module, hlsl::DxilModule &dxilModule,
-    const TextureResourceDesc &textureDesc,
-    const CBufferDesc &frameIndexCBufferDesc, bool traceEnabled) {
-  return ReplaceIgnNoiseInComputeShaderWithTextureLoadUsingRules(
-      module, dxilModule, textureDesc, frameIndexCBufferDesc, traceEnabled);
-}
-
 DxilRecipeStep MakeExpectIgnCountStep(unsigned expectedCount,
                                       std::string name) {
   return MakeCustomRecipeStep(
@@ -447,7 +432,7 @@ DxilRecipeStep MakeApplyComputeNoiseRewriteRulesStep(std::string name,
           return MakeRecipeStepSuccess(false, 0, false);
         }
 
-        if (!ApplyComputeNoiseRewriteUsingRules(
+        if (!ReplaceIgnNoiseInComputeShaderWithTextureLoadUsingRules(
                 *context.module, *context.dxilModule, textureIt->second,
                 cbufferIt->second, context.traceEnabled)) {
           return MakeRecipeStepFailure(

@@ -1,21 +1,21 @@
-﻿version: 1
+version: 1
 steps:
   - kind: add_temp
     name: add_ign_sample_coord
-    handle: ign_sample_coord
+    handles: [ign_sample_coord]
 
   - kind: add_cbuffer
     name: add_frame_constants
     handle: frame_constants
     auto_bind: true
     elements: 1
-    access_pattern: immediateIndexed
+    access_pattern: immediate_indexed
 
   - kind: add_texture
     name: add_ign_blue_noise
     handle: ign_blue_noise
     auto_bind: true
-    dimension: Texture2DArray
+    dimension: texture_2d_array
 
   - kind: add_sampler
     name: add_ign_sampler
@@ -25,8 +25,9 @@ steps:
 
   - name: objective
     rules:
-      - match:
-          rewrite_mode: ReplaceRange
+      - name: objective_rule
+        match:
+          rewrite_mode: replace_range
           sequence:
             - opcode: dp2
               capture: ign_dp2
@@ -41,7 +42,7 @@ steps:
           - opcode: mov
             operands:
               - type: temp
-                bind_handle: ign_sample_coord
+                from_handle: ign_sample_coord
                 components:
                   kind: mask
                   value: xy
@@ -49,12 +50,12 @@ steps:
           - opcode: utof
             operands:
               - type: temp
-                bind_handle: ign_sample_coord
+                from_handle: ign_sample_coord
                 components:
                   kind: mask
                   value: z
               - type: constant_buffer
-                bind_handle: frame_constants
+                from_handle: frame_constants
                 indices:
                   - immediate_lo: 0
                 components:
@@ -64,14 +65,14 @@ steps:
             operands:
               - capture: ign_dst
               - type: temp
-                bind_handle: ign_sample_coord
+                from_handle: ign_sample_coord
                 components:
                   kind: swizzle
                   value: xyzx
               - type: resource
-                bind_handle: ign_blue_noise
+                from_handle: ign_blue_noise
               - type: sampler
-                bind_handle: ign_sampler
+                from_handle: ign_sampler
               - type: immediate32
                 indices:
                   - immediate_lo: 0x00000000

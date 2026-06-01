@@ -6,7 +6,9 @@ steps:
     handles: [tmp1]
 
   - kind: apply_rules
+    name: followup_apply_rules
     rules:
-      - match:
+      - name: rule
+        match:
           opcode: mov
-          rewrite_mode: None
+          rewrite_mode: none

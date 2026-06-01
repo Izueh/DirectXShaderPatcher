@@ -190,9 +190,9 @@ static bool ParseRecipeRuleApplicationMode(const std::string &text,
                                            std::string &error) {
   static const RecipeParseEntry<DxilRecipeRuleApplicationMode>
       kRuleApplicationModeEntries[] = {
-          {"First", DxilRecipeRuleApplicationMode::First},
-          {"Last", DxilRecipeRuleApplicationMode::Last},
-          {"MatchAll", DxilRecipeRuleApplicationMode::MatchAll},
+      {"first", DxilRecipeRuleApplicationMode::First},
+      {"last", DxilRecipeRuleApplicationMode::Last},
+      {"match_all", DxilRecipeRuleApplicationMode::MatchAll},
       };
   if (ParseRecipeValueByTable(text, mode, kRuleApplicationModeEntries))
     return true;
@@ -213,6 +213,7 @@ static bool ParseRecipeResourceKind(const std::string &text,
           {"TextureCube", hlsl::DXIL::ResourceKind::TextureCube},
           {"Texture1DArray", hlsl::DXIL::ResourceKind::Texture1DArray},
           {"Texture2DArray", hlsl::DXIL::ResourceKind::Texture2DArray},
+          {"texture_2d_array", hlsl::DXIL::ResourceKind::Texture2DArray},
           {"Texture2DMSArray", hlsl::DXIL::ResourceKind::Texture2DMSArray},
           {"TextureCubeArray", hlsl::DXIL::ResourceKind::TextureCubeArray},
           {"TypedBuffer", hlsl::DXIL::ResourceKind::TypedBuffer},
@@ -1380,7 +1381,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
       DxilRecipeRuleApplicationMode applicationMode =
           DxilRecipeRuleApplicationMode::First;
       const std::string modeText =
-          stepModel.mode.empty() ? "First" : stepModel.mode;
+          stepModel.mode.empty() ? "first" : stepModel.mode;
       if (!ParseRecipeRuleApplicationMode(modeText, applicationMode,
                                           parseError)) {
         result.error = sourceName.str() + ": invalid apply_rule mode for '" +
@@ -1417,7 +1418,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
       DxilRecipeRuleApplicationMode applicationMode =
           DxilRecipeRuleApplicationMode::MatchAll;
       const std::string modeText =
-          stepModel.mode.empty() ? "MatchAll" : stepModel.mode;
+          stepModel.mode.empty() ? "match_all" : stepModel.mode;
       if (!ParseRecipeRuleApplicationMode(modeText, applicationMode,
                                           parseError)) {
         result.error =
@@ -1427,7 +1428,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
 
       if (applicationMode != DxilRecipeRuleApplicationMode::MatchAll) {
         result.error =
-            sourceName.str() + ": apply_rules only supports MatchAll mode";
+            sourceName.str() + ": apply_rules only supports match_all mode";
         return false;
       }
 

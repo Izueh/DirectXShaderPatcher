@@ -1,17 +1,15 @@
 version: 1
 steps:
-  - kind: prefilter
+  - kind: check_shader_version
     name: require_sm5_0
-    checks:
-      - kind: check_shader_version
-        major: 5
-        minor: 0
+    major: 5
+    minor: 0
 
   - kind: add_temp
     name: add_screen_uv_temp
     if:
       state: require_sm5_0
-    handle: screen_uv_temp
+    handles: [screen_uv_temp]
 
   - kind: add_input
     name: add_screen_uv_x
@@ -39,32 +37,33 @@ steps:
   - name: inject_screen_uv_math
     if:
       state: require_sm5_0
-    mode: MatchAll
+    mode: match_all
     rules:
-      - match:
-          rewrite_mode: ReplaceRange
+      - name: inject_screen_uv_math_rule
+        match:
+          rewrite_mode: replace_range
           sequence:
             - opcode: ret
         emit:
           - opcode: div
             operands:
-              - { type: temp, bind_handle: screen_uv_temp, components: { kind: mask, value: xy } }
-              - { type: input, bind_handle: screen_uv_x, components: { kind: swizzle, value: xyxx } }
-              - { type: input, bind_handle: screen_uv_x, components: { kind: swizzle, value: wwww } }
+              - { type: temp, from_handle: screen_uv_temp, components: { kind: mask, value: xy } }
+              - { type: input, from_handle: screen_uv_x, components: { kind: swizzle, value: xyxx } }
+              - { type: input, from_handle: screen_uv_x, components: { kind: swizzle, value: wwww } }
           - opcode: div
             operands:
-              - { type: temp, bind_handle: screen_uv_temp, components: { kind: mask, value: zw } }
-              - { type: input, bind_handle: screen_uv_y, components: { kind: swizzle, value: xxxy } }
-              - { type: input, bind_handle: screen_uv_y, components: { kind: swizzle, value: wwww } }
+              - { type: temp, from_handle: screen_uv_temp, components: { kind: mask, value: zw } }
+              - { type: input, from_handle: screen_uv_y, components: { kind: swizzle, value: xxxy } }
+              - { type: input, from_handle: screen_uv_y, components: { kind: swizzle, value: wwww } }
           - opcode: add
             operands:
-              - { type: temp, bind_handle: screen_uv_temp, components: { kind: mask, value: xy } }
-              - { type: temp, bind_handle: screen_uv_temp, modifier: neg, components: { kind: swizzle, value: zwzz } }
-              - { type: temp, bind_handle: screen_uv_temp, components: { kind: swizzle, value: xyxx } }
+              - { type: temp, from_handle: screen_uv_temp, components: { kind: mask, value: xy } }
+              - { type: temp, from_handle: screen_uv_temp, modifier: neg, components: { kind: swizzle, value: zwzz } }
+              - { type: temp, from_handle: screen_uv_temp, components: { kind: swizzle, value: xyxx } }
           - opcode: mul
             operands:
-              - { type: output, bind_handle: screen_uv_out, components: { kind: mask, value: xy } }
-              - { type: temp, bind_handle: screen_uv_temp, components: { kind: swizzle, value: xyxx } }
+              - { type: output, from_handle: screen_uv_out, components: { kind: mask, value: xy } }
+              - { type: temp, from_handle: screen_uv_temp, components: { kind: swizzle, value: xyxx } }
               - type: immediate32
                 indices:
                   - { immediate_lo: 0x3F000000 }

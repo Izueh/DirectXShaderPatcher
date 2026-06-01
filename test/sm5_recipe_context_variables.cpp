@@ -51,9 +51,12 @@ steps:
   - kind: apply_rules
     name: rewrite_with_runtime_vars
     if:
-      input: enable_noise_patch
+      eq:
+        input: enable_noise_patch
+        value: true
     rules:
-      - match:
+      - name: rewrite_with_runtime_vars_rule
+        match:
           opcode: mul
           operands:
             - capture: dst
@@ -127,6 +130,13 @@ steps:
   const uint32_t *restoredSeed = context.FindVariable<uint32_t>("frame_seed");
   if (restoredSeed == nullptr || *restoredSeed != 0xDEADBEEFu) {
     std::cerr << "Expected ResetVariables to restore initial frame_seed value.\n";
+    return 1;
+  }
+
+  const bool *hasMulMatch =
+      context.FindState<bool>("rewrite_with_runtime_vars_rule");
+  if (hasMulMatch == nullptr || !*hasMulMatch) {
+    std::cerr << "Expected rule name to publish true match outcome.\n";
     return 1;
   }
 

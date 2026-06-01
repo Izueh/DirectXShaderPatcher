@@ -1,0 +1,14 @@
+version: 1
+steps:
+  - kind: apply_rules
+    name: invalid_predicate_selector
+    if:
+      eq:
+        state: has_mul
+        input: enable_patch
+        value: true
+    rules:
+      - name: rule
+        match:
+          opcode: mul
+          rewrite_mode: none

@@ -124,7 +124,7 @@ struct Operand {
   uint32_t ComponentMode = kOperandComponentNoSwizzle;
   std::vector<Index> IndexEntries;
   std::vector<uint32_t> Indices;
-  std::string BindHandle;
+  std::string FromHandle;
   OperandModifier Modifier = kOperandModifierNone;
   std::vector<uint32_t> ImmediateValues;
   std::shared_ptr<Operand> RelativeOperand;

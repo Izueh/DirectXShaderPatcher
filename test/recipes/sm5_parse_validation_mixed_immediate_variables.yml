@@ -5,7 +5,8 @@ steps:
     if:
       input: enable_noise_patch
     rules:
-      - match:
+      - name: rule
+        match:
           opcode: mul
           operands:
             - capture: dst

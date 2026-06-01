@@ -3,7 +3,8 @@ steps:
   - kind: apply_rules
     name: invalid_immediate_token_kind
     rules:
-      - match:
+      - name: rule
+        match:
           opcode: mul
         emit:
           - opcode: mov

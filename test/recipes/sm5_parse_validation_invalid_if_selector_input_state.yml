@@ -3,10 +3,11 @@ steps:
   - kind: apply_rules
     name: invalid_if_selector
     if:
-      state: prefilter_ok
+      state: probe_ok
       input: enable_noise_patch
     rules:
-      - match:
+      - name: rule
+        match:
           opcode: mul
         emit:
           - opcode: mov

@@ -1,11 +1,9 @@
-﻿version: 1
+version: 1
 steps:
-  - kind: prefilter
+  - kind: check_shader_version
     name: require_sm5_0
-    checks:
-      - kind: check_shader_version
-        major: 5
-        minor: 0
+    major: 5
+    minor: 0
 
   - kind: add_texture
     name: add_tex0
@@ -19,7 +17,8 @@ steps:
 
   - name: portable
     rules:
-      - match:
+      - name: portable_sample_rule
+        match:
           opcode: sample_l
           operands:
             - capture: dst
@@ -30,13 +29,14 @@ steps:
               - capture: dst
               - capture: coord
               - type: resource
-                bind_handle: tex0
+                from_handle: tex0
               - type: sampler
-                bind_handle: samp0
+                from_handle: samp0
               - type: immediate32
                 indices:
                   - immediate_lo: 0x00000000
-      - match:
+      - name: portable_mul_rule
+        match:
           opcode: mul
           operands:
             - type: temp

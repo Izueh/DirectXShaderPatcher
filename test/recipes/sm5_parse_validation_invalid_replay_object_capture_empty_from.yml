@@ -3,7 +3,8 @@ steps:
   - kind: apply_rules
     name: invalid_replay_object_capture_empty
     rules:
-      - match:
+      - name: rule
+        match:
           opcode: mul
           operands:
             - capture: dst

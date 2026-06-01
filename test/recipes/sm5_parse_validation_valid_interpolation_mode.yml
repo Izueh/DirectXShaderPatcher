@@ -1,11 +1,9 @@
-﻿version: 1
+version: 1
 steps:
-  - kind: prefilter
+  - kind: check_shader_version
     name: require_sm5_0
-    checks:
-      - kind: check_shader_version
-        major: 5
-        minor: 0
+    major: 5
+    minor: 0
 
   - kind: add_input
     name: add_interpolated_input
@@ -15,14 +13,15 @@ steps:
 
   - name: interpolation_mode_ok
     rules:
-      - match:
+      - name: interpolation_mode_ok_rule
+        match:
           opcode: ret
         emit:
           - opcode: dcl_input_ps
             interpolation_mode: linear
             operands:
               - type: input
-                bind_handle: interpolated_input
+                from_handle: interpolated_input
                 components:
                   kind: mask
                   value: xyzw

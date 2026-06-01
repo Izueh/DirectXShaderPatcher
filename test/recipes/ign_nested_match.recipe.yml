@@ -44,6 +44,6 @@ steps:
   - kind: apply_rule
     rule: strip_ign_outer_frc
     name: strip_ign_outer_frc
-    mode: MatchAll
+    mode: match_all
     required: true
   - kind: prune_dead_code

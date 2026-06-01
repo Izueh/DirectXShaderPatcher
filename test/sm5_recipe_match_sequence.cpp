@@ -89,8 +89,9 @@ int main(int argc, char **argv) {
 steps:
   - name: replace_frc_mul_sequence
     rules:
-      - match:
-          rewrite_mode: ReplaceRange
+      - name: inline_rule_1
+        match:
+          rewrite_mode: replace_range
           sequence:
             - opcode: frc
               capture: ign_frc
@@ -225,13 +226,14 @@ steps:
   const char *matchOnlyRecipeText = R"YAML(version: 1
 steps:
   - name: match_only_probe
-    required: true
-    mode: First
+    abort_on_failure: true
+    mode: first
     rules:
-      - match:
+      - name: inline_rule_2
+        match:
           opcode: frc
           capture: ign_frc
-          rewrite_mode: None
+          rewrite_mode: none
 )YAML";
 
   dxp::sm5::RecipeParseResult matchOnlyParseResult;

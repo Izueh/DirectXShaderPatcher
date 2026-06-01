@@ -1,0 +1,21 @@
+version: 1
+rewrite_rules:
+  - name: disallowed_top_level_rule
+    match:
+      opcode: mul
+    emit:
+      - opcode: mov
+        operands:
+          - type: temp
+            indices:
+              - representation: immediate32
+                immediate_lo: 0
+          - type: temp
+            indices:
+              - representation: immediate32
+                immediate_lo: 1
+steps:
+  - kind: check_shader_version
+    name: require_sm5_0
+    major: 5
+    minor: 0

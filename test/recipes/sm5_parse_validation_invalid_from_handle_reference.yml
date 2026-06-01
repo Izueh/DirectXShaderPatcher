@@ -1,15 +1,14 @@
-﻿version: 1
+version: 1
 steps:
-  - kind: prefilter
+  - kind: check_shader_version
     name: require_sm5_0
-    checks:
-      - kind: check_shader_version
-        major: 5
-        minor: 0
+    major: 5
+    minor: 0
 
   - name: bind_validate
     rules:
-      - match:
+      - name: rule
+        match:
           opcode: sample_l
           operands:
             - capture: dst
@@ -20,7 +19,7 @@ steps:
               - capture: dst
               - capture: coord
               - type: resource
-                bind_handle: missing_texture
+                from_handle: missing_texture
               - type: sampler
                 indices:
                   - immediate_lo: 0

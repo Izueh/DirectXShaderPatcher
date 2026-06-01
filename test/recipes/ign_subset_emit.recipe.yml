@@ -4,7 +4,7 @@ resources:
   textures:
     - id: fast_noise
       name: FASTNoiseTexture
-      kind: Texture2DArray
+      kind: texture_2d_array
       element: F32
       width: 2
       binding:
@@ -311,9 +311,9 @@ steps:
     id: frame_constants
   - kind: apply_rule
     rule: ign_noise_rhs_inner
-    mode: MatchAll
+    mode: match_all
     required: false
   - kind: apply_rule
     rule: ign_noise_lhs_inner
-    mode: MatchAll
+    mode: match_all
     required: false

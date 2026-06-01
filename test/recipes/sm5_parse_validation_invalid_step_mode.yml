@@ -1,4 +1,7 @@
 version: 1
 steps:
-  - kind: refresh_resources
-    mode: MatchAll
+  - kind: add_input
+    name: invalid_mode_step
+    handle: mode_invalid_input
+    auto_bind: true
+    mode: match_all

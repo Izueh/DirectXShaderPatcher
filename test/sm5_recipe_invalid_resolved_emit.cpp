@@ -31,7 +31,8 @@ int main(int argc, char **argv) {
 steps:
   - name: invalid_resolved_emit
     rules:
-      - match:
+      - name: inline_rule_1
+        match:
           opcode: frc
           operands:
             - capture: dst

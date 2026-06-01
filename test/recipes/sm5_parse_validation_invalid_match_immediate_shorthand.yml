@@ -1,8 +1,10 @@
 version: 1
 steps:
   - kind: apply_rules
+    name: invalid_match_immediate_shorthand
     rules:
-      - match:
+      - name: rule
+        match:
           opcode: mov
           operands:
             - capture: dst

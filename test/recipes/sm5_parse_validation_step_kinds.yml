@@ -2,34 +2,38 @@ version: 1
 steps:
   - kind: add_temp
     name: add_tmp0
-    handle: tmp0
+    handles: [tmp0]
 
-  - kind: prefilter
-    name: require_mul_probe
-    checks:
-      - kind: check_pattern_match
-        match:
-          opcode: mul
+  - kind: check_shader_version
+    name: require_sm5_0
+    major: 5
+    minor: 0
+
+  - kind: check_opcode_count
+    name: require_frc_opcode
+    opcode: frc
+    expected_count: 1
+
+  - kind: check_resource_count
+    name: require_resource_floor
+    expected_resources: 0
 
   - kind: apply_rules
     name: apply_probe
-    mode: MatchAll
+    mode: match_all
+    if:
+      state: require_sm5_0
     rules:
-      - match:
+      - name: apply_probe_rule
+        match:
           opcode: frc
-          rewrite_mode: None
+          rewrite_mode: none
 
-  - kind: refresh_resources
-    name: refresh
+  - kind: add_input
+    name: add_runtime_input
+    handle: in_runtime
+    auto_bind: true
     if:
-      all:
-        - state: require_mul_probe
-        - state: require_mul_probe
-
-  - kind: verify_program
-    name: verify
-    if:
-      any:
-        - state: require_mul_probe
-        - state: optional_probe
-          not: true
+      and:
+        - state: require_sm5_0
+        - state: require_resource_floor

@@ -142,9 +142,9 @@ int main() {
   {
     dxp::sm5::RecipeParseResult parseResult;
     if (!ParseFixture(
-            "test/recipes/sm5_parse_validation_add_temp_bind_handle.yml",
+            "test/recipes/sm5_parse_validation_add_temp_from_handle.yml",
             parseResult)) {
-      std::cerr << "Expected add_temp handles to satisfy temp bind_handle "
+      std::cerr << "Expected add_temp handles to satisfy temp from_handle "
                    "validation: "
                 << parseResult.Error << "\n";
       return 1;
@@ -154,10 +154,10 @@ int main() {
   {
     dxp::sm5::RecipeParseResult parseResult;
     if (!ParseFixture(
-            "test/recipes/sm5_parse_validation_add_temp_handles_bind_handle.yml",
+            "test/recipes/sm5_parse_validation_add_temp_handles_from_handle.yml",
             parseResult)) {
       std::cerr << "Expected add_temp handles list to satisfy temp "
-                   "bind_handle validation: "
+                   "from_handle validation: "
                 << parseResult.Error << "\n";
       return 1;
     }
@@ -178,8 +178,50 @@ int main() {
     dxp::sm5::RecipeParseResult parseResult;
     if (!ParseFixture("test/recipes/sm5_parse_validation_rewrite_modes.yml",
                       parseResult)) {
-      std::cerr << "Expected SM5 Before/After rewrite modes to parse: "
+      std::cerr << "Expected SM5 before/after indexed-anchor rewrite "
+                   "modes to parse: "
                 << parseResult.Error << "\n";
+      return 1;
+    }
+  }
+
+  {
+    dxp::sm5::RecipeParseResult parseResult;
+    if (!ParseFixture(
+            "test/recipes/sm5_parse_validation_required_match_and_state.yml",
+            parseResult)) {
+      std::cerr << "Expected SM5 required_match parsing and name-driven "
+                   "rule-state publication schema to parse: "
+                << parseResult.Error << "\n";
+      return 1;
+    }
+  }
+
+  {
+    dxp::sm5::RecipeParseResult parseResult;
+    if (!ParseFixture("test/recipes/sm5_parse_validation_predicate_ops.yml",
+                      parseResult)) {
+      std::cerr << "Expected SM5 predicate operators (eq/ne/gt/gte/lt/lte, and/or) to parse: "
+                << parseResult.Error << "\n";
+      return 1;
+    }
+  }
+
+  {
+    dxp::sm5::RecipeParseResult parseResult;
+    if (ParseFixture(
+            "test/recipes/sm5_parse_validation_invalid_predicate_selector.yml",
+            parseResult)) {
+      std::cerr << "Expected predicate comparison with both state and input "
+                   "selectors to fail parsing.\n";
+      return 1;
+    }
+
+    if (!Contains(parseResult.Error,
+                  "SM5 step if comparison requires exactly one of state or "
+                  "input")) {
+      std::cerr << "Expected predicate selector exclusivity validation "
+                   "error.\n";
       return 1;
     }
   }
@@ -200,7 +242,7 @@ int main() {
     if (!ParseFixture(
             "test/recipes/sm5_parse_validation_replay_object_capture_refs.yml",
             parseResult)) {
-      std::cerr << "Expected replay object capture/match_capture/replace "
+      std::cerr << "Expected replay object capture/match_capture "
                    "syntax to parse: "
                 << parseResult.Error << "\n";
       return 1;
@@ -263,17 +305,45 @@ int main() {
 
   {
     dxp::sm5::RecipeParseResult parseResult;
-        if (ParseFixture(
-          "test/recipes/sm5_parse_validation_invalid_legacy_top_level.yml",
+    if (!ParseFixture(
+            "test/recipes/sm5_parse_validation_valid_check_step.yml",
             parseResult)) {
-      std::cerr << "Expected legacy top-level usage to fail parsing.\n";
+      std::cerr << "Expected equivalent step-based check schema to parse: "
+                << parseResult.Error << "\n";
+      return 1;
+    }
+  }
+
+  {
+    dxp::sm5::RecipeParseResult parseResult;
+    if (ParseFixture(
+            "test/recipes/sm5_parse_validation_invalid_top_level_rewrite_rules.yml",
+            parseResult)) {
+      std::cerr << "Expected top-level rewrite_rules to fail parsing.\n";
       return 1;
     }
 
     if (!Contains(parseResult.Error,
-                  "top-level prefilters are deprecated and unsupported in "
-                  "schema version 1; use prefilter steps")) {
-      std::cerr << "Expected top-level prefilter rejection error.\n";
+                  "schema version 1 requires steps and does not allow top-level rewrite_rules")) {
+      std::cerr << "Expected top-level rewrite_rules validation error.\n";
+      return 1;
+    }
+  }
+
+  {
+    dxp::sm5::RecipeParseResult parseResult;
+    if (ParseFixture(
+            "test/recipes/"
+            "sm5_parse_validation_invalid_equivalent_check_step.yml",
+            parseResult)) {
+      std::cerr << "Expected equivalent check-step validation to fail "
+                   "parsing.\n";
+      return 1;
+    }
+
+    if (!Contains(parseResult.Error,
+                  "SM5 check_shader_version steps require major and minor")) {
+      std::cerr << "Expected equivalent check-step validation error.\n";
       return 1;
     }
   }
@@ -287,8 +357,7 @@ int main() {
     }
 
     if (!Contains(parseResult.Error,
-                  "SM5 step mode is only valid for apply_rules or prefilter "
-                  "steps")) {
+                  "SM5 step mode is only valid for apply_rules steps")) {
       std::cerr << "Expected step mode validation error.\n";
       return 1;
     }
@@ -296,16 +365,53 @@ int main() {
 
   {
     dxp::sm5::RecipeParseResult parseResult;
+    if (ParseFixture(
+            "test/recipes/"
+            "sm5_parse_validation_invalid_duplicate_name_cross_kind.yml",
+            parseResult)) {
+      std::cerr << "Expected duplicate names across steps/rules to fail "
+                   "parsing.\n";
+      return 1;
+    }
+
+    if (!Contains(parseResult.Error,
+                  "duplicate SM5 name 'shared_name' reused by rule "
+                  "(already used by step)")) {
+      std::cerr << "Expected cross-kind duplicate name validation error.\n";
+      return 1;
+    }
+  }
+
+  {
+    dxp::sm5::RecipeParseResult parseResult;
+    if (ParseFixture(
+            "test/recipes/"
+            "sm5_parse_validation_invalid_missing_rule_name.yml",
+            parseResult)) {
+      std::cerr << "Expected missing explicit rule names to fail parsing.\n";
+      return 1;
+    }
+
+    if (!Contains(parseResult.Error,
+                  "SM5 rule names are required and must be unique")) {
+      std::cerr << "Expected explicit rule-name requirement validation "
+                   "error.\n";
+      return 1;
+    }
+  }
+
+  {
+    dxp::sm5::RecipeParseResult parseResult;
     if (ParseFixture("test/recipes/"
-                     "sm5_parse_validation_invalid_bind_handle_reference.yml",
+                     "sm5_parse_validation_invalid_from_handle_reference.yml",
                      parseResult)) {
-      std::cerr << "Expected unknown bind_handle reference to fail parsing.\n";
+      std::cerr << "Expected unknown from_handle reference to fail parsing.\n";
       return 1;
     }
 
     if (!Contains(parseResult.Error,
                   "unknown resource declaration handle 'missing_texture'")) {
-      std::cerr << "Expected strict bind_handle validation error for unknown "
+      std::cerr << "Expected strict from_handle validation error for unknown "
                    "handle.\n";
       return 1;
     }
@@ -337,7 +443,7 @@ int main() {
       return 1;
     }
 
-    if (!Contains(parseResult.Error, "add_temp steps require handle or handles")) {
+    if (!Contains(parseResult.Error, "add_temp steps require handles")) {
       std::cerr << "Expected add_temp handle validation error.\n";
       return 1;
     }
@@ -355,7 +461,7 @@ int main() {
     }
 
     if (!Contains(parseResult.Error,
-                  "add_temp steps cannot combine handle and handles")) {
+                  "add_temp steps no longer support handle; use handles")) {
       std::cerr << "Expected add_temp handle/handles exclusivity "
                    "validation error.\n";
       return 1;
@@ -443,22 +549,21 @@ int main() {
 
   {
     dxp::sm5::RecipeParseResult parseResult;
-        if (ParseFixture(
-          "test/recipes/sm5_parse_validation_invalid_legacy_selector.yml",
+    if (ParseFixture(
+            "test/recipes/sm5_parse_validation_invalid_operand_components_kind.yml",
             parseResult)) {
-      std::cerr << "Expected legacy selector usage to fail parsing.\n";
+      std::cerr << "Expected invalid operand components.kind to fail parsing.\n";
       return 1;
     }
 
-    if (!Contains(parseResult.Error,
-                  "SM5 operands require components.kind/components.value "
-                  "instead of mask/swizzle/select")) {
-      std::cerr << "Expected component selector validation error.\n";
+    if (!Contains(parseResult.Error, "unsupported operand components.kind")) {
+      std::cerr << "Expected operand components.kind validation error.\n";
       return 1;
     }
   }
 
   std::cout << "SM5 parser covers all non-reserved opcode names, accepts "
-               "test-boolean opcode aliases, and rejects deprecated fields.\n";
+               "test-boolean opcode aliases, and rejects invalid schema "
+               "combinations.\n";
   return 0;
 }

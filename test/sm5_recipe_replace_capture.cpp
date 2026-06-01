@@ -74,9 +74,10 @@ int main(int argc, char **argv) {
 
   const char *validRecipeText = R"YAML(version: 1
 steps:
-  - name: replace_captured_mul
+  - name: replace_window_mul
     rules:
-      - match:
+      - name: inline_rule_1
+        match:
           opcode: mul
           capture: target_mul
           operands:
@@ -91,7 +92,7 @@ steps:
 
   dxp::sm5::RecipeParseResult validParseResult;
   if (!dxp::sm5::ParseRecipeText(validRecipeText, validParseResult,
-                                 "inline-sm5-replace-capture-test")) {
+                                 "inline-sm5-replace-window-test")) {
     std::cerr << "Failed to parse inline SM5 replace recipe: "
               << validParseResult.Error << "\n";
     return 1;
@@ -100,26 +101,26 @@ steps:
   const auto validPatchResult =
       dxp::sm5::PatchContainer(inputBytes, validParseResult.Recipe);
   if (!validPatchResult.Success) {
-    std::cerr << "Failed to patch SM5 shader with replace capture recipe: "
+    std::cerr << "Failed to patch SM5 shader with replace window recipe: "
               << validPatchResult.Error << "\n";
     return 1;
   }
 
   if (validPatchResult.Report.Steps.size() != 1) {
-    std::cerr << "Expected exactly one step report for replace capture.\n";
+    std::cerr << "Expected exactly one step report for replace rewrite.\n";
     return 1;
   }
 
   const auto &stepReport = validPatchResult.Report.Steps.front();
   if (stepReport.Rules.size() != 1) {
-    std::cerr << "Expected exactly one rule report for replace capture.\n";
+    std::cerr << "Expected exactly one rule report for replace rewrite.\n";
     return 1;
   }
 
   const auto &ruleReport = stepReport.Rules.front();
   if (ruleReport.MatchCount == 0 || ruleReport.AppliedCount == 0 ||
       !ruleReport.Changed) {
-    std::cerr << "Expected replace capture rule report to record an applied "
+    std::cerr << "Expected replace rewrite rule report to record an applied "
                  "mutating match.\n";
     return 1;
   }
@@ -148,23 +149,24 @@ steps:
 
   if (!OperandsEqual(patchedInstruction.Operands[0],
                      originalInstruction.Operands[0])) {
-    std::cerr << "Expected replace-targeted MOV destination operand to "
+    std::cerr << "Expected replace MOV destination operand to "
                  "preserve the captured destination.\n";
     return 1;
   }
 
   if (!OperandsEqual(patchedInstruction.Operands[1],
                      originalInstruction.Operands[1])) {
-    std::cerr << "Expected replace-targeted MOV source operand to preserve the "
+    std::cerr << "Expected replace MOV source operand to preserve the "
                  "captured source.\n";
     return 1;
   }
 
-  const char *invalidRecipeText = R"YAML(version: 1
+  const char *invalidReplaceFieldRecipeText = R"YAML(version: 1
 steps:
-  - name: invalid_replace_capture
+  - name: invalid_replace_field
     rules:
-      - match:
+      - name: inline_rule_2
+        match:
           opcode: mul
           capture: target_mul
           operands:
@@ -178,15 +180,43 @@ steps:
               - capture: src
 )YAML";
 
-  dxp::sm5::RecipeParseResult invalidParseResult;
-  if (dxp::sm5::ParseRecipeText(invalidRecipeText, invalidParseResult,
-                                "inline-sm5-invalid-replace-capture-test")) {
-    std::cerr << "Expected parsing to reject replace capture with default "
-                 "Replace semantics.\n";
+  dxp::sm5::RecipeParseResult invalidReplaceFieldParseResult;
+  if (dxp::sm5::ParseRecipeText(invalidReplaceFieldRecipeText,
+                                invalidReplaceFieldParseResult,
+                                "inline-sm5-invalid-replace-field-test")) {
+    std::cerr << "Expected parsing to reject the removed SM5 replace field.\n";
     return 1;
   }
 
-  std::cout << "SM5 Replace rewrote the full matched instruction window and "
-               "rejected legacy replace captures.\n";
+  const char *invalidBeforeWithoutIndexRecipeText = R"YAML(version: 1
+steps:
+  - name: invalid_before_without_index
+    rules:
+      - name: inline_rule_3
+        match:
+          opcode: mul
+          capture: target_mul
+          rewrite_mode: before
+          operands:
+            - capture: dst
+            - capture: src
+        emit:
+          - opcode: mov
+            operands:
+              - capture: dst
+              - capture: src
+)YAML";
+
+  dxp::sm5::RecipeParseResult invalidBeforeWithoutIndexParseResult;
+  if (dxp::sm5::ParseRecipeText(invalidBeforeWithoutIndexRecipeText,
+                                invalidBeforeWithoutIndexParseResult,
+                                "inline-sm5-invalid-before-without-index-test")) {
+    std::cerr << "Expected parsing to reject before rewrite without "
+                 "insert_relative_index.\n";
+    return 1;
+  }
+
+  std::cout << "SM5 Replace rewrote the full matched window and parser "
+               "rejected removed replace field plus missing before index.\n";
   return 0;
 }

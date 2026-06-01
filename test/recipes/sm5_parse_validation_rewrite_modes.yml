@@ -3,22 +3,39 @@ steps:
   - kind: apply_rules
     name: before_after_probe
     rules:
-      - match:
+      - name: before_probe
+        match:
           opcode: mul
           capture: anchor
-          rewrite_mode: Before
+          rewrite_mode: before
+          insert_relative_index: 0
         emit:
           - opcode: mov
             operands:
               - { type: temp, indices: [{ immediate_lo: 0 }] }
               - { type: temp, indices: [{ immediate_lo: 0 }] }
-      - match:
+      - name: after_probe
+        match:
           opcode: mul
           capture: anchor
-          rewrite_mode: After
-        replace: anchor
+          rewrite_mode: after
+          insert_relative_index: 0
         emit:
           - opcode: mov
             operands:
               - { type: temp, indices: [{ immediate_lo: 0 }] }
               - { type: temp, indices: [{ immediate_lo: 0 }] }
+      - name: indexed_after_probe
+        match:
+          rewrite_mode: after
+          insert_relative_index: 0
+          sequence:
+            - opcode: mov
+              capture: start
+            - opcode: add
+              capture: end
+        emit:
+          - opcode: mov
+            operands:
+              - { type: temp, indices: [{ immediate_lo: 1 }] }
+              - { type: temp, indices: [{ immediate_lo: 1 }] }

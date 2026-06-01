@@ -7,7 +7,7 @@ resources:
   textures:
     - id: added_texture
       name: MyTex
-      kind: Texture2D
+      kind: texture_2d
       element: F32
       width: 4
       binding:

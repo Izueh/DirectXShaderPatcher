@@ -244,18 +244,18 @@ int main(int argc, char **argv) {
   }
 
   if (!HasMovUsingResource(patchedProgram, rawSrvIt->second)) {
-    std::cerr << "Expected rewrite emit to resolve raw SRV bind_handle in MOV "
+    std::cerr << "Expected rewrite emit to resolve raw SRV from_handle in MOV "
                  "source.\n";
     return 1;
   }
 
   if (!HasMovUsingUav(patchedProgram, rawUavIt->second)) {
     std::cerr
-        << "Expected rewrite emit to resolve UAV bind_handle in MOV source.\n";
+        << "Expected rewrite emit to resolve UAV from_handle in MOV source.\n";
     return 1;
   }
 
   std::cout << "SM5 recipe injected raw/structured resources and raw UAV with "
-               "auto-bind and bind_handle resolution.\n";
+               "auto-bind and from_handle resolution.\n";
   return 0;
 }

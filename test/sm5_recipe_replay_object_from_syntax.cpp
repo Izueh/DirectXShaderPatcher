@@ -60,10 +60,12 @@ int main(int argc, char **argv) {
 steps:
   - name: replay_object_from_syntax
     rules:
-      - match:
+      - name: inline_rule_1
+        match:
           opcode: mul
           capture: { from: inst }
           rewrite_mode: before
+          insert_relative_index: 0
           operands:
             - type: temp
               capture: { from: dst }
@@ -75,7 +77,6 @@ steps:
               indices:
                 - representation: immediate32
                   capture: { from: src_reg }
-        replace: { from: inst }
         emit:
           - opcode: mov
             operands:
