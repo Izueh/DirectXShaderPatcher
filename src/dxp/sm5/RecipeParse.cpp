@@ -17,10 +17,6 @@
 
 #include "llvm/Support/YAMLTraits.h"
 
-#if defined(_MSC_VER)
-#include <windows.h>
-#endif
-
 namespace {
 
 static std::string Lowercase(const std::string &value) {
@@ -2635,17 +2631,7 @@ bool ParseRecipeText(llvm::StringRef recipeText, RecipeParseResult &result,
 
   YamlRecipeDocument document;
   llvm::yaml::Input input(normalizedRecipeText);
-#if defined(_MSC_VER)
-  __try {
-    input >> document;
-  } __except (EXCEPTION_EXECUTE_HANDLER) {
-    result.Error = sourceName.str() +
-                   ": malformed YAML caused parser exception";
-    return false;
-  }
-#else
   input >> document;
-#endif
   if (input.error()) {
     result.Error = sourceName.str() + ": " + input.error().message();
     return false;

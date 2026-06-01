@@ -79,6 +79,7 @@ jobs:
         run: |
           cmake --preset ninja-clang-debug -DDXP_ENABLE_SDK_INSTALL=ON -DDXP_SDK_TOOLSET_SUBDIR=clang -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
           cmake --build --preset ninja-clang-debug --parallel --target dxp_lib dxcompiler dxp
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cmake --install "out/build/ninja-clang-debug" --component DirectXShaderPatcherSDK --prefix "$env:GITHUB_WORKSPACE/artifacts/release/clang-debug"
           cmake --install "out/build/ninja-clang-debug" --component DirectXShaderPatcherCLI --prefix "$env:GITHUB_WORKSPACE/artifacts/release/clang-debug"
           if (Test-Path "artifacts/release/clang-debug/DirectXShaderPatcher_SDK") {
@@ -90,6 +91,7 @@ jobs:
         run: |
           cmake --preset ninja-msvc-debug -DDXP_ENABLE_SDK_INSTALL=ON -DDXP_SDK_TOOLSET_SUBDIR=msvc -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
           cmake --build --preset ninja-msvc-debug --parallel --target dxp_lib dxcompiler dxp
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cmake --install "out/build/ninja-msvc-debug" --component DirectXShaderPatcherSDK --prefix "$env:GITHUB_WORKSPACE/artifacts/release/msvc-debug"
           cmake --install "out/build/ninja-msvc-debug" --component DirectXShaderPatcherCLI --prefix "$env:GITHUB_WORKSPACE/artifacts/release/msvc-debug"
           if (Test-Path "artifacts/release/msvc-debug/DirectXShaderPatcher_SDK") {
@@ -101,6 +103,7 @@ jobs:
         run: |
           cmake --preset ninja-clang-release -DDXP_ENABLE_SDK_INSTALL=ON -DDXP_SDK_TOOLSET_SUBDIR=clang -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
           cmake --build --preset ninja-clang-release --parallel --target dxp_lib dxcompiler dxp
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cmake --install "out/build/ninja-clang-release" --component DirectXShaderPatcherSDK --prefix "$env:GITHUB_WORKSPACE/artifacts/release/clang-release"
           cmake --install "out/build/ninja-clang-release" --component DirectXShaderPatcherCLI --prefix "$env:GITHUB_WORKSPACE/artifacts/release/clang-release"
           if (Test-Path "artifacts/release/clang-release/DirectXShaderPatcher_SDK") {
@@ -112,6 +115,7 @@ jobs:
         run: |
           cmake --preset ninja-msvc-release -DDXP_ENABLE_SDK_INSTALL=ON -DDXP_SDK_TOOLSET_SUBDIR=msvc -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
           cmake --build --preset ninja-msvc-release --parallel --target dxp_lib dxcompiler dxp
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cmake --install "out/build/ninja-msvc-release" --component DirectXShaderPatcherSDK --prefix "$env:GITHUB_WORKSPACE/artifacts/release/msvc-release"
           cmake --install "out/build/ninja-msvc-release" --component DirectXShaderPatcherCLI --prefix "$env:GITHUB_WORKSPACE/artifacts/release/msvc-release"
           if (Test-Path "artifacts/release/msvc-release/DirectXShaderPatcher_SDK") {
