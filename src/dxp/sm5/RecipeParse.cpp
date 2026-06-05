@@ -1,5 +1,7 @@
 #include "dxp/sm5/RecipeParse.h"
 
+#include "dxp/sm5/YamlTraits.h"
+
 #include "d3d11TokenizedProgramFormat.hpp"
 
 #include "dxp/sm5/Model.h"
@@ -19,71 +21,17 @@
 
 namespace {
 
-static bool ParseRuleApplicationMode(
-    const std::string &value, dxp::sm5::RecipeRuleApplicationMode &mode,
-    std::string &error) {
-  if (value.empty() || value == "first") {
-    mode = dxp::sm5::RecipeRuleApplicationMode::First;
-    return true;
-  }
-  if (value == "last") {
-    mode = dxp::sm5::RecipeRuleApplicationMode::Last;
-    return true;
-  }
-  if (value == "match_all") {
-    mode = dxp::sm5::RecipeRuleApplicationMode::MatchAll;
-    return true;
-  }
 
-  error = "unsupported SM5 rule application mode '" + value + "'";
-  return false;
-}
-
-static bool ParseRuleRewriteMode(const std::string &value,
-                                 dxp::sm5::RecipeRuleRewriteMode &mode,
-                                 std::string &error) {
-  if (value.empty()) {
-    mode = dxp::sm5::RecipeRuleRewriteMode::Replace;
-    return true;
-  }
-  if (value == "auto") {
-    error = "SM5 rewrite mode auto was removed; use replace or replace_range";
-    return false;
-  }
-  if (value == "none") {
-    mode = dxp::sm5::RecipeRuleRewriteMode::None;
-    return true;
-  }
-  if (value == "replace") {
-    mode = dxp::sm5::RecipeRuleRewriteMode::Replace;
-    return true;
-  }
-  if (value == "before") {
-    mode = dxp::sm5::RecipeRuleRewriteMode::Before;
-    return true;
-  }
-  if (value == "after") {
-    mode = dxp::sm5::RecipeRuleRewriteMode::After;
-    return true;
-  }
-  if (value == "replace_range") {
-    mode = dxp::sm5::RecipeRuleRewriteMode::ReplaceRange;
-    return true;
-  }
-
-  error = "unsupported SM5 rewrite mode '" + value + "'";
-  return false;
-}
 
 struct YamlMatch {
   std::string opcode;
   std::string capture;
-  std::string rewrite_mode;
+  dxp::sm5::RecipeRuleRewriteMode rewrite_mode = dxp::sm5::RecipeRuleRewriteMode::Replace;
   int32_t range_start_offset = 0;
   int32_t range_end_offset = -1;
   int32_t insert_relative_index = -1;
-  std::string saturate;
-  std::string interpolation_mode;
+  bool saturate = false;
+  dxp::sm5::InterpolationMode interpolation_mode;
   int32_t test_boolean = -1;
   std::vector<struct YamlOperand> operands;
   std::vector<struct YamlInstructionMatch> sequence;
@@ -92,8 +40,8 @@ struct YamlMatch {
 struct YamlInstructionMatch {
   std::string opcode;
   std::string capture;
-  std::string saturate;
-  std::string interpolation_mode;
+  bool saturate = false;
+  dxp::sm5::InterpolationMode interpolation_mode;
   int32_t test_boolean = -1;
   std::vector<struct YamlOperand> operands;
 };
@@ -105,7 +53,7 @@ struct YamlComponentSelector {
 
 struct YamlOperandIndex {
   bool any = false;
-  std::string representation;
+  dxp::sm5::RecipeOperandIndexRepresentation representation = dxp::sm5::RecipeOperandIndexRepresentation::Immediate32;
   std::string immediate_lo;
   std::string immediate_hi;
   std::string capture;
@@ -146,8 +94,8 @@ struct YamlOperand {
 
 struct YamlEmitInstruction {
   std::string opcode;
-  std::string saturate;
-  std::string interpolation_mode;
+  bool saturate = false;
+  dxp::sm5::InterpolationMode interpolation_mode;
   int32_t test_boolean = -1;
   std::vector<YamlOperand> operands;
 };
@@ -157,7 +105,7 @@ struct YamlRule {
   YamlMatch match;
   std::string replace;
   std::vector<YamlEmitInstruction> emit;
-  std::string mode;
+  dxp::sm5::RecipeRuleApplicationMode mode = dxp::sm5::RecipeRuleApplicationMode::First;
   bool required_match = false;
 };
 
@@ -185,7 +133,7 @@ struct YamlStep {
   std::string kind;
   std::string name;
   bool abort_on_failure = true;
-  std::string mode;
+  dxp::sm5::RecipeRuleApplicationMode mode = dxp::sm5::RecipeRuleApplicationMode::First;
   YamlStepCondition if_condition;
   std::vector<YamlRule> rules;
   int32_t major = INT_MIN;
@@ -198,12 +146,12 @@ struct YamlStep {
   std::string handle;
   std::vector<std::string> handles;
   bool auto_bind = false;
-  std::string dimension = "texture_2d";
-  std::string interpolation_mode = "linear";
+  dxp::sm5::ResourceDimension dimension = dxp::sm5::ResourceDimension::Texture2D;
+  dxp::sm5::InterpolationMode interpolation_mode;
   uint32_t elements = 1;
-  std::string access_pattern = "immediate_indexed";
-  std::string sampler_mode = "default";
-  std::string uav_kind = "typed";
+  dxp::sm5::CbufferAccessPattern access_pattern = dxp::sm5::CbufferAccessPattern::ImmediateIndexed;
+  dxp::sm5::SamplerMode sampler_mode = dxp::sm5::SamplerMode::Default;
+  dxp::sm5::RecipeUavKind uav_kind = dxp::sm5::RecipeUavKind::Typed;
   uint32_t stride = 16;
   bool globally_coherent = false;
   bool has_counter = false;
@@ -211,14 +159,14 @@ struct YamlStep {
 
 struct YamlTextureDecl {
   int32_t bind_point = -1;
-  std::string dimension = "texture_2d";
+  dxp::sm5::ResourceDimension dimension = dxp::sm5::ResourceDimension::Texture2D;
   std::string handle;
   bool auto_bind = false;
 };
 
 struct YamlInputDecl {
   int32_t bind_point = -1;
-  std::string interpolation_mode = "linear";
+  dxp::sm5::InterpolationMode interpolation_mode;
   std::string handle;
   bool auto_bind = false;
 };
@@ -232,14 +180,14 @@ struct YamlOutputDecl {
 struct YamlCBufferDecl {
   int32_t bind_point = -1;
   uint32_t elements = 1;
-  std::string access_pattern = "immediate_indexed";
+  dxp::sm5::CbufferAccessPattern access_pattern = dxp::sm5::CbufferAccessPattern::ImmediateIndexed;
   std::string handle;
   bool auto_bind = false;
 };
 
 struct YamlSamplerDecl {
   int32_t bind_point = -1;
-  std::string mode = "default";
+  dxp::sm5::SamplerMode mode = dxp::sm5::SamplerMode::Default;
   std::string handle;
   bool auto_bind = false;
 };
@@ -259,8 +207,8 @@ struct YamlStructuredResourceDecl {
 
 struct YamlUavDecl {
   int32_t bind_point = -1;
-  std::string kind = "typed";
-  std::string dimension = "texture_2d";
+  dxp::sm5::RecipeUavKind kind = dxp::sm5::RecipeUavKind::Typed;
+  dxp::sm5::ResourceDimension dimension = dxp::sm5::ResourceDimension::Texture2D;
   uint32_t stride = 16;
   bool globally_coherent = false;
   bool has_counter = false;
@@ -285,7 +233,6 @@ struct YamlRecipeDocument {
 
 } // namespace
 
-LLVM_YAML_IS_SEQUENCE_VECTOR(uint32_t)
 LLVM_YAML_IS_SEQUENCE_VECTOR(uint64_t)
 LLVM_YAML_IS_SEQUENCE_VECTOR(int32_t)
 LLVM_YAML_IS_SEQUENCE_VECTOR(int64_t)
@@ -474,14 +421,12 @@ template <> struct MappingTraits<YamlStep> {
     io.mapOptional("handle", step.handle);
     io.mapOptional("handles", step.handles);
     io.mapOptional("auto_bind", step.auto_bind, false);
-    io.mapOptional("dimension", step.dimension, std::string("texture_2d"));
-    io.mapOptional("interpolation_mode", step.interpolation_mode,
-                   std::string("linear"));
+    io.mapOptional("dimension", step.dimension, dxp::sm5::ResourceDimension::Texture2D);
+    io.mapOptional("interpolation_mode", step.interpolation_mode, dxp::sm5::InterpolationMode::Undefined);
     io.mapOptional("elements", step.elements, 1u);
-    io.mapOptional("access_pattern", step.access_pattern,
-             std::string("immediate_indexed"));
-    io.mapOptional("sampler_mode", step.sampler_mode, std::string("default"));
-    io.mapOptional("uav_kind", step.uav_kind, std::string("typed"));
+    io.mapOptional("access_pattern", step.access_pattern, dxp::sm5::CbufferAccessPattern::ImmediateIndexed);
+    io.mapOptional("sampler_mode", step.sampler_mode, dxp::sm5::SamplerMode::Default);
+    io.mapOptional("uav_kind", step.uav_kind, dxp::sm5::RecipeUavKind::Typed);
     io.mapOptional("stride", step.stride, 16u);
     io.mapOptional("globally_coherent", step.globally_coherent, false);
     io.mapOptional("has_counter", step.has_counter, false);
@@ -491,7 +436,7 @@ template <> struct MappingTraits<YamlStep> {
 template <> struct MappingTraits<YamlTextureDecl> {
   static void mapping(IO &io, YamlTextureDecl &decl) {
     io.mapOptional("bind_point", decl.bind_point, -1);
-    io.mapOptional("dimension", decl.dimension, std::string("texture_2d"));
+    io.mapOptional("dimension", decl.dimension, dxp::sm5::ResourceDimension::Texture2D);
     io.mapOptional("handle", decl.handle);
     io.mapOptional("auto_bind", decl.auto_bind, false);
   }
@@ -500,8 +445,7 @@ template <> struct MappingTraits<YamlTextureDecl> {
 template <> struct MappingTraits<YamlInputDecl> {
   static void mapping(IO &io, YamlInputDecl &decl) {
     io.mapOptional("bind_point", decl.bind_point, -1);
-    io.mapOptional("interpolation_mode", decl.interpolation_mode,
-                   std::string("linear"));
+    io.mapOptional("interpolation_mode", decl.interpolation_mode);
     io.mapOptional("handle", decl.handle);
     io.mapOptional("auto_bind", decl.auto_bind, false);
   }
@@ -519,8 +463,7 @@ template <> struct MappingTraits<YamlCBufferDecl> {
   static void mapping(IO &io, YamlCBufferDecl &decl) {
     io.mapOptional("bind_point", decl.bind_point, -1);
     io.mapOptional("elements", decl.elements, 1u);
-    io.mapOptional("access_pattern", decl.access_pattern,
-             std::string("immediate_indexed"));
+    io.mapOptional("access_pattern", decl.access_pattern);
     io.mapOptional("handle", decl.handle);
     io.mapOptional("auto_bind", decl.auto_bind, false);
   }
@@ -529,7 +472,7 @@ template <> struct MappingTraits<YamlCBufferDecl> {
 template <> struct MappingTraits<YamlSamplerDecl> {
   static void mapping(IO &io, YamlSamplerDecl &decl) {
     io.mapOptional("bind_point", decl.bind_point, -1);
-    io.mapOptional("mode", decl.mode, std::string("default"));
+    io.mapOptional("mode", decl.mode, dxp::sm5::SamplerMode::Default);
     io.mapOptional("handle", decl.handle);
     io.mapOptional("auto_bind", decl.auto_bind, false);
   }
@@ -555,8 +498,8 @@ template <> struct MappingTraits<YamlStructuredResourceDecl> {
 template <> struct MappingTraits<YamlUavDecl> {
   static void mapping(IO &io, YamlUavDecl &decl) {
     io.mapOptional("bind_point", decl.bind_point, -1);
-    io.mapOptional("kind", decl.kind, std::string("typed"));
-    io.mapOptional("dimension", decl.dimension, std::string("texture_2d"));
+    io.mapOptional("kind", decl.kind, dxp::sm5::RecipeUavKind::Typed);
+    io.mapOptional("dimension", decl.dimension, dxp::sm5::ResourceDimension::Texture2D);
     io.mapOptional("stride", decl.stride, 16u);
     io.mapOptional("globally_coherent", decl.globally_coherent, false);
     io.mapOptional("has_counter", decl.has_counter, false);
@@ -590,68 +533,8 @@ namespace sm5 {
 
 namespace {
 
-static bool ParseTextureDimensionToken(const std::string &value,
-                                       uint32_t &dimension,
-                                       std::string &error) {
-  if (value == "texture_1d") {
-    dimension = D3D10_SB_RESOURCE_DIMENSION_TEXTURE1D;
-    return true;
-  }
-  if (value == "texture_2d") {
-    dimension = D3D10_SB_RESOURCE_DIMENSION_TEXTURE2D;
-    return true;
-  }
-  if (value == "texture_2d_array") {
-    dimension = D3D10_SB_RESOURCE_DIMENSION_TEXTURE2DARRAY;
-    return true;
-  }
-  if (value == "texture_3d") {
-    dimension = D3D10_SB_RESOURCE_DIMENSION_TEXTURE3D;
-    return true;
-  }
-  if (value == "texture_cube") {
-    dimension = D3D10_SB_RESOURCE_DIMENSION_TEXTURECUBE;
-    return true;
-  }
 
-  error = "unsupported SM5 texture dimension: " + value;
-  return false;
-}
 
-static bool ParseCBufferAccessPatternToken(const std::string &value,
-                                           uint32_t &accessPattern,
-                                           std::string &error) {
-  if (value == "immediate_indexed") {
-    accessPattern = D3D10_SB_CONSTANT_BUFFER_IMMEDIATE_INDEXED;
-    return true;
-  }
-  if (value == "dynamic_indexed") {
-    accessPattern = D3D10_SB_CONSTANT_BUFFER_DYNAMIC_INDEXED;
-    return true;
-  }
-
-  error = "unsupported SM5 cbuffer access pattern: " + value;
-  return false;
-}
-
-static bool ParseSamplerModeToken(const std::string &value, uint32_t &mode,
-                                  std::string &error) {
-  if (value == "default") {
-    mode = D3D10_SB_SAMPLER_MODE_DEFAULT;
-    return true;
-  }
-  if (value == "comparison") {
-    mode = D3D10_SB_SAMPLER_MODE_COMPARISON;
-    return true;
-  }
-  if (value == "mono") {
-    mode = D3D10_SB_SAMPLER_MODE_MONO;
-    return true;
-  }
-
-  error = "unsupported SM5 sampler mode: " + value;
-  return false;
-}
 
 static bool ParseUavKindToken(const std::string &value, RecipeUavKind &kind,
                               std::string &error) {
@@ -672,59 +555,30 @@ static bool ParseUavKindToken(const std::string &value, RecipeUavKind &kind,
   return false;
 }
 
-static bool ParseBoolToken(const std::string &value, bool &parsedValue,
-                           std::string &error) {
-  if (value == "true") {
-    parsedValue = true;
-    return true;
-  }
-  if (value == "false") {
-    parsedValue = false;
-    return true;
-  }
 
-  error = "expected boolean token, got '" + value + "'";
-  return false;
+static std::string interpolationModeToString(
+    dxp::sm5::InterpolationMode mode) {
+  switch (mode) {
+  case dxp::sm5::InterpolationMode::Undefined:
+    return {};  // not set — let Recipe.cpp skip validation
+  case dxp::sm5::InterpolationMode::Constant:
+    return "constant";
+  case dxp::sm5::InterpolationMode::Linear:
+    return "linear";
+  case dxp::sm5::InterpolationMode::LinearCentroid:
+    return "linear_centroid";
+  case dxp::sm5::InterpolationMode::LinearNoperspective:
+    return "linear_noperspective";
+  case dxp::sm5::InterpolationMode::LinearNoperspectiveCentroid:
+    return "linear_noperspective_centroid";
+  case dxp::sm5::InterpolationMode::LinearSample:
+    return "linear_sample";
+  case dxp::sm5::InterpolationMode::LinearNoperspectiveSample:
+    return "linear_noperspective_sample";
+  }
+  return {};
 }
 
-static bool ParseInterpolationModeToken(const std::string &value,
-                                        uint32_t &mode, std::string &error) {
-  if (value == "undefined") {
-    mode = D3D10_SB_INTERPOLATION_UNDEFINED;
-    return true;
-  }
-  if (value == "constant") {
-    mode = D3D10_SB_INTERPOLATION_CONSTANT;
-    return true;
-  }
-  if (value == "linear") {
-    mode = D3D10_SB_INTERPOLATION_LINEAR;
-    return true;
-  }
-  if (value == "linear_centroid") {
-    mode = D3D10_SB_INTERPOLATION_LINEAR_CENTROID;
-    return true;
-  }
-  if (value == "linear_noperspective") {
-    mode = D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE;
-    return true;
-  }
-  if (value == "linear_noperspective_centroid") {
-    mode = D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_CENTROID;
-    return true;
-  }
-  if (value == "linear_sample") {
-    mode = D3D10_SB_INTERPOLATION_LINEAR_SAMPLE;
-    return true;
-  }
-  if (value == "linear_noperspective_sample") {
-    mode = D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_SAMPLE;
-    return true;
-  }
-
-  error = "unsupported SM5 interpolation mode: " + value;
-  return false;
-}
 
 static bool ParseOperandType(const std::string &value, OperandType &type,
                              std::string &error) {
@@ -808,33 +662,6 @@ static bool ParseOperandModifier(const std::string &value,
   return false;
 }
 
-static bool ParseOperandIndexRepresentationToken(
-    const std::string &value, RecipeOperandIndexRepresentation &representation,
-    std::string &error) {
-  if (value.empty() || value == "immediate32") {
-    representation = RecipeOperandIndexRepresentation::Immediate32;
-    return true;
-  }
-  if (value == "immediate64") {
-    representation = RecipeOperandIndexRepresentation::Immediate64;
-    return true;
-  }
-  if (value == "relative") {
-    representation = RecipeOperandIndexRepresentation::Relative;
-    return true;
-  }
-  if (value == "immediate32_plus_relative") {
-    representation = RecipeOperandIndexRepresentation::Immediate32PlusRelative;
-    return true;
-  }
-  if (value == "immediate64_plus_relative") {
-    representation = RecipeOperandIndexRepresentation::Immediate64PlusRelative;
-    return true;
-  }
-
-  error = "unsupported SM5 operand index representation: " + value;
-  return false;
-}
 
 static bool ParseIndexImmediateScalar(const std::string &token,
                                       const char *fieldName,
@@ -1149,11 +976,7 @@ static bool DecodeOperandIndexPatterns(
       return false;
     }
 
-    if (!ParseOperandIndexRepresentationToken(yamlIndex.representation,
-                                              indexPattern.Representation,
-                                              error)) {
-      return false;
-    }
+    indexPattern.Representation = yamlIndex.representation;
 
     if (!ParseIndexImmediateScalar(yamlIndex.immediate_lo,
                                    "index immediate_lo",
@@ -1839,8 +1662,8 @@ static bool BuildRecipeInstructionPattern(const YamlInstructionMatch &matchModel
   pattern = RecipeInstructionPattern{}
                 .WithOpcode(canonicalOpcodeName)
                 .CaptureAs(matchModel.capture)
-                .WithSaturate(matchModel.saturate)
-                .WithInterpolationMode(matchModel.interpolation_mode)
+                .WithSaturate(matchModel.saturate ? "true" : "false")
+                .WithInterpolationMode(interpolationModeToString(matchModel.interpolation_mode))
                 .WithTestBoolean(resolvedTestBoolean);
 
   for (const YamlOperand &operandModel : matchModel.operands) {
@@ -1869,34 +1692,23 @@ static bool ParseInstructionMatch(const YamlInstructionMatch &matchModel,
   }
   instructionMatch.HasOpcode = true;
   instructionMatch.CaptureName = matchModel.capture;
-  if (!matchModel.saturate.empty()) {
-    bool saturate = false;
-    if (!ParseBoolToken(matchModel.saturate, saturate, error)) {
-      error = "invalid SM5 saturate value: " + error;
-      return false;
-    }
-    instructionMatch.HasSaturateMatch = true;
-    instructionMatch.SaturateValue = saturate;
-  }
-    if (resolvedTestBoolean >= 0) {
+  instructionMatch.HasSaturateMatch = true;
+  instructionMatch.SaturateValue = matchModel.saturate;
+  if (resolvedTestBoolean >= 0) {
     instructionMatch.HasTestBooleanMatch = true;
     instructionMatch.MatchTestBoolean =
       static_cast<uint32_t>(resolvedTestBoolean);
   }
-  if (!matchModel.interpolation_mode.empty()) {
-    uint32_t interpolationMode = 0;
-    if (!ParseInterpolationModeToken(matchModel.interpolation_mode,
-                                     interpolationMode, error)) {
-      return false;
-    }
+  if (matchModel.interpolation_mode != dxp::sm5::InterpolationMode::Undefined) {
+    instructionMatch.HasInputInterpolationModeMatch = true;
+    instructionMatch.MatchInputInterpolationMode =
+        static_cast<uint32_t>(matchModel.interpolation_mode);
     if (instructionMatch.Opcode != Opcode{D3D10_SB_OPCODE_DCL_INPUT_PS} &&
         instructionMatch.Opcode != Opcode{D3D10_SB_OPCODE_DCL_INPUT_PS_SIV}) {
       error = "SM5 interpolation_mode is only valid for dcl_input_ps and "
               "dcl_input_ps_siv";
       return false;
     }
-    instructionMatch.HasInputInterpolationModeMatch = true;
-    instructionMatch.MatchInputInterpolationMode = interpolationMode;
   }
   for (const YamlOperand &operandModel : matchModel.operands) {
     OperandMatch operandMatch;
@@ -1920,19 +1732,12 @@ static bool ParseRule(const YamlRule &ruleModel,
   rule = RecipeRule{}.Named(ruleModel.name).ApplyMode(inheritedMode);
   rule.RequireMatch(ruleModel.required_match);
 
-  if (!ruleModel.mode.empty()) {
-    RecipeRuleApplicationMode ruleMode = RecipeRuleApplicationMode::First;
-    if (!ParseRuleApplicationMode(ruleModel.mode, ruleMode, error)) {
-      return false;
-    }
-    rule.ApplyMode(ruleMode);
+  if (ruleModel.mode != RecipeRuleApplicationMode::First) {
+    rule.ApplyMode(ruleModel.mode);
   }
 
-  RecipeRuleRewriteMode rewriteMode = RecipeRuleRewriteMode::Replace;
-  if (!ParseRuleRewriteMode(ruleModel.match.rewrite_mode, rewriteMode, error)) {
-    return false;
-  }
-  rule.RewriteAs(rewriteMode);
+  rule.RewriteAs(ruleModel.match.rewrite_mode);
+  const RecipeRuleRewriteMode rewriteMode = ruleModel.match.rewrite_mode;
   rule.RangeOffsets(ruleModel.match.range_start_offset,
                     ruleModel.match.range_end_offset);
   rule.InsertAfterRelativeIndex(ruleModel.match.insert_relative_index);
@@ -1976,8 +1781,7 @@ static bool ParseRule(const YamlRule &ruleModel,
 
   if (!ruleModel.match.sequence.empty()) {
     if (!ruleModel.match.opcode.empty() || !ruleModel.match.capture.empty() ||
-        !ruleModel.match.saturate.empty() ||
-        !ruleModel.match.interpolation_mode.empty() ||
+        ruleModel.match.test_boolean >= 0 ||
         ruleModel.match.test_boolean >= 0 ||
         !ruleModel.match.operands.empty()) {
       error = "SM5 match.sequence cannot be combined with single-instruction "
@@ -2013,17 +1817,10 @@ static bool ParseRule(const YamlRule &ruleModel,
     RecipeMatchPattern match = RecipeMatchPattern{}
                                    .WithOpcode(canonicalOpcodeName)
                                    .CaptureAs(ruleModel.match.capture)
-                                   .WithSaturate(ruleModel.match.saturate)
+                                   .WithSaturate(ruleModel.match.saturate ? "true" : "false")
                                    .WithInterpolationMode(
-                                       ruleModel.match.interpolation_mode)
+                                       interpolationModeToString(ruleModel.match.interpolation_mode))
                                    .WithTestBoolean(resolvedTestBoolean);
-    if (!ruleModel.match.saturate.empty()) {
-      bool saturate = false;
-      if (!ParseBoolToken(ruleModel.match.saturate, saturate, error)) {
-        error = "invalid SM5 saturate value: " + error;
-        return false;
-      }
-    }
     for (const YamlOperand &operandModel : ruleModel.match.operands) {
       OperandMatch operandMatch;
       if (!ParseMatchOperand(operandModel, operandMatch, error)) {
@@ -2071,26 +1868,16 @@ static bool ParseRule(const YamlRule &ruleModel,
       return false;
     }
     instruction.Opcode = parsedOpcode;
-    if (!emitModel.saturate.empty()) {
-      bool saturate = false;
-      if (!ParseBoolToken(emitModel.saturate, saturate, error)) {
-        error = "invalid SM5 emit saturate value: " + error;
-        return false;
-      }
-      instruction.Controls.Saturate = saturate;
-    }
-        if (resolvedTestBoolean >= 0) {
+    instruction.Controls.Saturate = emitModel.saturate;
+    if (resolvedTestBoolean >= 0) {
       instruction.Controls.HasTestBoolean = true;
       instruction.Controls.TestBoolean =
           static_cast<uint32_t>(resolvedTestBoolean);
     }
-    if (!emitModel.interpolation_mode.empty()) {
-      uint32_t interpolationMode = 0;
-      if (!ParseInterpolationModeToken(emitModel.interpolation_mode,
-                                       interpolationMode, error)) {
-        return false;
-      }
-
+    if (emitModel.interpolation_mode != dxp::sm5::InterpolationMode::Undefined) {
+      instruction.Controls.HasInputInterpolationMode = true;
+      instruction.Controls.InputInterpolationMode =
+          static_cast<uint32_t>(emitModel.interpolation_mode);
       const auto opcode = static_cast<OpcodeType>(instruction.Opcode);
       if (opcode != D3D10_SB_OPCODE_DCL_INPUT_PS &&
           opcode != D3D10_SB_OPCODE_DCL_INPUT_PS_SIV) {
@@ -2098,9 +1885,6 @@ static bool ParseRule(const YamlRule &ruleModel,
                 "dcl_input_ps_siv";
         return false;
       }
-
-      instruction.Controls.HasInputInterpolationMode = true;
-      instruction.Controls.InputInterpolationMode = interpolationMode;
     }
     for (const YamlOperand &operandModel : emitModel.operands) {
       Operand operand;
@@ -2112,8 +1896,8 @@ static bool ParseRule(const YamlRule &ruleModel,
     RecipeInstructionTemplate emitInstruction =
         RecipeInstructionTemplate{}
         .WithOpcode(canonicalOpcodeName)
-            .WithSaturate(emitModel.saturate)
-            .WithInterpolationMode(emitModel.interpolation_mode)
+        .WithSaturate(emitModel.saturate ? "true" : "false")
+        .WithInterpolationMode(interpolationModeToString(emitModel.interpolation_mode))
         .WithTestBoolean(resolvedTestBoolean);
     for (const YamlOperand &operandModel : emitModel.operands) {
       RecipeOperandPattern operandPattern;
@@ -2582,14 +2366,7 @@ bool ParseRecipeText(const std::string &recipeText,
     }
 
     if (stepKind == "apply_rules") {
-      RecipeRuleApplicationMode applicationMode = RecipeRuleApplicationMode::First;
-      if (!stepModel.mode.empty()) {
-        if (!ParseRuleApplicationMode(stepModel.mode, applicationMode,
-                                      parseError)) {
-          result.Error = sourceName + ": " + parseError;
-          return false;
-        }
-      }
+      RecipeRuleApplicationMode applicationMode = stepModel.mode;
 
       std::vector<RecipeRule> rules;
       rules.reserve(stepModel.rules.size());
@@ -2621,7 +2398,7 @@ bool ParseRecipeText(const std::string &recipeText,
                        ": SM5 check_shader_version steps cannot define rules";
         return false;
       }
-      if (!stepModel.mode.empty()) {
+      if (stepModel.mode != RecipeRuleApplicationMode::First) {
         result.Error = sourceName +
                        ": SM5 step mode is only valid for apply_rules steps";
         return false;
@@ -2647,7 +2424,7 @@ bool ParseRecipeText(const std::string &recipeText,
                        ": SM5 check_opcode_count steps cannot define rules";
         return false;
       }
-      if (!stepModel.mode.empty()) {
+      if (stepModel.mode != RecipeRuleApplicationMode::First) {
         result.Error = sourceName +
                        ": SM5 step mode is only valid for apply_rules steps";
         return false;
@@ -2677,7 +2454,7 @@ bool ParseRecipeText(const std::string &recipeText,
                        ": SM5 check_resource_count steps cannot define rules";
         return false;
       }
-      if (!stepModel.mode.empty()) {
+      if (stepModel.mode != RecipeRuleApplicationMode::First) {
         result.Error = sourceName +
                        ": SM5 step mode is only valid for apply_rules steps";
         return false;
@@ -2695,7 +2472,7 @@ bool ParseRecipeText(const std::string &recipeText,
       continue;
     }
 
-    if (!stepModel.mode.empty()) {
+    if (stepModel.mode != RecipeRuleApplicationMode::First) {
       result.Error = sourceName +
                      ": SM5 step mode is only valid for apply_rules steps";
       return false;
@@ -2715,12 +2492,8 @@ bool ParseRecipeText(const std::string &recipeText,
                                                    : 0u)
                                 .WithHandle(stepModel.handle)
                                 .AutoBindToNext(stepModel.auto_bind);
-      if (!ParseInterpolationModeToken(stepModel.interpolation_mode,
-                                       decl.InterpolationMode, parseError)) {
-        result.Error = sourceName + ": " + parseError;
-        return false;
-      }
-      decl.WithInterpolationMode(decl.InterpolationMode);
+      uint32_t interpolatedMode = static_cast<uint32_t>(stepModel.interpolation_mode);
+      decl.WithInterpolationMode(interpolatedMode);
       result.Recipe.AddStep(MakeAddInputStep(stepName, std::move(decl))
                                 .AbortOnFailureFlag(stepModel.abort_on_failure)
                                 .When(stepCondition));
@@ -2792,12 +2565,7 @@ bool ParseRecipeText(const std::string &recipeText,
                                                      : 0u)
                                   .WithHandle(stepModel.handle)
                                   .AutoBindToNext(stepModel.auto_bind);
-      if (!ParseTextureDimensionToken(stepModel.dimension, decl.Dimension,
-                                      parseError)) {
-        result.Error = sourceName + ": " + parseError;
-        return false;
-      }
-      decl.WithDimension(decl.Dimension);
+      decl.WithDimension(static_cast<uint32_t>(stepModel.dimension));
       result.Recipe.AddStep(MakeAddTextureStep(stepName, std::move(decl))
                                 .AbortOnFailureFlag(stepModel.abort_on_failure)
                                 .When(stepCondition));
@@ -2834,12 +2602,7 @@ bool ParseRecipeText(const std::string &recipeText,
                                   .WithElements(stepModel.elements)
                                   .WithHandle(stepModel.handle)
                                   .AutoBindToNext(stepModel.auto_bind);
-      if (!ParseCBufferAccessPatternToken(stepModel.access_pattern,
-                                          decl.AccessPattern, parseError)) {
-        result.Error = sourceName + ": " + parseError;
-        return false;
-      }
-      decl.WithAccessPattern(decl.AccessPattern);
+      decl.WithAccessPattern(static_cast<uint32_t>(stepModel.access_pattern));
       result.Recipe.AddStep(MakeAddCBufferStep(stepName, std::move(decl))
                                 .AbortOnFailureFlag(stepModel.abort_on_failure)
                                 .When(stepCondition));
@@ -2851,12 +2614,7 @@ bool ParseRecipeText(const std::string &recipeText,
                                                      : 0u)
                                   .WithHandle(stepModel.handle)
                                   .AutoBindToNext(stepModel.auto_bind);
-      if (!ParseSamplerModeToken(stepModel.sampler_mode, decl.Mode,
-                                 parseError)) {
-        result.Error = sourceName + ": " + parseError;
-        return false;
-      }
-      decl.WithMode(decl.Mode);
+      decl.WithMode(static_cast<uint32_t>(stepModel.sampler_mode));
       result.Recipe.AddStep(MakeAddSamplerStep(stepName, std::move(decl))
                                 .AbortOnFailureFlag(stepModel.abort_on_failure)
                                 .When(stepCondition));
@@ -2870,18 +2628,9 @@ bool ParseRecipeText(const std::string &recipeText,
                               .AutoBindToNext(stepModel.auto_bind)
                               .WithStructureStride(stepModel.stride)
                               .WithGloballyCoherent(stepModel.globally_coherent)
-                              .WithOrderPreservingCounter(stepModel.has_counter);
-      if (!ParseUavKindToken(stepModel.uav_kind, decl.Kind, parseError)) {
-        result.Error = sourceName + ": " + parseError;
-        return false;
-      }
-      decl.WithKind(decl.Kind);
-      if (!ParseTextureDimensionToken(stepModel.dimension, decl.Dimension,
-                                      parseError)) {
-        result.Error = sourceName + ": " + parseError;
-        return false;
-      }
-      decl.WithDimension(decl.Dimension);
+                              .WithOrderPreservingCounter(stepModel.has_counter)
+                              .WithKind(stepModel.uav_kind)
+                              .WithDimension(static_cast<uint32_t>(stepModel.dimension));
       result.Recipe.AddStep(MakeAddUavStep(stepName, std::move(decl))
                                 .AbortOnFailureFlag(stepModel.abort_on_failure)
                                 .When(stepCondition));

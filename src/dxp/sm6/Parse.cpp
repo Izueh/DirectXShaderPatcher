@@ -24,6 +24,12 @@
 
 namespace {
 
+static llvm::StringRef MakeYamlError(llvm::Twine msg) {
+  thread_local std::string buffer;
+  buffer = msg.str();
+  return llvm::StringRef(buffer);
+}
+
 template <typename TValue> struct RecipeParseEntry {
   const char *name = nullptr;
   TValue value{};
@@ -67,21 +73,6 @@ static bool ParseRecipeUnsignedValue(const std::string &text, unsigned &value,
   return true;
 }
 
-static bool ParseRecipeBoolValue(const std::string &text, bool &value,
-                                 std::string &error) {
-  if (text == "true" || text == "1") {
-    value = true;
-    return true;
-  }
-
-  if (text == "false" || text == "0") {
-    value = false;
-    return true;
-  }
-
-  error = "invalid boolean '" + text + "'";
-  return false;
-}
 
 static std::string LowercaseRecipeToken(std::string text) {
   return llvm::StringRef(text).lower();
@@ -758,37 +749,38 @@ ParseYamlRecipeOperandModel(const YamlRecipeOperandModel &operandModel,
   operandPattern = DxilOperandPattern();
   operandPattern.operandIndex = operandModel.index;
   operandPattern.captureName = operandModel.capture;
-
-  const std::string loweredKind = LowercaseRecipeToken(operandModel.kind);
-  if (loweredKind == "any") {
-    operandPattern.kind = DxilOperandPatternKind::Any;
-  } else if (loweredKind == "constant_int") {
-    operandPattern.kind = DxilOperandPatternKind::ConstantInt;
-    operandPattern.constantIntValue = operandModel.value;
-  } else if (loweredKind == "resource_handle") {
-    operandPattern.kind = DxilOperandPatternKind::ResourceHandle;
-  } else if (loweredKind == "instruction") {
-    operandPattern.kind = DxilOperandPatternKind::Instruction;
-    if (operandModel.opcode.empty() ||
-        !ParseRecipeInstructionOpcode(
-            operandModel.opcode, operandPattern.instructionOpcode, error)) {
-      if (error.empty())
-        error = "instruction operands require opcode";
+  {
+    auto loweredKind = llvm::StringRef(operandModel.kind).lower();
+    if (loweredKind == "any") {
+      operandPattern.kind = DxilOperandPatternKind::Any;
+    } else if (loweredKind == "constant_int") {
+      operandPattern.kind = DxilOperandPatternKind::ConstantInt;
+      operandPattern.constantIntValue = operandModel.value;
+    } else if (loweredKind == "resource_handle") {
+      operandPattern.kind = DxilOperandPatternKind::ResourceHandle;
+    } else if (loweredKind == "instruction") {
+      operandPattern.kind = DxilOperandPatternKind::Instruction;
+      if (operandModel.opcode.empty() ||
+          !ParseRecipeInstructionOpcode(
+              operandModel.opcode, operandPattern.instructionOpcode, error)) {
+        if (error.empty())
+          error = "instruction operands require opcode";
+        return false;
+      }
+    } else if (loweredKind == "dxop") {
+      operandPattern.kind = DxilOperandPatternKind::DxOpCall;
+      operandPattern.matchDxilOpCode = true;
+      if (operandModel.opcode.empty() ||
+          !ParseRecipeOpCode(operandModel.opcode, operandPattern.dxilOpCode,
+                             error)) {
+        if (error.empty())
+          error = "dxop operands require opcode";
+        return false;
+      }
+    } else {
+      error = "unsupported operand kind '" + operandModel.kind + "'";
       return false;
     }
-  } else if (loweredKind == "dxop") {
-    operandPattern.kind = DxilOperandPatternKind::DxOpCall;
-    operandPattern.matchDxilOpCode = true;
-    if (operandModel.opcode.empty() ||
-        !ParseRecipeOpCode(operandModel.opcode, operandPattern.dxilOpCode,
-                           error)) {
-      if (error.empty())
-        error = "dxop operands require opcode";
-      return false;
-    }
-  } else {
-    error = "unsupported operand kind '" + operandModel.kind + "'";
-    return false;
   }
 
   if (!operandModel.resource_class.empty()) {
@@ -845,42 +837,43 @@ static bool ParseYamlRecipeEmitOperandModel(
     DxilRewriteEmitOperand &emitOperand, std::string &error) {
   emitOperand = DxilRewriteEmitOperand();
   emitOperand.operandIndex = operandModel.index;
-
-  const std::string loweredKind = LowercaseRecipeToken(operandModel.kind);
-  if (loweredKind == "capture") {
-    if (operandModel.capture.empty()) {
-      error = "capture emit operands require capture";
+  {
+    auto loweredKind = llvm::StringRef(operandModel.kind).lower();
+    if (loweredKind == "capture") {
+      if (operandModel.capture.empty()) {
+        error = "capture emit operands require capture";
+        return false;
+      }
+      emitOperand.kind = DxilRewriteEmitOperandKind::Capture;
+      emitOperand.captureName = operandModel.capture;
+    } else if (loweredKind == "temporary") {
+      if (operandModel.id.empty()) {
+        error = "temporary emit operands require id";
+        return false;
+      }
+      emitOperand.kind = DxilRewriteEmitOperandKind::Temporary;
+      emitOperand.temporaryName = operandModel.id;
+    } else if (loweredKind == "constant_int") {
+      emitOperand.kind = DxilRewriteEmitOperandKind::ConstantInt;
+      emitOperand.constantIntValue = operandModel.value;
+    } else if (loweredKind == "resource") {
+      emitOperand.kind = DxilRewriteEmitOperandKind::ResourceHandle;
+      ParsedRecipeResourceRef resourceRef;
+      TryResolveParsedRecipeResourceRef(operandModel.id, parsedTextures,
+                                        parsedUavs, parsedCBuffers,
+                                        parsedSamplers, resourceRef);
+      if (!resourceRef.found) {
+        error = "unknown resource id '" + operandModel.id + "'";
+        return false;
+      }
+      emitOperand.resourceName = resourceRef.resourceName;
+      emitOperand.resourceBinding = resourceRef.binding;
+    } else if (loweredKind == "undef") {
+      emitOperand.kind = DxilRewriteEmitOperandKind::Undef;
+    } else {
+      error = "unsupported emit operand kind '" + operandModel.kind + "'";
       return false;
     }
-    emitOperand.kind = DxilRewriteEmitOperandKind::Capture;
-    emitOperand.captureName = operandModel.capture;
-  } else if (loweredKind == "temporary") {
-    if (operandModel.id.empty()) {
-      error = "temporary emit operands require id";
-      return false;
-    }
-    emitOperand.kind = DxilRewriteEmitOperandKind::Temporary;
-    emitOperand.temporaryName = operandModel.id;
-  } else if (loweredKind == "constant_int") {
-    emitOperand.kind = DxilRewriteEmitOperandKind::ConstantInt;
-    emitOperand.constantIntValue = operandModel.value;
-  } else if (loweredKind == "resource") {
-    ParsedRecipeResourceRef resourceRef;
-    TryResolveParsedRecipeResourceRef(operandModel.id, parsedTextures,
-                                      parsedUavs, parsedCBuffers,
-                                      parsedSamplers, resourceRef);
-    if (!resourceRef.found) {
-      error = "unknown resource id '" + operandModel.id + "'";
-      return false;
-    }
-    emitOperand.kind = DxilRewriteEmitOperandKind::ResourceHandle;
-    emitOperand.resourceName = resourceRef.resourceName;
-    emitOperand.resourceBinding = resourceRef.binding;
-  } else if (loweredKind == "undef") {
-    emitOperand.kind = DxilRewriteEmitOperandKind::Undef;
-  } else {
-    error = "unsupported emit operand kind '" + operandModel.kind + "'";
-    return false;
   }
 
   return true;
@@ -954,8 +947,10 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
       -> bool {
     TextureResourceDesc desc;
     desc.name = textureModel.name;
-    if (!ParseRecipeResourceKind(textureModel.kind, desc.kind, parseError) ||
-        !ParseRecipeComponentType(textureModel.element, desc.elementKind,
+    if (!ParseRecipeResourceKind(textureModel.kind, desc.kind, parseError)) {
+      return false;
+    }
+    if (!ParseRecipeComponentType(textureModel.element, desc.elementKind,
                                   parseError)) {
       return false;
     }
@@ -1378,11 +1373,8 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
         return false;
       }
 
-      DxilRecipeRuleApplicationMode applicationMode =
-          DxilRecipeRuleApplicationMode::First;
-      const std::string modeText =
-          stepModel.mode.empty() ? "first" : stepModel.mode;
-      if (!ParseRecipeRuleApplicationMode(modeText, applicationMode,
+      DxilRecipeRuleApplicationMode applicationMode;
+      if (!ParseRecipeRuleApplicationMode(stepModel.mode, applicationMode,
                                           parseError)) {
         result.error = sourceName.str() + ": invalid apply_rule mode for '" +
                        stepModel.rule + "': " + parseError;
@@ -1417,9 +1409,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
 
       DxilRecipeRuleApplicationMode applicationMode =
           DxilRecipeRuleApplicationMode::MatchAll;
-      const std::string modeText =
-          stepModel.mode.empty() ? "match_all" : stepModel.mode;
-      if (!ParseRecipeRuleApplicationMode(modeText, applicationMode,
+      if (!ParseRecipeRuleApplicationMode(stepModel.mode, applicationMode,
                                           parseError)) {
         result.error =
             sourceName.str() + ": invalid apply_rules mode: " + parseError;

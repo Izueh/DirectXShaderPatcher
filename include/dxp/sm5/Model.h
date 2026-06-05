@@ -34,6 +34,43 @@ enum class OperandRole : uint32_t {
   Destination = 1,
 };
 
+/// @brief D3D11 interpolation mode tokens used in dcl_input_ps.
+enum class InterpolationMode : uint32_t {
+  Undefined = 0,
+  Constant = 1,
+  Linear = 2,
+  LinearCentroid = 3,
+  LinearNoperspective = 4,
+  LinearNoperspectiveCentroid = 5,
+  LinearSample = 6,
+  LinearNoperspectiveSample = 7,
+};
+
+/// @brief D3D11 resource dimension tokens used in dcl_resource_*.
+enum class ResourceDimension : uint32_t {
+  Texture1D = 0,
+  Texture2D = 1,
+  Texture2DMS = 2,
+  TextureCube = 3,
+  Texture3D = 4,
+  Texture2DArray = 5,
+  Texture2DMSArray = 6,
+  TextureCubeArray = 7,
+};
+
+/// @brief D3D11 constant buffer access pattern tokens.
+enum class CbufferAccessPattern : uint32_t {
+  ImmediateIndexed = 0,
+  DynamicIndexed = 1,
+};
+
+/// @brief D3D11 sampler mode tokens used in dcl_sampler.
+enum class SamplerMode : uint32_t {
+  Default = 0,
+  Comparison = 1,
+  Mono = 2,
+};
+
 /// @brief Maximum number of operands any SM5 instruction can have.
 constexpr size_t kMaxInstructionOperands = 5;
 
