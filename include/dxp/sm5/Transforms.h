@@ -125,6 +125,11 @@ struct MatchResult {
   /// `OperandIndexMatchPattern::CaptureName`. Keys are capture names; values
   /// are the matched 32-bit immediate from the corresponding index slot.
   std::unordered_map<std::string, uint32_t> CapturedOperandIndexValues;
+  /// Tracks the operand position (index) of each captured operand within the
+  /// matched instruction. Used by `InstantiateOperand` to determine whether a
+  /// captured operand was a source (read) or destination (write), enabling
+  /// automatic component-mode conversion when `CaptureComponents` is enabled.
+  std::unordered_map<std::string, size_t> CapturedOperandPositions;
 
   /// @brief Looks up a captured operand by name.
   /// @param name Capture name to resolve.

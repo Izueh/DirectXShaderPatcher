@@ -14,7 +14,7 @@ patched_dump.txt
 patched_dump_after_fix.txt
 /artifacts/
 playground/
-
+*AGENTS.md
 # Generated shader/test outputs
 test/*.patched.cso
 test/*.patched.dump.txt

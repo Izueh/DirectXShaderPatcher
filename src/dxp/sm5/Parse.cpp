@@ -46,8 +46,46 @@ static uint32_t DecodeNumComponents(uint32_t token0) {
   return DECODE_D3D10_SB_OPERAND_NUM_COMPONENTS(token0);
 }
 
-static uint32_t DecodeSwizzle(uint32_t token0) {
-  return DECODE_D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE(token0);
+static uint32_t DecodeComponentMode(uint32_t token0) {
+  // Extract the full component selection field (bits [11:2]) from
+  // OperandToken0.  The selection mode occupies bits [3:2] and the
+  // mode-specific data occupies different bit ranges depending on the
+  // mode:
+  //   MASK_MODE    — mask bits [7:4]
+  //   SWIZZLE_MODE — swizzle bits [11:4]
+  //   SELECT_1_MODE — component bits [5:4]
+  //
+  // NOSWIZZLE is encoded as SWIZZLE_MODE with X-X-X-X (0xE40).  The
+  // Operand::ComponentMode field stores it as the raw swizzle value
+  // (3648) without the selection-mode bits so that an exact equality
+  // check against D3D10_SB_OPERAND_4_COMPONENT_NOSWIZZLE works.
+  const uint32_t selectionMode =
+      DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(token0);
+
+  switch (static_cast<D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE>(
+      selectionMode)) {
+  case D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE:
+    return ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(
+               D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE) |
+           DECODE_D3D10_SB_OPERAND_4_COMPONENT_MASK(token0);
+  case D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE: {
+    const uint32_t swizzle =
+        DECODE_D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE(token0);
+    // NOSWIZZLE is SWIZZLE_MODE with X-X-X-X pattern.
+    if (swizzle == D3D10_SB_OPERAND_4_COMPONENT_NOSWIZZLE) {
+      return D3D10_SB_OPERAND_4_COMPONENT_NOSWIZZLE;
+    }
+    return ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(
+               D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE) |
+        swizzle;
+  }
+  case D3D10_SB_OPERAND_4_COMPONENT_SELECT_1_MODE:
+    return ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(
+               D3D10_SB_OPERAND_4_COMPONENT_SELECT_1_MODE) |
+           DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECT_1(token0);
+  default:
+    return 0;
+  }
 }
 
 static bool IsOpcodeExtended(uint32_t token0) {
@@ -116,7 +154,7 @@ static Operand ParseOperand(const uint8_t *data, uint32_t totalDwords,
   const uint32_t token0 = ReadDword(data, cursor * 4);
   operand.Type = DecodeOperandType(token0);
   operand.NumComponents = DecodeNumComponents(token0);
-  operand.ComponentMode = DecodeSwizzle(token0);
+  operand.ComponentMode = DecodeComponentMode(token0);
   operand.RawTokens.push_back(token0);
   ++cursor;
 

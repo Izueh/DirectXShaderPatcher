@@ -327,6 +327,7 @@ static bool MatchInstruction(
     const Instruction &instruction, const InstructionMatch &pattern,
     std::unordered_map<std::string, const Operand *> &capturedOperands,
     std::unordered_map<std::string, uint32_t> &capturedOperandIndexValues,
+    std::unordered_map<std::string, size_t> &capturedOperandPositions,
     const std::unordered_map<std::string, const Operand *> &existingCaptures,
     const std::unordered_map<std::string, uint32_t>
         &existingCapturedOperandIndexValues) {
@@ -381,8 +382,14 @@ static bool MatchInstruction(
       }
     }
 
-    if (!operandPattern.CaptureName.empty())
+    if (!operandPattern.CaptureName.empty()) {
       capturedOperands[operandPattern.CaptureName] = &operand;
+      // Track operand position for role-based component mode conversion.
+      capturedOperandPositions[operandPattern.CaptureName] = index;
+      // Set the operand's role (source/destination) at capture time.
+      const_cast<Operand *>(&operand)->Role =
+          GetOperandRole(instruction.Opcode.Value, index);
+    }
   }
 
   return true;
@@ -394,9 +401,10 @@ std::vector<MatchResult> CollectMatches(const Program &program,
   for (uint32_t index = 0; index < program.Instructions.size(); ++index) {
     std::unordered_map<std::string, const Operand *> capturedOperands;
     std::unordered_map<std::string, uint32_t> capturedOperandIndexValues;
+    std::unordered_map<std::string, size_t> capturedOperandPositions;
     if (!MatchInstruction(program.Instructions[index], pattern,
-                          capturedOperands, capturedOperandIndexValues, {},
-                          {}))
+                          capturedOperands, capturedOperandIndexValues,
+                          capturedOperandPositions, {}, {}))
       continue;
 
     MatchResult result;
@@ -407,6 +415,7 @@ std::vector<MatchResult> CollectMatches(const Program &program,
     result.CapturedOperands = std::move(capturedOperands);
     result.CapturedOperandIndexValues =
       std::move(capturedOperandIndexValues);
+    result.CapturedOperandPositions = std::move(capturedOperandPositions);
     if (!pattern.CaptureName.empty()) {
       result.CapturedInstructions[pattern.CaptureName] =
           &program.Instructions[index];
@@ -430,6 +439,7 @@ CollectSequenceMatches(const Program &program,
   for (uint32_t startIndex = 0; startIndex < limit; ++startIndex) {
     std::unordered_map<std::string, const Operand *> capturedOperands;
     std::unordered_map<std::string, uint32_t> capturedOperandIndexValues;
+    std::unordered_map<std::string, size_t> capturedOperandPositions;
     std::unordered_map<std::string, const Instruction *> capturedInstructions;
     std::unordered_map<std::string, uint32_t> capturedInstructionIndices;
     bool matched = true;
@@ -442,9 +452,11 @@ CollectSequenceMatches(const Program &program,
 
       std::unordered_map<std::string, const Operand *> stepCapturedOperands;
       std::unordered_map<std::string, uint32_t> stepCapturedOperandIndexValues;
+      std::unordered_map<std::string, size_t> stepCapturedOperandPositions;
       if (!MatchInstruction(instruction, pattern, stepCapturedOperands,
-                            stepCapturedOperandIndexValues, capturedOperands,
-                            capturedOperandIndexValues)) {
+                            stepCapturedOperandIndexValues,
+                            stepCapturedOperandPositions,
+                            capturedOperands, capturedOperandIndexValues)) {
         matched = false;
         break;
       }
@@ -455,6 +467,10 @@ CollectSequenceMatches(const Program &program,
 
       for (const auto &entry : stepCapturedOperandIndexValues) {
         capturedOperandIndexValues[entry.first] = entry.second;
+      }
+
+      for (const auto &entry : stepCapturedOperandPositions) {
+        capturedOperandPositions[entry.first] = entry.second;
       }
 
       if (!pattern.CaptureName.empty()) {
@@ -476,6 +492,7 @@ CollectSequenceMatches(const Program &program,
     result.CapturedOperands = std::move(capturedOperands);
     result.CapturedOperandIndexValues =
       std::move(capturedOperandIndexValues);
+    result.CapturedOperandPositions = std::move(capturedOperandPositions);
     result.CapturedInstructions = std::move(capturedInstructions);
     result.CapturedInstructionIndices = std::move(capturedInstructionIndices);
     matches.push_back(std::move(result));

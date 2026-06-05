@@ -140,6 +140,28 @@ Rule behavior notes:
 - `match.opcode` and `emit[].opcode` accept canonical SM5 opcode names.
 - Rule outcomes are published into recipe context state under the rule `name`.
 
+## Operand Roles and Component Mode Conversion
+
+Internally, `dxp::sm5` tracks whether each operand position in an instruction is a **source** (read) or **destination** (write) using an `InstructionLayout` table covering all ~190 SM5 opcodes. When `capture_fields: { components: true }` is used on an emit operand, the component mode is automatically converted based on the role change:
+
+| Capture Role | Emit Role | Conversion |
+|---|---|---|
+| Source | Destination | NOSWIZZLE → full mask (xyzw); SELECT_1 → mask with selected bit; SWIZZLE → mask with unique sorted components; MASK → keep as-is |
+| Destination | Source | NOSWIZZLE → keep as-is; single-bit MASK → SELECT_1; multi-bit MASK → SWIZZLE (replicated); SWIZZLE → keep as-is; SELECT_1 → keep as-is |
+| Same role | Same role | Keep as-is |
+
+This ensures that when a captured source operand (e.g., a single-component read from `ult`) is emitted as a destination (e.g., the target of `mov`), the write mask matches the read components.
+
+### Context-Aware Priority
+
+When converting a source operand to a destination, the conversion uses a context-aware priority to determine which components to write:
+
+1. **Emit template literal spec** — if the emit operand has an explicit `mask`, `swizzle`, `select`, or `num_components` field, that defines the target mask.
+2. **Matched instruction's destination mask** — if no literal spec, use the destination mask of the matched instruction (e.g., if the matched `add` writes to `xyz`, only those components are relevant).
+3. **Source swizzle's unique components** — as a fallback, use the unique components from the source operand's swizzle.
+
+This priority ensures the user's explicit intent takes precedence, while still producing correct defaults when no explicit mask is provided.
+
 ## Operands
 
 Match operand fields:

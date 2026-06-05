@@ -27,6 +27,27 @@ constexpr uint32_t kInterpolationModeUndefined = 0u;
 constexpr ProgramType kProgramTypePixelShader = 0u;
 constexpr OpcodeType kOpcodeCustomData = 54u;
 
+/// @brief Indicates whether an operand position is a source (read) or
+/// destination (write) in a data instruction.
+enum class OperandRole : uint32_t {
+  Source = 0,
+  Destination = 1,
+};
+
+/// @brief Maximum number of operands any SM5 instruction can have.
+constexpr size_t kMaxInstructionOperands = 5;
+
+/// @brief Describes the operand layout for a single SM5 opcode.
+///
+/// Each entry maps an opcode to an ordered list of operand roles.
+/// The `Roles` array holds up to `kMaxInstructionOperands` roles;
+/// `RoleCount` specifies how many are valid.
+struct InstructionLayout {
+  OpcodeType Opcode = 0;
+  OperandRole Roles[kMaxInstructionOperands];
+  uint8_t RoleCount = 0;
+};
+
 /// @brief Wraps an SM5 opcode value with typed conversions.
 struct Opcode {
   OpcodeType Value = 0u;
@@ -137,10 +158,20 @@ struct Operand {
   bool CaptureModifier = false;
   bool CaptureIndices = false;
   bool CaptureImmediates = false;
+  /// @brief Role of this operand in the instruction where it was captured
+  /// (Source for read, Destination for write). Set during matching and used
+  /// during emit for component-mode conversion.
+  OperandRole Role = OperandRole::Source;
 
   bool HasCaptureFieldProjection() const {
     return CaptureType || CaptureComponents || CaptureModifier ||
            CaptureIndices || CaptureImmediates;
+  }
+
+  /// @brief Returns the operand's role (Source or Destination).
+  /// @return The stored role, or Source if unset.
+  OperandRole GetOperandRole() const {
+    return Role;
   }
 };
 
@@ -235,6 +266,19 @@ bool OpcodeUsesTestBoolean(Opcode opcode);
 /// @param opcode Receives the parsed opcode on success.
 /// @return `true` when the name maps to a known opcode.
 bool ParseOpcode(const std::string &name, Opcode &opcode);
+
+/// @brief Returns whether an opcode is a data instruction (as opposed to a
+/// DCL/declarative opcode). Data opcodes have operand-role layouts.
+/// @param opcode Opcode to inspect.
+/// @return `true` when the opcode is a data instruction.
+bool IsDataOpcode(OpcodeType opcode);
+
+/// @brief Returns the operand role (source or destination) for a given
+/// opcode and operand index.
+/// @param opcode Opcode to look up.
+/// @param operandIndex Operand position within the instruction.
+/// @return The operand role, or `Source` if the opcode is unknown.
+OperandRole GetOperandRole(OpcodeType opcode, size_t operandIndex);
 
 /// @brief Parses an opcode name and resolves any implicit test_boolean alias.
 /// @param name Opcode name or assembly-style alias to parse.

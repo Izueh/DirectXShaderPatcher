@@ -1870,11 +1870,246 @@ static bool ResolveImmediateFromVariable(const std::string &path,
   }
 }
 
+/// @brief Extracts unique component bits from a swizzle-mode operand.
+///
+/// Iterates over the 4 swizzle source components and sets bit N for each
+/// unique component found (X=bit 0, Y=bit 1, Z=bit 2, W=bit 3).
+/// Handles NOSWIZZLE identically to any other swizzle — it yields all 4 bits.
+/// Only processes operands with 4 components and SWIZZLE selection mode.
+///
+/// @param op Operand to analyze.
+/// @return Bitmask of unique components (0 if not a 4-component swizzle).
+static uint32_t ExtractSwizzleUniqueComponents(const Operand &op) {
+  if (op.NumComponents != D3D10_SB_OPERAND_4_COMPONENT) {
+    return 0;
+  }
+  const uint32_t selMode =
+      DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(op.ComponentMode);
+  if (selMode != static_cast<uint32_t>(D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE)) {
+    return 0;
+  }
+
+  uint32_t mask = 0;
+  for (int comp = 0; comp < 4; ++comp) {
+    const uint32_t src =
+        DECODE_D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_SOURCE(op.ComponentMode, comp);
+    mask |= (1u << src);
+  }
+  return mask;
+}
+
+/// @brief Decodes the write mask from a destination operand.
+///
+/// Converts any 4-component destination operand to a bitmask:
+///   - MASK mode → mask bits directly
+///   - SWIZZLE/NOSWIZZLE → unique component bits
+///   - SELECT_1 → single bit for selected component
+///   - Non-4-component → 0 (no component selection)
+///
+/// @param op Destination operand to decode.
+/// @return Bitmask of written components (0 if no component selection).
+static uint32_t DecodeDstMaskFromOperand(const Operand &op) {
+  if (op.NumComponents != D3D10_SB_OPERAND_4_COMPONENT) {
+    return 0;
+  }
+
+  const uint32_t selMode =
+      DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(op.ComponentMode);
+
+  switch (static_cast<D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE>(selMode)) {
+  case D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE: {
+    const uint32_t mask = DECODE_D3D10_SB_OPERAND_4_COMPONENT_MASK(op.ComponentMode);
+    // Mask bits are in [7:4]; shift down to [3:0] for uniform handling.
+    return mask >> 4;
+  }
+  case D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE:
+    return ExtractSwizzleUniqueComponents(op);
+  case D3D10_SB_OPERAND_4_COMPONENT_SELECT_1_MODE:
+    return 1u << DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECT_1(op.ComponentMode);
+  default:
+    return 0;
+  }
+}
+
+/// @brief Checks whether an operand has an explicit component specification.
+///
+/// Returns true if the operand has a non-default mask, swizzle, select, or
+/// explicit NumComponents value set.
+///
+/// @param op Operand to check.
+/// @return True if the operand has an explicit component spec.
+static bool HasLiteralComponentSpec(const Operand &op) {
+  if (op.NumComponents >= 0 && op.NumComponents != 4) {
+    return true;
+  }
+  const uint32_t selMode =
+      DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(op.ComponentMode);
+  return (selMode != 0) || (op.ComponentMode != 0);
+}
+
+/// @brief Converts a component mode when the operand role changes.
+///
+/// When a captured operand is used in a different role (source→destination
+/// or destination→source), the component mode may need adjustment because
+/// destinations only support masks and sources support masks/swizzles/selects.
+///
+/// @param fromRole The captured operand's role.
+/// @param toRole The emit operand's role.
+/// @param fromNumComponents The captured operand's component count.
+/// @param fromComponentMode The captured operand's component mode.
+/// @param contextMask Effective context mask from priority: emit dst mask >
+///   match dst mask > source swizzle unique components. Provided by caller.
+/// @param toNumComponents Output: resulting component count.
+/// @param toComponentMode Output: resulting component mode.
+static void ConvertComponentModeForRoleChange(
+    OperandRole fromRole, OperandRole toRole,
+    uint32_t fromNumComponents, uint32_t fromComponentMode,
+    uint32_t contextMask,
+    uint32_t &toNumComponents, uint32_t &toComponentMode) {
+
+  // Skip conversion for non-4-component operands (samplers, resources, etc.).
+  if (fromNumComponents != D3D10_SB_OPERAND_4_COMPONENT) {
+    return;
+  }
+
+  // Same role: no conversion needed.
+  if (fromRole == toRole) {
+    return;
+  }
+
+  const uint32_t fromSelectionMode =
+      DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(fromComponentMode);
+
+  if (fromRole == OperandRole::Source && toRole == OperandRole::Destination) {
+    // Source (read) → Destination (write)
+    // Destinations only support mask mode.
+    switch (static_cast<D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE>(
+        fromSelectionMode)) {
+    case D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE: {
+      // Already a mask: intersect with context mask.
+      const uint32_t srcMask =
+          DECODE_D3D10_SB_OPERAND_4_COMPONENT_MASK(fromComponentMode);
+      const uint32_t effectiveMask = (contextMask != 0)
+                                         ? (srcMask & ENCODE_D3D10_SB_OPERAND_4_COMPONENT_MASK(contextMask << 4))
+                                         : srcMask;
+      if (effectiveMask != 0) {
+        toComponentMode =
+            ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(
+                D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE) |
+            effectiveMask;
+      }
+      break;
+    }
+    case D3D10_SB_OPERAND_4_COMPONENT_SELECT_1_MODE: {
+      // SELECT_1(X) → mask with that single bit set.
+      const uint32_t selected =
+          DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECT_1(fromComponentMode);
+      const uint32_t effectiveBit = (contextMask != 0) && ((contextMask >> selected) & 1)
+                                        ? (1u << selected)
+                                        : (1u << selected);
+      toComponentMode =
+          ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(
+              D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE) |
+          ENCODE_D3D10_SB_OPERAND_4_COMPONENT_MASK(effectiveBit);
+      break;
+    }
+    case D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE: {
+      // SWIZZLE (including NOSWIZZLE) → extract unique components, then
+      // intersect with context mask.
+      uint32_t unique = 0;
+      for (int c = 0; c < 4; ++c) {
+        const uint32_t src =
+            DECODE_D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_SOURCE(
+                fromComponentMode, c);
+        unique |= (1u << src);
+      }
+      const uint32_t effectiveMask = (contextMask != 0)
+                                         ? (unique & contextMask)
+                                         : unique;
+      if (effectiveMask != 0) {
+        toComponentMode =
+            ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(
+                D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE) |
+            ENCODE_D3D10_SB_OPERAND_4_COMPONENT_MASK(effectiveMask << 4);
+      }
+      break;
+    }
+    default:
+      // NOSWIZZLE falls through here (selection mode 0, but ComponentMode
+      // is non-zero). Treat as full 4-component swizzle.
+      toComponentMode =
+          ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(
+              D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE) |
+          ENCODE_D3D10_SB_OPERAND_4_COMPONENT_MASK(
+              D3D10_SB_OPERAND_4_COMPONENT_MASK_ALL);
+      break;
+    }
+  } else if (fromRole == OperandRole::Destination &&
+             toRole == OperandRole::Source) {
+    // Destination (write) → Source (read)
+    const uint32_t fromMask =
+        DECODE_D3D10_SB_OPERAND_4_COMPONENT_MASK(fromComponentMode);
+
+    switch (static_cast<D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE>(
+        fromSelectionMode)) {
+    case D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE: {
+      if (fromMask != 0) {
+        // Count set bits to determine single vs multi.
+        const uint32_t maskBits = fromMask >> 4;
+        int setCount = 0;
+        for (int b = 0; b < 4; ++b) {
+          if (maskBits & (1u << b)) {
+            ++setCount;
+          }
+        }
+
+        if (setCount == 1) {
+          // Single-bit mask → SELECT_1.
+          for (int b = 0; b < 4; ++b) {
+            if (maskBits & (1u << b)) {
+              toComponentMode =
+                  ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(
+                      D3D10_SB_OPERAND_4_COMPONENT_SELECT_1_MODE) |
+                  ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECT_1(
+                      static_cast<D3D10_SB_4_COMPONENT_NAME>(b));
+              break;
+            }
+          }
+        } else {
+          // Multi-bit mask → SWIZZLE with replicated components.
+          uint32_t swizzle = 0;
+          int bit = 0;
+          for (int comp = 0; comp < 4; ++comp) {
+            if (maskBits & (1u << comp)) {
+              swizzle |= (static_cast<uint32_t>(comp) << (bit * 2));
+              ++bit;
+            }
+          }
+          toComponentMode =
+              ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(
+                  D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE) |
+              (swizzle << 4);
+        }
+      }
+      break;
+    }
+    case D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE:
+    case D3D10_SB_OPERAND_4_COMPONENT_SELECT_1_MODE:
+      // SWIZZLE and SELECT_1 are valid for source operands: keep as-is.
+      break;
+    default:
+      // NOSWIZZLE: keep as-is (valid for source).
+      break;
+    }
+  }
+}
+
 static bool InstantiateOperand(const Operand &operandTemplate,
                                const MatchResult &match,
                                const std::string &path,
                                RecipeContext &context, Operand &operand,
-                               std::string &error) {
+                               std::string &error,
+                               size_t emitOperandIndex = 0) {
   if (!operandTemplate.CaptureName.empty()) {
     const Operand *capturedOperand =
         match.GetCapturedOperand(operandTemplate.CaptureName);
@@ -1896,6 +2131,52 @@ static bool InstantiateOperand(const Operand &operandTemplate,
       if (operandTemplate.CaptureComponents) {
         operand.NumComponents = capturedOperand->NumComponents;
         operand.ComponentMode = capturedOperand->ComponentMode;
+
+        // Apply role-based component mode conversion with context-aware
+        // heuristics: emit dst mask > match dst mask > source swizzle.
+        const auto posIt =
+            match.CapturedOperandPositions.find(operandTemplate.CaptureName);
+        if (posIt != match.CapturedOperandPositions.end() &&
+            match.Instruction != nullptr) {
+          // Use the stored role from capture time.
+          const OperandRole capturedRole = capturedOperand->GetOperandRole();
+          // Emit operand 0 is destination; operands 1+ are sources.
+          const OperandRole emitRole =
+              (emitOperandIndex == 0) ? OperandRole::Destination
+                                      : OperandRole::Source;
+
+          // Compute context mask by priority.
+          uint32_t contextMask = 0;
+
+          // Priority 1: Emit operand template's literal component spec.
+          if (HasLiteralComponentSpec(operandTemplate)) {
+            contextMask = DecodeDstMaskFromOperand(operandTemplate);
+          }
+
+          // Priority 2: Matched instruction's destination mask.
+          if (contextMask == 0 && match.Instruction->Operands.size() > 0) {
+            contextMask = DecodeDstMaskFromOperand(
+                match.Instruction->Operands[0]);
+          }
+
+          // Priority 3: Source swizzle's unique components.
+          if (contextMask == 0) {
+            const uint32_t selMode =
+                DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(
+                    capturedOperand->ComponentMode);
+            if (selMode == static_cast<uint32_t>(
+                D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE)) {
+              contextMask = ExtractSwizzleUniqueComponents(*capturedOperand);
+            }
+          }
+
+          ConvertComponentModeForRoleChange(
+              capturedRole, emitRole,
+              capturedOperand->NumComponents,
+              capturedOperand->ComponentMode,
+              contextMask,
+              operand.NumComponents, operand.ComponentMode);
+        }
       }
       if (operandTemplate.CaptureModifier) {
         operand.Modifier = capturedOperand->Modifier;
@@ -2157,13 +2438,14 @@ static bool InstantiateInstruction(const Instruction &instructionTemplate,
   instruction.RawTokens.clear();
   instruction.LengthInDwords = 0;
 
-  for (const Operand &operandTemplate : instructionTemplate.Operands) {
+  for (size_t operandIndex = 0; operandIndex < instructionTemplate.Operands.size();
+       ++operandIndex) {
     Operand operand;
-    if (!InstantiateOperand(operandTemplate, match,
+    if (!InstantiateOperand(instructionTemplate.Operands[operandIndex], match,
                             instructionPath + ".operands[" +
-                                std::to_string(instruction.Operands.size()) +
-                                "]",
-                            context, operand, error)) {
+                                std::to_string(operandIndex) + "]",
+                            context, operand, error,
+                            operandIndex)) {
       return false;
     }
     instruction.Operands.push_back(std::move(operand));

@@ -437,6 +437,8 @@ dxp_add_test(dxil_patch_sm5_recipe_rule_predicate_test              "test/sm5_re
 dxp_add_test(dxil_patch_sm5_recipe_parse_validation_test            "test/sm5_recipe_parse_validation.cpp")
 dxp_add_test(dxil_patch_sm5_recipe_screen_uv_insert_test            "test/sm5_recipe_screen_uv_insert.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/Physically_Based_Standard_Both_Shader_0x67A01779.ps_5_0.cso")
 dxp_add_test(dxil_patch_sm5_recipe_resource_uav_decl_test           "test/sm5_recipe_resource_uav_decl.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso")
+# SM5 operand role conversion integration tests
+dxp_add_test(dxil_patch_sm5_recipe_operand_role_conversion_test       "test/sm5_recipe_operand_role_conversion.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0xCDF14206.ps_5_0.cso")
 # CLI tool tests (dxp command)
 dxp_add_test(dxp_validate_recipe_blue_noise_emit  "tools/dxp.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/recipes/blue_noise_emit.recipe.yml")
 dxp_add_test(dxp_validate_sm5_recipe_noop         "tools/dxp.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/recipes/sm5_noop.recipe.yml")
