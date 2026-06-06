@@ -178,10 +178,10 @@ endif()
     set(DXP_SDK_COMPONENT "DirectXShaderPatcherSDK")
     set(DXP_CLI_COMPONENT "DirectXShaderPatcherCLI")
     set(DXP_SDK_ROOT "DirectXShaderPatcher_SDK")
-    # Use concrete config name — $<CONFIG> in install() DESTINATION causes
-    # CMake 3.24 to misclassify rules as "Unspecified" component instead
-    # of the intended SDK/CLI component.
-    set(DXP_SDK_LIBRARY_DIR "${DXP_SDK_ROOT}/lib/Debug")
+    # Use $<CONFIG> so the install path matches the build configuration
+    # (Debug/Release). Unlike install(TARGETS ...), install(FILES ...) does
+    # not trigger CMake 3.24's component misclassification bug.
+    set(DXP_SDK_LIBRARY_DIR "${DXP_SDK_ROOT}/lib/$<CONFIG>")
     set(DXP_SDK_RUNTIME_DIR "${DXP_SDK_ROOT}/bin")
 
     set(DXP_SDK_LIBRARY_TARGETS
