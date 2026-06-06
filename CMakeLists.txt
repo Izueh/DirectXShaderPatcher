@@ -129,9 +129,9 @@ add_library(dxp_lib STATIC
   "src/dxp/sm5/Patch.cpp"
 )
 
-# Mark DXC and WDK includes as SYSTEM for consumers
-# PRIVATE: project-internal headers (consumers only need installed public headers)
-# SYSTEM PUBLIC: third-party headers consumers need transitively (warnings suppressed)
+# Mark DXC and WDK includes as SYSTEM for consumers.
+# PRIVATE: project-internal headers needed for compilation.
+# SYSTEM PUBLIC: third-party headers consumers need transitively (warnings suppressed).
 target_include_directories(dxp_lib PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
@@ -157,23 +157,6 @@ target_link_libraries(dxp_lib PRIVATE
     Ole32
 )
 
-# Declare public API headers via FILE_SET (CMake 3.23+)
-target_sources(dxp_lib PRIVATE
-    FILE_SET HEADERS
-    BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    FILES
-        include/DirectXShaderPatcher.h
-        include/dxp/PatchReport.h
-        include/dxp/sm5/Patch.h
-        include/dxp/sm5/Recipe.h
-        include/dxp/sm5/RecipeParse.h
-        include/dxp/sm6/Patch.h
-        include/dxp/sm6/Recipe.h
-        include/dxp/sm6/RecipeParse.h
-        include/dxp/sm6/Resources.h
-        include/dxp/sm6/Transforms.h
-)
-
 # -----------------------------------------------------------------------------
 # 5. CLI
 # -----------------------------------------------------------------------------
@@ -195,7 +178,10 @@ endif()
     set(DXP_SDK_COMPONENT "DirectXShaderPatcherSDK")
     set(DXP_CLI_COMPONENT "DirectXShaderPatcherCLI")
     set(DXP_SDK_ROOT "DirectXShaderPatcher_SDK")
-    set(DXP_SDK_LIBRARY_DIR "${DXP_SDK_ROOT}/lib/$<CONFIG>")
+    # Use concrete config name — $<CONFIG> in install() DESTINATION causes
+    # CMake 3.24 to misclassify rules as "Unspecified" component instead
+    # of the intended SDK/CLI component.
+    set(DXP_SDK_LIBRARY_DIR "${DXP_SDK_ROOT}/lib/Debug")
     set(DXP_SDK_RUNTIME_DIR "${DXP_SDK_ROOT}/bin")
 
     set(DXP_SDK_LIBRARY_TARGETS
@@ -222,103 +208,106 @@ endif()
         @ONLY
     )
 
+    # Public headers
     install(
-        TARGETS dxp_lib
-        FILE_SET HEADERS
+        DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/"
         DESTINATION "${DXP_SDK_ROOT}/include"
         COMPONENT ${DXP_SDK_COMPONENT}
     )
 
+    # DXC headers (public SM6 API depends on them)
     if(EXISTS "${DXC_SOURCE_DIR}/include/dxc")
         install(
-            DIRECTORY "${DXC_SOURCE_DIR}/include/dxc/"
-            DESTINATION "${DXP_SDK_ROOT}/include/3rdparty/dxc"
-            COMPONENT ${DXP_SDK_COMPONENT}
-            FILES_MATCHING PATTERN "*.h"
-        )
-    endif()
-
-    if(EXISTS "${DXC_SOURCE_DIR}/include/llvm")
-        install(
-            DIRECTORY "${DXC_SOURCE_DIR}/include/llvm/"
-            DESTINATION "${DXP_SDK_ROOT}/include/3rdparty/llvm"
-            COMPONENT ${DXP_SDK_COMPONENT}
-            FILES_MATCHING PATTERN "*.h" PATTERN "*.def"
-            PATTERN "Analysis" EXCLUDE
-            PATTERN "Bitcode" EXCLUDE
-            PATTERN "CodeGen" EXCLUDE
-            PATTERN "DebugInfo" EXCLUDE
-            PATTERN "ExecutionEngine" EXCLUDE
-            PATTERN "IRReader" EXCLUDE
-            PATTERN "LibDriver" EXCLUDE
-            PATTERN "LineEditor" EXCLUDE
-            PATTERN "Linker" EXCLUDE
-            PATTERN "LTO" EXCLUDE
-            PATTERN "MC" EXCLUDE
-            PATTERN "Object" EXCLUDE
-            PATTERN "Option" EXCLUDE
-            PATTERN "Passes" EXCLUDE
-            PATTERN "ProfileData" EXCLUDE
-            PATTERN "Remarks" EXCLUDE
-            PATTERN "Support/YAMLParser.h" EXCLUDE
-            PATTERN "Support/YAMLTraits.h" EXCLUDE
-            PATTERN "TableGen" EXCLUDE
-            PATTERN "Target" EXCLUDE
-            PATTERN "Transforms" EXCLUDE
-        )
-    endif()
-
-    if(EXISTS "${DXC_BINARY_DIR}/dxc/include/llvm/Config")
-        install(
-            DIRECTORY "${DXC_BINARY_DIR}/dxc/include/llvm/Config/"
-            DESTINATION "${DXP_SDK_ROOT}/include/3rdparty/llvm/Config"
-            COMPONENT ${DXP_SDK_COMPONENT}
-            FILES_MATCHING PATTERN "*.h"
-        )
-    endif()
-    if(EXISTS "${DXC_BINARY_DIR}/dxc/include/llvm/Support/DataTypes.h")
-        install(
-            FILES "${DXC_BINARY_DIR}/dxc/include/llvm/Support/DataTypes.h"
-            DESTINATION "${DXP_SDK_ROOT}/include/3rdparty/llvm/Support"
+            DIRECTORY "${DXC_SOURCE_DIR}/include/dxc"
+            DESTINATION "${DXP_SDK_ROOT}/include"
             COMPONENT ${DXP_SDK_COMPONENT}
         )
     endif()
 
+    if(EXISTS "${DXC_BINARY_DIR}/include/dxc")
+        install(
+            DIRECTORY "${DXC_BINARY_DIR}/include/dxc"
+            DESTINATION "${DXP_SDK_ROOT}/include"
+            COMPONENT ${DXP_SDK_COMPONENT}
+        )
+    endif()
+
+    # LLVM headers (public SM6 API depends on them)
+    if(EXISTS "${DXC_SOURCE_DIR}/external/llvm/include/llvm")
+        install(
+            DIRECTORY "${DXC_SOURCE_DIR}/external/llvm/include/llvm"
+            DESTINATION "${DXP_SDK_ROOT}/include"
+            COMPONENT ${DXP_SDK_COMPONENT}
+        )
+    endif()
+
+    if(EXISTS "${DXC_BINARY_DIR}/external/llvm/include/llvm")
+        install(
+            DIRECTORY "${DXC_BINARY_DIR}/external/llvm/include/llvm"
+            DESTINATION "${DXP_SDK_ROOT}/include"
+            COMPONENT ${DXP_SDK_COMPONENT}
+        )
+    endif()
+
+    if(EXISTS "${DXC_BINARY_DIR}/include/llvm")
+        install(
+            DIRECTORY "${DXC_BINARY_DIR}/include/llvm"
+            DESTINATION "${DXP_SDK_ROOT}/include"
+            COMPONENT ${DXP_SDK_COMPONENT}
+        )
+    endif()
+
+    # MSBuild property sheet
     install(
         FILES "${CMAKE_CURRENT_BINARY_DIR}/DirectXShaderPatcher.props"
         DESTINATION "${DXP_SDK_ROOT}"
         COMPONENT ${DXP_SDK_COMPONENT}
     )
 
+    # Static libraries — install via FILES with explicit paths to avoid
+    # CMake 3.24 misclassifying TARGETS installs with COMPONENT as
+    # "Unspecified" when targets come from subdirectories (DXC).
     install(
-        TARGETS ${DXP_SDK_LIBRARY_TARGETS}
-        ARCHIVE DESTINATION "${DXP_SDK_LIBRARY_DIR}"
-        LIBRARY DESTINATION "${DXP_SDK_LIBRARY_DIR}"
-        INCLUDES DESTINATION "${DXP_SDK_ROOT}/include"
-        INCLUDES DESTINATION "${DXP_SDK_ROOT}/include/3rdparty"
+        FILES
+            "${CMAKE_CURRENT_BINARY_DIR}/dxp_lib.lib"
+            "${DXC_BINARY_DIR}/lib/LLVMBitReader.lib"
+            "${DXC_BINARY_DIR}/lib/LLVMBitWriter.lib"
+            "${DXC_BINARY_DIR}/lib/LLVMCore.lib"
+            "${DXC_BINARY_DIR}/lib/LLVMDXIL.lib"
+            "${DXC_BINARY_DIR}/lib/LLVMDxilContainer.lib"
+            "${DXC_BINARY_DIR}/lib/LLVMDxilRootSignature.lib"
+            "${DXC_BINARY_DIR}/lib/LLVMDxcSupport.lib"
+            "${DXC_BINARY_DIR}/lib/LLVMHLSL.lib"
+            "${DXC_BINARY_DIR}/lib/LLVMPasses.lib"
+            "${DXC_BINARY_DIR}/lib/LLVMSupport.lib"
+        DESTINATION "${DXP_SDK_LIBRARY_DIR}"
         COMPONENT ${DXP_SDK_COMPONENT}
     )
 
-    install(
-        FILES "${DXC_BINARY_DIR}/bin/dxcompiler.dll"
-        DESTINATION "${DXP_SDK_RUNTIME_DIR}"
-        COMPONENT ${DXP_SDK_COMPONENT}
-    )
-
-    if(TARGET dxp)
-        install(
-            TARGETS dxp
-            RUNTIME DESTINATION "${DXP_SDK_ROOT}/bin"
-            COMPONENT ${DXP_CLI_COMPONENT}
-        )
-    endif()
-
+    # dxcompiler DLL (SDK consumer)
     if(EXISTS "${DXC_BINARY_DIR}/bin/dxcompiler.dll")
         install(
             FILES "${DXC_BINARY_DIR}/bin/dxcompiler.dll"
-            DESTINATION "${DXP_SDK_ROOT}/bin"
+            DESTINATION "${DXP_SDK_RUNTIME_DIR}"
+            COMPONENT ${DXP_SDK_COMPONENT}
+        )
+    endif()
+
+    # CLI executable and its runtime
+    if(TARGET dxp)
+        install(
+            TARGETS dxp
+            RUNTIME DESTINATION "."
             COMPONENT ${DXP_CLI_COMPONENT}
         )
+
+        if(EXISTS "${DXC_BINARY_DIR}/bin/dxcompiler.dll")
+            install(
+                FILES "${DXC_BINARY_DIR}/bin/dxcompiler.dll"
+                DESTINATION "."
+                COMPONENT ${DXP_CLI_COMPONENT}
+            )
+        endif()
     endif()
 
 # -----------------------------------------------------------------------------
