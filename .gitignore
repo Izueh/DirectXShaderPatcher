@@ -8,6 +8,7 @@ x64/
 DXIL Assembler/x64/
 Testing/
 *.log
+build.ps1
 build_output.txt
 original_dump.txt
 patched_dump.txt

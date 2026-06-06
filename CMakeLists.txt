@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.24)
 project(DirectXShaderPatcher LANGUAGES C CXX)
 
 include(CTest)
@@ -8,8 +8,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-option(DXP_ENABLE_SDK_INSTALL "Enable install rules for the GitHub release SDK layout" OFF)
-set(DXP_SDK_TOOLSET_SUBDIR "" CACHE STRING "Optional SDK library subdirectory suffix such as clang or msvc")
 option(DXP_ENABLE_DEBUG_ITERATORS "Build Debug artifacts with MSVC debug iterators enabled (iterator debug level 2)" ON)
 
 # DXC submodule paths
@@ -110,7 +108,7 @@ else()
 endif()
 
 # -----------------------------------------------------------------------------
-# 4. Library Target
+# 4. Library
 # -----------------------------------------------------------------------------
 add_library(dxp_lib STATIC
     "external/DirectXShaderCompiler/lib/DxilHash/DxilHash.cpp"
@@ -160,8 +158,25 @@ target_link_libraries(dxp_lib PRIVATE
     Ole32
 )
 
+# Declare public API headers via FILE_SET (CMake 3.23+)
+target_sources(dxp_lib PRIVATE
+    FILE_SET HEADERS
+    BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    FILES
+        include/DirectXShaderPatcher.h
+        include/dxp/PatchReport.h
+        include/dxp/sm5/Patch.h
+        include/dxp/sm5/Recipe.h
+        include/dxp/sm5/RecipeParse.h
+        include/dxp/sm6/Patch.h
+        include/dxp/sm6/Recipe.h
+        include/dxp/sm6/RecipeParse.h
+        include/dxp/sm6/Resources.h
+        include/dxp/sm6/Transforms.h
+)
+
 # -----------------------------------------------------------------------------
-# 5. CLI Target
+# 5. CLI
 # -----------------------------------------------------------------------------
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/dxp.cpp")
     add_executable(dxp tools/dxp.cpp)
@@ -175,14 +190,13 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/dxp.cpp")
     endif()
 endif()
 
-if(DXP_ENABLE_SDK_INSTALL)
+# -----------------------------------------------------------------------------
+# 6. SDK Install
+# -----------------------------------------------------------------------------
     set(DXP_SDK_COMPONENT "DirectXShaderPatcherSDK")
     set(DXP_CLI_COMPONENT "DirectXShaderPatcherCLI")
     set(DXP_SDK_ROOT "DirectXShaderPatcher_SDK")
     set(DXP_SDK_LIBRARY_DIR "${DXP_SDK_ROOT}/lib/$<CONFIG>")
-    if(DXP_SDK_TOOLSET_SUBDIR)
-        string(APPEND DXP_SDK_LIBRARY_DIR "/${DXP_SDK_TOOLSET_SUBDIR}")
-    endif()
     set(DXP_SDK_RUNTIME_DIR "${DXP_SDK_ROOT}/bin")
 
     set(DXP_SDK_LIBRARY_TARGETS
@@ -210,49 +224,63 @@ if(DXP_ENABLE_SDK_INSTALL)
     )
 
     install(
-        DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/"
+        TARGETS dxp_lib
+        FILE_SET HEADERS
         DESTINATION "${DXP_SDK_ROOT}/include"
         COMPONENT ${DXP_SDK_COMPONENT}
     )
 
-    # Public SM6 headers expose DXC/LLVM types, so the SDK must also ship the
-    # referenced third-party header trees.
     if(EXISTS "${DXC_SOURCE_DIR}/include/dxc")
         install(
-            DIRECTORY "${DXC_SOURCE_DIR}/include/dxc"
-            DESTINATION "${DXP_SDK_ROOT}/include"
+            DIRECTORY "${DXC_SOURCE_DIR}/include/dxc/"
+            DESTINATION "${DXP_SDK_ROOT}/include/3rdparty/dxc"
             COMPONENT ${DXP_SDK_COMPONENT}
+            FILES_MATCHING PATTERN "*.h"
         )
     endif()
 
-    if(EXISTS "${DXC_BINARY_DIR}/include/dxc")
+    if(EXISTS "${DXC_SOURCE_DIR}/include/llvm")
         install(
-            DIRECTORY "${DXC_BINARY_DIR}/include/dxc"
-            DESTINATION "${DXP_SDK_ROOT}/include"
+            DIRECTORY "${DXC_SOURCE_DIR}/include/llvm/"
+            DESTINATION "${DXP_SDK_ROOT}/include/3rdparty/llvm"
             COMPONENT ${DXP_SDK_COMPONENT}
+            FILES_MATCHING PATTERN "*.h" PATTERN "*.def"
+            PATTERN "Analysis" EXCLUDE
+            PATTERN "Bitcode" EXCLUDE
+            PATTERN "CodeGen" EXCLUDE
+            PATTERN "DebugInfo" EXCLUDE
+            PATTERN "ExecutionEngine" EXCLUDE
+            PATTERN "IRReader" EXCLUDE
+            PATTERN "LibDriver" EXCLUDE
+            PATTERN "LineEditor" EXCLUDE
+            PATTERN "Linker" EXCLUDE
+            PATTERN "LTO" EXCLUDE
+            PATTERN "MC" EXCLUDE
+            PATTERN "Object" EXCLUDE
+            PATTERN "Option" EXCLUDE
+            PATTERN "Passes" EXCLUDE
+            PATTERN "ProfileData" EXCLUDE
+            PATTERN "Remarks" EXCLUDE
+            PATTERN "Support/YAMLParser.h" EXCLUDE
+            PATTERN "Support/YAMLTraits.h" EXCLUDE
+            PATTERN "TableGen" EXCLUDE
+            PATTERN "Target" EXCLUDE
+            PATTERN "Transforms" EXCLUDE
         )
     endif()
 
-    if(EXISTS "${DXC_SOURCE_DIR}/external/llvm/include/llvm")
+    if(EXISTS "${DXC_BINARY_DIR}/dxc/include/llvm/Config")
         install(
-            DIRECTORY "${DXC_SOURCE_DIR}/external/llvm/include/llvm"
-            DESTINATION "${DXP_SDK_ROOT}/include"
+            DIRECTORY "${DXC_BINARY_DIR}/dxc/include/llvm/Config/"
+            DESTINATION "${DXP_SDK_ROOT}/include/3rdparty/llvm/Config"
             COMPONENT ${DXP_SDK_COMPONENT}
+            FILES_MATCHING PATTERN "*.h"
         )
     endif()
-
-    if(EXISTS "${DXC_BINARY_DIR}/external/llvm/include/llvm")
+    if(EXISTS "${DXC_BINARY_DIR}/dxc/include/llvm/Support/DataTypes.h")
         install(
-            DIRECTORY "${DXC_BINARY_DIR}/external/llvm/include/llvm"
-            DESTINATION "${DXP_SDK_ROOT}/include"
-            COMPONENT ${DXP_SDK_COMPONENT}
-        )
-    endif()
-
-    if(EXISTS "${DXC_BINARY_DIR}/include/llvm")
-        install(
-            DIRECTORY "${DXC_BINARY_DIR}/include/llvm"
-            DESTINATION "${DXP_SDK_ROOT}/include"
+            FILES "${DXC_BINARY_DIR}/dxc/include/llvm/Support/DataTypes.h"
+            DESTINATION "${DXP_SDK_ROOT}/include/3rdparty/llvm/Support"
             COMPONENT ${DXP_SDK_COMPONENT}
         )
     endif()
@@ -265,35 +293,37 @@ if(DXP_ENABLE_SDK_INSTALL)
 
     install(
         TARGETS ${DXP_SDK_LIBRARY_TARGETS}
-        ARCHIVE DESTINATION "${DXP_SDK_LIBRARY_DIR}" COMPONENT ${DXP_SDK_COMPONENT}
-        LIBRARY DESTINATION "${DXP_SDK_LIBRARY_DIR}" COMPONENT ${DXP_SDK_COMPONENT}
+        ARCHIVE DESTINATION "${DXP_SDK_LIBRARY_DIR}"
+        LIBRARY DESTINATION "${DXP_SDK_LIBRARY_DIR}"
+        INCLUDES DESTINATION "${DXP_SDK_ROOT}/include"
+        INCLUDES DESTINATION "${DXP_SDK_ROOT}/include/3rdparty"
+        COMPONENT ${DXP_SDK_COMPONENT}
     )
 
     install(
-        TARGETS dxcompiler
-        RUNTIME DESTINATION "${DXP_SDK_RUNTIME_DIR}" COMPONENT ${DXP_SDK_COMPONENT}
-        LIBRARY DESTINATION "${DXP_SDK_RUNTIME_DIR}" COMPONENT ${DXP_SDK_COMPONENT}
-        ARCHIVE DESTINATION "${DXP_SDK_LIBRARY_DIR}" COMPONENT ${DXP_SDK_COMPONENT}
+        FILES "${DXC_BINARY_DIR}/bin/dxcompiler.dll"
+        DESTINATION "${DXP_SDK_RUNTIME_DIR}"
+        COMPONENT ${DXP_SDK_COMPONENT}
     )
 
     if(TARGET dxp)
         install(
             TARGETS dxp
-            RUNTIME DESTINATION "."
-            COMPONENT ${DXP_CLI_COMPONENT}
-        )
-
-        install(
-            TARGETS dxcompiler
-            RUNTIME DESTINATION "."
-            LIBRARY DESTINATION "."
+            RUNTIME DESTINATION "${DXP_SDK_ROOT}/bin"
             COMPONENT ${DXP_CLI_COMPONENT}
         )
     endif()
-endif()
+
+    if(EXISTS "${DXC_BINARY_DIR}/bin/dxcompiler.dll")
+        install(
+            FILES "${DXC_BINARY_DIR}/bin/dxcompiler.dll"
+            DESTINATION "${DXP_SDK_ROOT}/bin"
+            COMPONENT ${DXP_CLI_COMPONENT}
+        )
+    endif()
 
 # -----------------------------------------------------------------------------
-# 6. Test Harness
+# 7. Test Harness
 # -----------------------------------------------------------------------------
 enable_testing()
 
@@ -390,7 +420,7 @@ endfunction()
 
 
 # -----------------------------------------------------------------------------
-# 7. Test Registration
+# 8. Test Registration
 # -----------------------------------------------------------------------------
     add_compile_definitions(NOMINMAX)
 # SM6 declarative tests
