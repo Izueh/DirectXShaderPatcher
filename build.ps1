@@ -4,8 +4,19 @@ param(
     [switch]$Pack
 )
 
-Import-Module 'C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\Microsoft.VisualStudio.DevShell.dll'
-Enter-VsDevShell -VsInstallPath 'C:\Program Files\Microsoft Visual Studio\2022\Community' -Arch amd64
+function Find-VsInstallPath {
+    $instances = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -requires Microsoft.Component.MSBuild -property installationPath
+    if ($instances) {
+        return $instances.Trim()
+    }
+    Write-Error "Could not locate Visual Studio 2022 installation."
+    exit 1
+}
+
+$vsInstallPath = Find-VsInstallPath
+$devShellPath = Join-Path $vsInstallPath 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll'
+Import-Module $devShellPath
+Enter-VsDevShell -VsInstallPath $vsInstallPath -Arch amd64
 Set-Location $PSScriptRoot
 
 cmake --preset ninja-msvc-debug
