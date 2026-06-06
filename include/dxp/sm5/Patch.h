@@ -17,16 +17,15 @@ struct PatchResult {
   std::vector<uint8_t> OutputBytes;
   std::string Error;
   RecipeContext RecipeContext;
-  /// Caller-facing patch report. Use Report.NewBindings for final runtime
-  /// binding requirements and Report.OutputContainer for the emitted DXBC
-  /// envelope. Report.Steps provides optional execution detail.
   dxp::PatchReport Report;
 };
 
 /// @brief Optional callbacks for mutating/observing context during execution.
 struct RecipeExecutionOptions {
+  /// @brief Called before each recipe step executes.
   std::function<void(const std::string &stepName, RecipeContext &context)>
       BeforeStep;
+  /// @brief Called after each recipe step completes.
   std::function<void(const std::string &stepName,
                      const RecipeStepResult &stepResult,
                      RecipeContext &context)>

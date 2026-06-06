@@ -258,8 +258,6 @@ static Operand ParseOperand(const uint8_t *data, uint32_t totalDwords,
       continue;
     }
 
-    // Keep operand scanning monotonic if an unknown index representation is
-    // encountered by skipping index-entry population for this dimension.
     operand.IndexEntries.push_back(std::move(indexEntry));
   }
 

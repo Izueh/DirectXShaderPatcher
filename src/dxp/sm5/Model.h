@@ -150,30 +150,16 @@ struct Operand {
   /// list; `Indices` is a flattened immediate-value view used by
   /// serialization and binding helpers.
   struct Index {
-    /// Encoding used for this index in the token stream.
     IndexRepresentation Representation = IndexRepresentation::Immediate32;
     bool HasImmediateLo = false;
-    uint32_t ImmediateLo = 0; ///< Low 32-bit immediate (e.g., register number)
+    uint32_t ImmediateLo = 0;
     bool HasImmediateHi = false;
-    uint32_t ImmediateHi = 0; ///< High 32-bit immediate for 64-bit indices
-    /// Sub-operand used for relative addressing; null when not relative.
+    uint32_t ImmediateHi = 0;
     std::shared_ptr<Operand> RelativeOperand;
-    /// Non-empty on match templates: stores the matched immediate under this
-    /// name in `MatchResult::CapturedOperandIndexValues`. Corresponds to the
-    /// `capture` field in YAML index objects.
     std::string CaptureName;
-    /// Non-empty on emit templates: resolves the emitted immediate from a
-    /// previously captured index value of this name. Corresponds to the
-    /// `match_capture` field on emit-side index objects in YAML.
     std::string MatchCaptureName;
-    /// Non-empty on emit templates: resolves immediate_lo from a runtime
-    /// recipe variable/input key.
     std::string ImmediateLoVariableName;
-    /// Non-empty on emit templates: resolves immediate_hi from a runtime
-    /// recipe variable/input key.
     std::string ImmediateHiVariableName;
-    /// Runtime conversion family for variable-backed immediates.
-    /// 0=none, 1=u32, 2=u64, 3=i32, 4=i64, 5=f32, 6=f64.
     uint32_t ImmediateVariableFamily = 0;
   };
 
@@ -195,9 +181,6 @@ struct Operand {
   bool CaptureModifier = false;
   bool CaptureIndices = false;
   bool CaptureImmediates = false;
-  /// @brief Role of this operand in the instruction where it was captured
-  /// (Source for read, Destination for write). Set during matching and used
-  /// during emit for component-mode conversion.
   OperandRole Role = OperandRole::Source;
 
   bool HasCaptureFieldProjection() const {

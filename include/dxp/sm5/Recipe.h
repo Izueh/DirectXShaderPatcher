@@ -182,41 +182,49 @@ struct RecipeTextureDecl {
   std::string Handle;
   bool AutoBind = false;
 
+  /// @brief Sets the register bind point for this texture declaration.
   RecipeTextureDecl &WithBindPoint(uint32_t bindPoint) & {
     BindPoint = bindPoint;
     return *this;
   }
 
+  /// @brief Sets the register bind point for this texture declaration.
   RecipeTextureDecl &&WithBindPoint(uint32_t bindPoint) && {
     BindPoint = bindPoint;
     return std::move(*this);
   }
 
+  /// @brief Sets the texture dimension (1, 2, 3, etc.).
   RecipeTextureDecl &WithDimension(uint32_t dimension) & {
     Dimension = dimension;
     return *this;
   }
 
+  /// @brief Sets the texture dimension (1, 2, 3, etc.).
   RecipeTextureDecl &&WithDimension(uint32_t dimension) && {
     Dimension = dimension;
     return std::move(*this);
   }
 
+  /// @brief Sets the recipe handle used to reference this texture.
   RecipeTextureDecl &WithHandle(std::string handle) & {
     Handle = std::move(handle);
     return *this;
   }
 
+  /// @brief Sets the recipe handle used to reference this texture.
   RecipeTextureDecl &&WithHandle(std::string handle) && {
     Handle = std::move(handle);
     return std::move(*this);
   }
 
+  /// @brief Requests automatic bind-point assignment to the next available slot.
   RecipeTextureDecl &AutoBindToNext(bool autoBind = true) & {
     AutoBind = autoBind;
     return *this;
   }
 
+  /// @brief Requests automatic bind-point assignment to the next available slot.
   RecipeTextureDecl &&AutoBindToNext(bool autoBind = true) && {
     AutoBind = autoBind;
     return std::move(*this);
@@ -227,11 +235,13 @@ struct RecipeTextureDecl {
 struct RecipeTempDecl {
   std::string Handle;
 
+  /// @brief Sets the recipe handle for this temporary declaration.
   RecipeTempDecl &WithHandle(std::string handle) & {
     Handle = std::move(handle);
     return *this;
   }
 
+  /// @brief Sets the recipe handle for this temporary declaration.
   RecipeTempDecl &&WithHandle(std::string handle) && {
     Handle = std::move(handle);
     return std::move(*this);
@@ -245,41 +255,49 @@ struct RecipeInputDecl {
   std::string Handle;
   bool AutoBind = false;
 
+  /// @brief Sets the register bind point for this input declaration.
   RecipeInputDecl &WithBindPoint(uint32_t bindPoint) & {
     BindPoint = bindPoint;
     return *this;
   }
 
+  /// @brief Sets the register bind point for this input declaration.
   RecipeInputDecl &&WithBindPoint(uint32_t bindPoint) && {
     BindPoint = bindPoint;
     return std::move(*this);
   }
 
+  /// @brief Sets the interpolation mode for this input declaration.
   RecipeInputDecl &WithInterpolationMode(uint32_t interpolationMode) & {
     InterpolationMode = interpolationMode;
     return *this;
   }
 
+  /// @brief Sets the interpolation mode for this input declaration.
   RecipeInputDecl &&WithInterpolationMode(uint32_t interpolationMode) && {
     InterpolationMode = interpolationMode;
     return std::move(*this);
   }
 
+  /// @brief Sets the recipe handle used to reference this input.
   RecipeInputDecl &WithHandle(std::string handle) & {
     Handle = std::move(handle);
     return *this;
   }
 
+  /// @brief Sets the recipe handle used to reference this input.
   RecipeInputDecl &&WithHandle(std::string handle) && {
     Handle = std::move(handle);
     return std::move(*this);
   }
 
+  /// @brief Requests automatic bind-point assignment to the next available slot.
   RecipeInputDecl &AutoBindToNext(bool autoBind = true) & {
     AutoBind = autoBind;
     return *this;
   }
 
+  /// @brief Requests automatic bind-point assignment to the next available slot.
   RecipeInputDecl &&AutoBindToNext(bool autoBind = true) && {
     AutoBind = autoBind;
     return std::move(*this);
@@ -292,31 +310,37 @@ struct RecipeOutputDecl {
   std::string Handle;
   bool AutoBind = false;
 
+  /// @brief Sets the register bind point for this output declaration.
   RecipeOutputDecl &WithBindPoint(uint32_t bindPoint) & {
     BindPoint = bindPoint;
     return *this;
   }
 
+  /// @brief Sets the register bind point for this output declaration.
   RecipeOutputDecl &&WithBindPoint(uint32_t bindPoint) && {
     BindPoint = bindPoint;
     return std::move(*this);
   }
 
+  /// @brief Sets the recipe handle used to reference this output.
   RecipeOutputDecl &WithHandle(std::string handle) & {
     Handle = std::move(handle);
     return *this;
   }
 
+  /// @brief Sets the recipe handle used to reference this output.
   RecipeOutputDecl &&WithHandle(std::string handle) && {
     Handle = std::move(handle);
     return std::move(*this);
   }
 
+  /// @brief Requests automatic bind-point assignment to the next available slot.
   RecipeOutputDecl &AutoBindToNext(bool autoBind = true) & {
     AutoBind = autoBind;
     return *this;
   }
 
+  /// @brief Requests automatic bind-point assignment to the next available slot.
   RecipeOutputDecl &&AutoBindToNext(bool autoBind = true) && {
     AutoBind = autoBind;
     return std::move(*this);
@@ -331,51 +355,61 @@ struct RecipeCBufferDecl {
   std::string Handle;
   bool AutoBind = false;
 
+  /// @brief Sets the register bind point for this constant buffer declaration.
   RecipeCBufferDecl &WithBindPoint(uint32_t bindPoint) & {
     BindPoint = bindPoint;
     return *this;
   }
 
+  /// @brief Sets the register bind point for this constant buffer declaration.
   RecipeCBufferDecl &&WithBindPoint(uint32_t bindPoint) && {
     BindPoint = bindPoint;
     return std::move(*this);
   }
 
+  /// @brief Sets the number of elements in this constant buffer.
   RecipeCBufferDecl &WithElements(uint32_t elements) & {
     Elements = elements;
     return *this;
   }
 
+  /// @brief Sets the number of elements in this constant buffer.
   RecipeCBufferDecl &&WithElements(uint32_t elements) && {
     Elements = elements;
     return std::move(*this);
   }
 
+  /// @brief Sets the access pattern (ImmediateIndexed or DynamicIndexed).
   RecipeCBufferDecl &WithAccessPattern(uint32_t accessPattern) & {
     AccessPattern = accessPattern;
     return *this;
   }
 
+  /// @brief Sets the access pattern (ImmediateIndexed or DynamicIndexed).
   RecipeCBufferDecl &&WithAccessPattern(uint32_t accessPattern) && {
     AccessPattern = accessPattern;
     return std::move(*this);
   }
 
+  /// @brief Sets the recipe handle used to reference this constant buffer.
   RecipeCBufferDecl &WithHandle(std::string handle) & {
     Handle = std::move(handle);
     return *this;
   }
 
+  /// @brief Sets the recipe handle used to reference this constant buffer.
   RecipeCBufferDecl &&WithHandle(std::string handle) && {
     Handle = std::move(handle);
     return std::move(*this);
   }
 
+  /// @brief Requests automatic bind-point assignment to the next available slot.
   RecipeCBufferDecl &AutoBindToNext(bool autoBind = true) & {
     AutoBind = autoBind;
     return *this;
   }
 
+  /// @brief Requests automatic bind-point assignment to the next available slot.
   RecipeCBufferDecl &&AutoBindToNext(bool autoBind = true) && {
     AutoBind = autoBind;
     return std::move(*this);
@@ -389,41 +423,49 @@ struct RecipeSamplerDecl {
   std::string Handle;
   bool AutoBind = false;
 
+  /// @brief Sets the register bind point for this sampler declaration.
   RecipeSamplerDecl &WithBindPoint(uint32_t bindPoint) & {
     BindPoint = bindPoint;
     return *this;
   }
 
+  /// @brief Sets the register bind point for this sampler declaration.
   RecipeSamplerDecl &&WithBindPoint(uint32_t bindPoint) && {
     BindPoint = bindPoint;
     return std::move(*this);
   }
 
+  /// @brief Sets the sampler mode (Default, Comparison, or Mono).
   RecipeSamplerDecl &WithMode(uint32_t mode) & {
     Mode = mode;
     return *this;
   }
 
+  /// @brief Sets the sampler mode (Default, Comparison, or Mono).
   RecipeSamplerDecl &&WithMode(uint32_t mode) && {
     Mode = mode;
     return std::move(*this);
   }
 
+  /// @brief Sets the recipe handle used to reference this sampler.
   RecipeSamplerDecl &WithHandle(std::string handle) & {
     Handle = std::move(handle);
     return *this;
   }
 
+  /// @brief Sets the recipe handle used to reference this sampler.
   RecipeSamplerDecl &&WithHandle(std::string handle) && {
     Handle = std::move(handle);
     return std::move(*this);
   }
 
+  /// @brief Requests automatic bind-point assignment to the next available slot.
   RecipeSamplerDecl &AutoBindToNext(bool autoBind = true) & {
     AutoBind = autoBind;
     return *this;
   }
 
+  /// @brief Requests automatic bind-point assignment to the next available slot.
   RecipeSamplerDecl &&AutoBindToNext(bool autoBind = true) && {
     AutoBind = autoBind;
     return std::move(*this);
@@ -436,31 +478,37 @@ struct RecipeRawResourceDecl {
   std::string Handle;
   bool AutoBind = false;
 
+  /// @brief Sets the register bind point for this raw resource declaration.
   RecipeRawResourceDecl &WithBindPoint(uint32_t bindPoint) & {
     BindPoint = bindPoint;
     return *this;
   }
 
+  /// @brief Sets the register bind point for this raw resource declaration.
   RecipeRawResourceDecl &&WithBindPoint(uint32_t bindPoint) && {
     BindPoint = bindPoint;
     return std::move(*this);
   }
 
+  /// @brief Sets the recipe handle used to reference this raw resource.
   RecipeRawResourceDecl &WithHandle(std::string handle) & {
     Handle = std::move(handle);
     return *this;
   }
 
+  /// @brief Sets the recipe handle used to reference this raw resource.
   RecipeRawResourceDecl &&WithHandle(std::string handle) && {
     Handle = std::move(handle);
     return std::move(*this);
   }
 
+  /// @brief Requests automatic bind-point assignment to the next available slot.
   RecipeRawResourceDecl &AutoBindToNext(bool autoBind = true) & {
     AutoBind = autoBind;
     return *this;
   }
 
+  /// @brief Requests automatic bind-point assignment to the next available slot.
   RecipeRawResourceDecl &&AutoBindToNext(bool autoBind = true) && {
     AutoBind = autoBind;
     return std::move(*this);
@@ -474,41 +522,49 @@ struct RecipeStructuredResourceDecl {
   std::string Handle;
   bool AutoBind = false;
 
+  /// @brief Sets the register bind point for this structured resource declaration.
   RecipeStructuredResourceDecl &WithBindPoint(uint32_t bindPoint) & {
     BindPoint = bindPoint;
     return *this;
   }
 
+  /// @brief Sets the register bind point for this structured resource declaration.
   RecipeStructuredResourceDecl &&WithBindPoint(uint32_t bindPoint) && {
     BindPoint = bindPoint;
     return std::move(*this);
   }
 
+  /// @brief Sets the structure stride in bytes for this structured resource.
   RecipeStructuredResourceDecl &WithStructureStride(uint32_t structureStride) & {
     StructureStride = structureStride;
     return *this;
   }
 
+  /// @brief Sets the structure stride in bytes for this structured resource.
   RecipeStructuredResourceDecl &&WithStructureStride(uint32_t structureStride) && {
     StructureStride = structureStride;
     return std::move(*this);
   }
 
+  /// @brief Sets the recipe handle used to reference this structured resource.
   RecipeStructuredResourceDecl &WithHandle(std::string handle) & {
     Handle = std::move(handle);
     return *this;
   }
 
+  /// @brief Sets the recipe handle used to reference this structured resource.
   RecipeStructuredResourceDecl &&WithHandle(std::string handle) && {
     Handle = std::move(handle);
     return std::move(*this);
   }
 
+  /// @brief Requests automatic bind-point assignment to the next available slot.
   RecipeStructuredResourceDecl &AutoBindToNext(bool autoBind = true) & {
     AutoBind = autoBind;
     return *this;
   }
 
+  /// @brief Requests automatic bind-point assignment to the next available slot.
   RecipeStructuredResourceDecl &&AutoBindToNext(bool autoBind = true) && {
     AutoBind = autoBind;
     return std::move(*this);
@@ -533,81 +589,97 @@ struct RecipeUavDecl {
   std::string Handle;
   bool AutoBind = false;
 
+  /// @brief Sets the register bind point for this UAV declaration.
   RecipeUavDecl &WithBindPoint(uint32_t bindPoint) & {
     BindPoint = bindPoint;
     return *this;
   }
 
+  /// @brief Sets the register bind point for this UAV declaration.
   RecipeUavDecl &&WithBindPoint(uint32_t bindPoint) && {
     BindPoint = bindPoint;
     return std::move(*this);
   }
 
+  /// @brief Sets the UAV kind (Typed, Raw, or Structured).
   RecipeUavDecl &WithKind(RecipeUavKind kind) & {
     Kind = kind;
     return *this;
   }
 
+  /// @brief Sets the UAV kind (Typed, Raw, or Structured).
   RecipeUavDecl &&WithKind(RecipeUavKind kind) && {
     Kind = kind;
     return std::move(*this);
   }
 
+  /// @brief Sets the texture dimension for this UAV.
   RecipeUavDecl &WithDimension(uint32_t dimension) & {
     Dimension = dimension;
     return *this;
   }
 
+  /// @brief Sets the texture dimension for this UAV.
   RecipeUavDecl &&WithDimension(uint32_t dimension) && {
     Dimension = dimension;
     return std::move(*this);
   }
 
+  /// @brief Sets the structure stride in bytes for this structured UAV.
   RecipeUavDecl &WithStructureStride(uint32_t structureStride) & {
     StructureStride = structureStride;
     return *this;
   }
 
+  /// @brief Sets the structure stride in bytes for this structured UAV.
   RecipeUavDecl &&WithStructureStride(uint32_t structureStride) && {
     StructureStride = structureStride;
     return std::move(*this);
   }
 
+  /// @brief Enables globally coherent memory semantics for this UAV.
   RecipeUavDecl &WithGloballyCoherent(bool globallyCoherent = true) & {
     GloballyCoherent = globallyCoherent;
     return *this;
   }
 
+  /// @brief Enables globally coherent memory semantics for this UAV.
   RecipeUavDecl &&WithGloballyCoherent(bool globallyCoherent = true) && {
     GloballyCoherent = globallyCoherent;
     return std::move(*this);
   }
 
+  /// @brief Enables an order-preserving counter for this UAV.
   RecipeUavDecl &WithOrderPreservingCounter(bool hasCounter = true) & {
     HasOrderPreservingCounter = hasCounter;
     return *this;
   }
 
+  /// @brief Enables an order-preserving counter for this UAV.
   RecipeUavDecl &&WithOrderPreservingCounter(bool hasCounter = true) && {
     HasOrderPreservingCounter = hasCounter;
     return std::move(*this);
   }
 
+  /// @brief Sets the recipe handle used to reference this UAV.
   RecipeUavDecl &WithHandle(std::string handle) & {
     Handle = std::move(handle);
     return *this;
   }
 
+  /// @brief Sets the recipe handle used to reference this UAV.
   RecipeUavDecl &&WithHandle(std::string handle) && {
     Handle = std::move(handle);
     return std::move(*this);
   }
 
+  /// @brief Requests automatic bind-point assignment to the next available slot.
   RecipeUavDecl &AutoBindToNext(bool autoBind = true) & {
     AutoBind = autoBind;
     return *this;
   }
 
+  /// @brief Requests automatic bind-point assignment to the next available slot.
   RecipeUavDecl &&AutoBindToNext(bool autoBind = true) && {
     AutoBind = autoBind;
     return std::move(*this);
@@ -654,51 +726,61 @@ struct RecipeOperandCaptureFields {
   bool Indices = false;
   bool Immediates = false;
 
+  /// @brief Enables type field projection for captured operands.
   RecipeOperandCaptureFields &WithType(bool enabled = true) & {
     Type = enabled;
     return *this;
   }
 
+  /// @brief Enables type field projection for captured operands.
   RecipeOperandCaptureFields &&WithType(bool enabled = true) && {
     Type = enabled;
     return std::move(*this);
   }
 
+  /// @brief Enables component field projection for captured operands.
   RecipeOperandCaptureFields &WithComponents(bool enabled = true) & {
     Components = enabled;
     return *this;
   }
 
+  /// @brief Enables component field projection for captured operands.
   RecipeOperandCaptureFields &&WithComponents(bool enabled = true) && {
     Components = enabled;
     return std::move(*this);
   }
 
+  /// @brief Enables modifier field projection for captured operands.
   RecipeOperandCaptureFields &WithModifier(bool enabled = true) & {
     Modifier = enabled;
     return *this;
   }
 
+  /// @brief Enables modifier field projection for captured operands.
   RecipeOperandCaptureFields &&WithModifier(bool enabled = true) && {
     Modifier = enabled;
     return std::move(*this);
   }
 
+  /// @brief Enables index field projection for captured operands.
   RecipeOperandCaptureFields &WithIndices(bool enabled = true) & {
     Indices = enabled;
     return *this;
   }
 
+  /// @brief Enables index field projection for captured operands.
   RecipeOperandCaptureFields &&WithIndices(bool enabled = true) && {
     Indices = enabled;
     return std::move(*this);
   }
 
+  /// @brief Enables immediate field projection for captured operands.
   RecipeOperandCaptureFields &WithImmediates(bool enabled = true) & {
     Immediates = enabled;
     return *this;
   }
 
+  /// @brief Enables immediate field projection for captured operands.
   RecipeOperandCaptureFields &&WithImmediates(bool enabled = true) && {
     Immediates = enabled;
     return std::move(*this);
@@ -716,26 +798,31 @@ public:
       RecipeOperandCaptureFields fields)
       : fields_(std::move(fields)) {}
 
+  /// @brief Enables type field projection for captured operands.
   RecipeOperandCaptureFieldsBuilder &WithType(bool enabled = true) {
     fields_.Type = enabled;
     return *this;
   }
 
+  /// @brief Enables component field projection for captured operands.
   RecipeOperandCaptureFieldsBuilder &WithComponents(bool enabled = true) {
     fields_.Components = enabled;
     return *this;
   }
 
+  /// @brief Enables modifier field projection for captured operands.
   RecipeOperandCaptureFieldsBuilder &WithModifier(bool enabled = true) {
     fields_.Modifier = enabled;
     return *this;
   }
 
+  /// @brief Enables index field projection for captured operands.
   RecipeOperandCaptureFieldsBuilder &WithIndices(bool enabled = true) {
     fields_.Indices = enabled;
     return *this;
   }
 
+  /// @brief Enables immediate field projection for captured operands.
   RecipeOperandCaptureFieldsBuilder &WithImmediates(bool enabled = true) {
     fields_.Immediates = enabled;
     return *this;
@@ -819,46 +906,46 @@ public:
   explicit RecipeOperandIndexPatternBuilder(RecipeOperandIndexPattern pattern)
       : pattern_(std::move(pattern)) {}
 
-  /// Sets the wildcard flag. Valid on match patterns only.
+  /// @brief Sets the wildcard flag. Valid on match patterns only.
   RecipeOperandIndexPatternBuilder &WithAny(bool any = true) {
     pattern_.Any = any;
     return *this;
   }
 
-  /// Sets the expected index encoding for this slot.
+  /// @brief Sets the expected index encoding for this slot.
   RecipeOperandIndexPatternBuilder &
   WithRepresentation(RecipeOperandIndexRepresentation representation) {
     pattern_.Representation = representation;
     return *this;
   }
 
-  /// Requires (match) or emits (emit) this 32-bit immediate value.
+  /// @brief Requires (match) or emits (emit) this 32-bit immediate value.
   RecipeOperandIndexPatternBuilder &WithImmediateLo(uint32_t value) {
     pattern_.HasImmediateLo = true;
     pattern_.ImmediateLo = value;
     return *this;
   }
 
-  /// Requires (match) or emits (emit) this high 32-bit immediate value.
+  /// @brief Requires (match) or emits (emit) this high 32-bit immediate value.
   RecipeOperandIndexPatternBuilder &WithImmediateHi(uint32_t value) {
     pattern_.HasImmediateHi = true;
     pattern_.ImmediateHi = value;
     return *this;
   }
 
-  /// Sets a relative sub-operand for relative-addressing index slots.
+  /// @brief Sets a relative sub-operand for relative-addressing index slots.
   RecipeOperandIndexPatternBuilder &
   WithRelativeOperand(RecipeOperandPattern relativeOperand);
 
-  /// Stores the matched immediate in `CapturedOperandIndexValues` under
+  /// @brief Stores the matched immediate in `CapturedOperandIndexValues` under
   /// `capture`. Valid on match patterns only; rejected on emit patterns.
   RecipeOperandIndexPatternBuilder &CaptureAs(std::string capture) {
     pattern_.Capture = std::move(capture);
     return *this;
   }
 
-  /// Match: requires the slot's immediate to equal the captured value named
-  /// `matchCapture`. Emit: resolves the emitted immediate from that capture.
+  /// @brief Match: requires the slot's immediate to equal the captured value
+  /// named `matchCapture`. Emit: resolves the emitted immediate from that capture.
   RecipeOperandIndexPatternBuilder &WithMatchCapture(std::string matchCapture) {
     pattern_.MatchCapture = std::move(matchCapture);
     return *this;
@@ -923,209 +1010,244 @@ struct RecipeOperandPattern {
   RecipeOperandCaptureFields CaptureFields;
   RecipeOperandCaptureFields MatchCaptureFields;
 
+  /// @brief Sets the wildcard flag. Valid on match patterns only.
   RecipeOperandPattern &WithAny(bool any = true) & {
     Any = any;
     return *this;
   }
 
+  /// @brief Sets the wildcard flag. Valid on match patterns only.
   RecipeOperandPattern &&WithAny(bool any = true) && {
     Any = any;
     return std::move(*this);
   }
 
+  /// @brief Sets the operand type name (e.g., "temp", "resource").
   RecipeOperandPattern &WithType(std::string type) & {
     Type = std::move(type);
     return *this;
   }
 
+  /// @brief Sets the operand type name (e.g., "temp", "resource").
   RecipeOperandPattern &&WithType(std::string type) && {
     Type = std::move(type);
     return std::move(*this);
   }
 
+  /// @brief Sets the ordered list of index patterns for this operand.
   RecipeOperandPattern &
   WithIndexPatterns(std::vector<RecipeOperandIndexPattern> indexPatterns) & {
     IndexPatterns = std::move(indexPatterns);
     return *this;
   }
 
+  /// @brief Sets the ordered list of index patterns for this operand.
   RecipeOperandPattern &&
   WithIndexPatterns(std::vector<RecipeOperandIndexPattern> indexPatterns) && {
     IndexPatterns = std::move(indexPatterns);
     return std::move(*this);
   }
 
+  /// @brief Appends an index pattern to this operand.
   RecipeOperandPattern &AddIndexPattern(RecipeOperandIndexPattern pattern) & {
     IndexPatterns.push_back(std::move(pattern));
     return *this;
   }
 
+  /// @brief Appends an index pattern to this operand.
   RecipeOperandPattern &&AddIndexPattern(RecipeOperandIndexPattern pattern) && {
     IndexPatterns.push_back(std::move(pattern));
     return std::move(*this);
   }
 
+  /// @brief Sets the handle to copy an operand from in emit templates.
   RecipeOperandPattern &WithFromHandle(std::string fromHandle) & {
     FromHandle = std::move(fromHandle);
     return *this;
   }
 
+  /// @brief Sets the handle to copy an operand from in emit templates.
   RecipeOperandPattern &&WithFromHandle(std::string fromHandle) && {
     FromHandle = std::move(fromHandle);
     return std::move(*this);
   }
 
+  /// @brief Sets the mask string for this operand.
   RecipeOperandPattern &WithMask(std::string mask) & {
     Mask = std::move(mask);
     return *this;
   }
 
+  /// @brief Sets the mask string for this operand.
   RecipeOperandPattern &&WithMask(std::string mask) && {
     Mask = std::move(mask);
     return std::move(*this);
   }
 
+  /// @brief Sets the swizzle string for this operand.
   RecipeOperandPattern &WithSwizzle(std::string swizzle) & {
     Swizzle = std::move(swizzle);
     return *this;
   }
 
+  /// @brief Sets the swizzle string for this operand.
   RecipeOperandPattern &&WithSwizzle(std::string swizzle) && {
     Swizzle = std::move(swizzle);
     return std::move(*this);
   }
 
+  /// @brief Sets the select string for this operand.
   RecipeOperandPattern &WithSelect(std::string select) & {
     Select = std::move(select);
     return *this;
   }
 
+  /// @brief Sets the select string for this operand.
   RecipeOperandPattern &&WithSelect(std::string select) && {
     Select = std::move(select);
     return std::move(*this);
   }
 
+  /// @brief Sets the number of components for this operand.
   RecipeOperandPattern &WithNumComponents(int32_t numComponents) & {
     NumComponents = numComponents;
     return *this;
   }
 
+  /// @brief Sets the number of components for this operand.
   RecipeOperandPattern &&WithNumComponents(int32_t numComponents) && {
     NumComponents = numComponents;
     return std::move(*this);
   }
 
+  /// @brief Sets the operand modifier string.
   RecipeOperandPattern &WithModifier(std::string modifier) & {
     Modifier = std::move(modifier);
     return *this;
   }
 
+  /// @brief Sets the operand modifier string.
   RecipeOperandPattern &&WithModifier(std::string modifier) && {
     Modifier = std::move(modifier);
     return std::move(*this);
   }
 
+  /// @brief Sets the capture name for this operand.
   RecipeOperandPattern &CaptureAs(std::string capture) & {
     Capture = std::move(capture);
     return *this;
   }
 
+  /// @brief Sets the capture name for this operand.
   RecipeOperandPattern &&CaptureAs(std::string capture) && {
     Capture = std::move(capture);
     return std::move(*this);
   }
 
+  /// @brief Sets the match-capture name to compare this operand against.
   RecipeOperandPattern &WithMatchCapture(std::string matchCapture) & {
     MatchCapture = std::move(matchCapture);
     return *this;
   }
 
+  /// @brief Sets the match-capture name to compare this operand against.
   RecipeOperandPattern &&WithMatchCapture(std::string matchCapture) && {
     MatchCapture = std::move(matchCapture);
     return std::move(*this);
   }
 
+  /// @brief Sets the capture fields projection configuration.
   RecipeOperandPattern &WithCaptureFields(
       RecipeOperandCaptureFields captureFields) & {
     CaptureFields = captureFields;
     return *this;
   }
 
+  /// @brief Sets the capture fields projection configuration.
   RecipeOperandPattern &&WithCaptureFields(
       RecipeOperandCaptureFields captureFields) && {
     CaptureFields = captureFields;
     return std::move(*this);
   }
 
+  /// @brief Captures and replays the type field from a named capture.
   RecipeOperandPattern &ReplayTypeFrom(std::string capture) & {
     Capture = std::move(capture);
     CaptureFields.Type = true;
     return *this;
   }
 
+  /// @brief Captures and replays the type field from a named capture.
   RecipeOperandPattern &&ReplayTypeFrom(std::string capture) && {
     Capture = std::move(capture);
     CaptureFields.Type = true;
     return std::move(*this);
   }
 
+  /// @brief Captures and replays the component field from a named capture.
   RecipeOperandPattern &ReplayComponentsFrom(std::string capture) & {
     Capture = std::move(capture);
     CaptureFields.Components = true;
     return *this;
   }
 
+  /// @brief Captures and replays the component field from a named capture.
   RecipeOperandPattern &&ReplayComponentsFrom(std::string capture) && {
     Capture = std::move(capture);
     CaptureFields.Components = true;
     return std::move(*this);
   }
 
+  /// @brief Captures and replays the modifier field from a named capture.
   RecipeOperandPattern &ReplayModifierFrom(std::string capture) & {
     Capture = std::move(capture);
     CaptureFields.Modifier = true;
     return *this;
   }
 
+  /// @brief Captures and replays the modifier field from a named capture.
   RecipeOperandPattern &&ReplayModifierFrom(std::string capture) && {
     Capture = std::move(capture);
     CaptureFields.Modifier = true;
     return std::move(*this);
   }
 
+  /// @brief Captures and replays the index field from a named capture.
   RecipeOperandPattern &ReplayIndicesFrom(std::string capture) & {
     Capture = std::move(capture);
     CaptureFields.Indices = true;
     return *this;
   }
 
+  /// @brief Captures and replays the index field from a named capture.
   RecipeOperandPattern &&ReplayIndicesFrom(std::string capture) && {
     Capture = std::move(capture);
     CaptureFields.Indices = true;
     return std::move(*this);
   }
 
+  /// @brief Captures and replays the immediate field from a named capture.
   RecipeOperandPattern &ReplayImmediatesFrom(std::string capture) & {
     Capture = std::move(capture);
     CaptureFields.Immediates = true;
     return *this;
   }
 
+  /// @brief Captures and replays the immediate field from a named capture.
   RecipeOperandPattern &&ReplayImmediatesFrom(std::string capture) && {
     Capture = std::move(capture);
     CaptureFields.Immediates = true;
     return std::move(*this);
   }
 
+  /// @brief Sets match-capture fields projection configuration.
   RecipeOperandPattern &WithMatchCaptureFields(
       RecipeOperandCaptureFields matchCaptureFields) & {
     MatchCaptureFields = matchCaptureFields;
     return *this;
   }
 
-  /// Compare only selected fields against the named capture. This is the
-  /// fluent API equivalent of the YAML `match_capture: { from: ... }` form.
-
+  /// @brief Sets match-capture fields projection configuration.
   RecipeOperandPattern &&WithMatchCaptureFields(
       RecipeOperandCaptureFields matchCaptureFields) && {
     MatchCaptureFields = matchCaptureFields;
@@ -1148,153 +1270,181 @@ public:
   explicit RecipeOperandPatternBuilder(RecipeOperandPattern pattern)
       : pattern_(std::move(pattern)) {}
 
+  /// @brief Sets the wildcard flag. Valid on match patterns only.
   RecipeOperandPatternBuilder &WithAny(bool any = true) {
     pattern_.Any = any;
     return *this;
   }
 
+  /// @brief Sets the operand type name (e.g., "temp", "resource").
   RecipeOperandPatternBuilder &WithType(std::string type) {
     pattern_.Type = std::move(type);
     return *this;
   }
 
+  /// @brief Appends an index pattern to this operand.
   RecipeOperandPatternBuilder &
   AddIndex(RecipeOperandIndexPattern indexPattern) {
     pattern_.IndexPatterns.push_back(std::move(indexPattern));
     return *this;
   }
 
+  /// @brief Sets the handle to copy an operand from in emit templates.
   RecipeOperandPatternBuilder &WithFromHandle(std::string fromHandle) {
     pattern_.FromHandle = std::move(fromHandle);
     return *this;
   }
 
+  /// @brief Sets the mask string for this operand.
   RecipeOperandPatternBuilder &WithMask(std::string mask) {
     pattern_.Mask = std::move(mask);
     return *this;
   }
 
+  /// @brief Sets the swizzle string for this operand.
   RecipeOperandPatternBuilder &WithSwizzle(std::string swizzle) {
     pattern_.Swizzle = std::move(swizzle);
     return *this;
   }
 
+  /// @brief Sets the select string for this operand.
   RecipeOperandPatternBuilder &WithSelect(std::string select) {
     pattern_.Select = std::move(select);
     return *this;
   }
 
+  /// @brief Sets the number of components for this operand.
   RecipeOperandPatternBuilder &WithNumComponents(int32_t numComponents) {
     pattern_.NumComponents = numComponents;
     return *this;
   }
 
+  /// @brief Sets the operand modifier string.
   RecipeOperandPatternBuilder &WithModifier(std::string modifier) {
     pattern_.Modifier = std::move(modifier);
     return *this;
   }
 
+  /// @brief Sets the capture name for this operand.
   RecipeOperandPatternBuilder &CaptureAs(std::string capture) {
     pattern_.Capture = std::move(capture);
     return *this;
   }
 
+  /// @brief Sets the match-capture name to compare this operand against.
   RecipeOperandPatternBuilder &WithMatchCapture(std::string matchCapture) {
     pattern_.MatchCapture = std::move(matchCapture);
     return *this;
   }
 
+  /// @brief Sets the capture fields projection configuration.
   RecipeOperandPatternBuilder &WithCaptureFields(
       RecipeOperandCaptureFields captureFields) {
     pattern_.CaptureFields = captureFields;
     return *this;
   }
 
+  /// @brief Enables type field projection for captured operands.
   RecipeOperandPatternBuilder &WithCaptureFieldType(bool enabled = true) {
     pattern_.CaptureFields.Type = enabled;
     return *this;
   }
 
+  /// @brief Enables component field projection for captured operands.
   RecipeOperandPatternBuilder &WithCaptureFieldComponents(bool enabled = true) {
     pattern_.CaptureFields.Components = enabled;
     return *this;
   }
 
+  /// @brief Enables modifier field projection for captured operands.
   RecipeOperandPatternBuilder &WithCaptureFieldModifier(bool enabled = true) {
     pattern_.CaptureFields.Modifier = enabled;
     return *this;
   }
 
+  /// @brief Enables index field projection for captured operands.
   RecipeOperandPatternBuilder &WithCaptureFieldIndices(bool enabled = true) {
     pattern_.CaptureFields.Indices = enabled;
     return *this;
   }
 
+  /// @brief Enables immediate field projection for captured operands.
   RecipeOperandPatternBuilder &WithCaptureFieldImmediates(bool enabled = true) {
     pattern_.CaptureFields.Immediates = enabled;
     return *this;
   }
 
+  /// @brief Captures and replays the type field from a named capture.
   RecipeOperandPatternBuilder &ReplayTypeFrom(std::string capture) {
     pattern_.Capture = std::move(capture);
     pattern_.CaptureFields.Type = true;
     return *this;
   }
 
+  /// @brief Captures and replays the component field from a named capture.
   RecipeOperandPatternBuilder &ReplayComponentsFrom(std::string capture) {
     pattern_.Capture = std::move(capture);
     pattern_.CaptureFields.Components = true;
     return *this;
   }
 
+  /// @brief Captures and replays the modifier field from a named capture.
   RecipeOperandPatternBuilder &ReplayModifierFrom(std::string capture) {
     pattern_.Capture = std::move(capture);
     pattern_.CaptureFields.Modifier = true;
     return *this;
   }
 
+  /// @brief Captures and replays the index field from a named capture.
   RecipeOperandPatternBuilder &ReplayIndicesFrom(std::string capture) {
     pattern_.Capture = std::move(capture);
     pattern_.CaptureFields.Indices = true;
     return *this;
   }
 
+  /// @brief Captures and replays the immediate field from a named capture.
   RecipeOperandPatternBuilder &ReplayImmediatesFrom(std::string capture) {
     pattern_.Capture = std::move(capture);
     pattern_.CaptureFields.Immediates = true;
     return *this;
   }
 
+  /// @brief Sets match-capture fields projection configuration.
   RecipeOperandPatternBuilder &WithMatchCaptureFields(
       RecipeOperandCaptureFields matchCaptureFields) {
     pattern_.MatchCaptureFields = matchCaptureFields;
     return *this;
   }
 
+  /// @brief Enables type field projection for match-capture comparisons.
   RecipeOperandPatternBuilder &
   WithMatchCaptureFieldType(bool enabled = true) {
     pattern_.MatchCaptureFields.Type = enabled;
     return *this;
   }
 
+  /// @brief Enables component field projection for match-capture comparisons.
   RecipeOperandPatternBuilder &
   WithMatchCaptureFieldComponents(bool enabled = true) {
     pattern_.MatchCaptureFields.Components = enabled;
     return *this;
   }
 
+  /// @brief Enables modifier field projection for match-capture comparisons.
   RecipeOperandPatternBuilder &
   WithMatchCaptureFieldModifier(bool enabled = true) {
     pattern_.MatchCaptureFields.Modifier = enabled;
     return *this;
   }
 
+  /// @brief Enables index field projection for match-capture comparisons.
   RecipeOperandPatternBuilder &
   WithMatchCaptureFieldIndices(bool enabled = true) {
     pattern_.MatchCaptureFields.Indices = enabled;
     return *this;
   }
 
+  /// @brief Enables immediate field projection for match-capture comparisons.
   RecipeOperandPatternBuilder &
   WithMatchCaptureFieldImmediates(bool enabled = true) {
     pattern_.MatchCaptureFields.Immediates = enabled;
@@ -1318,61 +1468,73 @@ struct RecipeInstructionPattern {
   int32_t TestBoolean = -1;
   std::vector<RecipeOperandPattern> Operands;
 
+  /// @brief Sets the opcode name for this instruction pattern.
   RecipeInstructionPattern &WithOpcode(std::string opcode) & {
     Opcode = std::move(opcode);
     return *this;
   }
 
+  /// @brief Sets the opcode name for this instruction pattern.
   RecipeInstructionPattern &&WithOpcode(std::string opcode) && {
     Opcode = std::move(opcode);
     return std::move(*this);
   }
 
+  /// @brief Sets the capture name for this instruction pattern.
   RecipeInstructionPattern &CaptureAs(std::string capture) & {
     Capture = std::move(capture);
     return *this;
   }
 
+  /// @brief Sets the capture name for this instruction pattern.
   RecipeInstructionPattern &&CaptureAs(std::string capture) && {
     Capture = std::move(capture);
     return std::move(*this);
   }
 
+  /// @brief Sets the saturate modifier for this instruction pattern.
   RecipeInstructionPattern &WithSaturate(std::string saturate) & {
     Saturate = std::move(saturate);
     return *this;
   }
 
+  /// @brief Sets the saturate modifier for this instruction pattern.
   RecipeInstructionPattern &&WithSaturate(std::string saturate) && {
     Saturate = std::move(saturate);
     return std::move(*this);
   }
 
+  /// @brief Sets the interpolation mode for this instruction pattern.
   RecipeInstructionPattern &WithInterpolationMode(std::string interpolationMode) & {
     InterpolationMode = std::move(interpolationMode);
     return *this;
   }
 
+  /// @brief Sets the interpolation mode for this instruction pattern.
   RecipeInstructionPattern &&WithInterpolationMode(std::string interpolationMode) && {
     InterpolationMode = std::move(interpolationMode);
     return std::move(*this);
   }
 
+  /// @brief Sets the test_boolean control value for this instruction pattern.
   RecipeInstructionPattern &WithTestBoolean(int32_t testBoolean) & {
     TestBoolean = testBoolean;
     return *this;
   }
 
+  /// @brief Sets the test_boolean control value for this instruction pattern.
   RecipeInstructionPattern &&WithTestBoolean(int32_t testBoolean) && {
     TestBoolean = testBoolean;
     return std::move(*this);
   }
 
+  /// @brief Appends an operand pattern to this instruction.
   RecipeInstructionPattern &AddOperand(RecipeOperandPattern operand) & {
     Operands.push_back(std::move(operand));
     return *this;
   }
 
+  /// @brief Appends an operand pattern to this instruction.
   RecipeInstructionPattern &&AddOperand(RecipeOperandPattern operand) && {
     Operands.push_back(std::move(operand));
     return std::move(*this);
@@ -1387,51 +1549,61 @@ struct RecipeInstructionTemplate {
   int32_t TestBoolean = -1;
   std::vector<RecipeOperandPattern> Operands;
 
+  /// @brief Sets the opcode name for this instruction template.
   RecipeInstructionTemplate &WithOpcode(std::string opcode) & {
     Opcode = std::move(opcode);
     return *this;
   }
 
+  /// @brief Sets the opcode name for this instruction template.
   RecipeInstructionTemplate &&WithOpcode(std::string opcode) && {
     Opcode = std::move(opcode);
     return std::move(*this);
   }
 
+  /// @brief Sets the saturate modifier for this instruction template.
   RecipeInstructionTemplate &WithSaturate(std::string saturate) & {
     Saturate = std::move(saturate);
     return *this;
   }
 
+  /// @brief Sets the saturate modifier for this instruction template.
   RecipeInstructionTemplate &&WithSaturate(std::string saturate) && {
     Saturate = std::move(saturate);
     return std::move(*this);
   }
 
+  /// @brief Sets the interpolation mode for this instruction template.
   RecipeInstructionTemplate &WithInterpolationMode(std::string interpolationMode) & {
     InterpolationMode = std::move(interpolationMode);
     return *this;
   }
 
+  /// @brief Sets the interpolation mode for this instruction template.
   RecipeInstructionTemplate &&WithInterpolationMode(std::string interpolationMode) && {
     InterpolationMode = std::move(interpolationMode);
     return std::move(*this);
   }
 
+  /// @brief Sets the test_boolean control value for this instruction template.
   RecipeInstructionTemplate &WithTestBoolean(int32_t testBoolean) & {
     TestBoolean = testBoolean;
     return *this;
   }
 
+  /// @brief Sets the test_boolean control value for this instruction template.
   RecipeInstructionTemplate &&WithTestBoolean(int32_t testBoolean) && {
     TestBoolean = testBoolean;
     return std::move(*this);
   }
 
+  /// @brief Appends an operand pattern to this instruction template.
   RecipeInstructionTemplate &AddOperand(RecipeOperandPattern operand) & {
     Operands.push_back(std::move(operand));
     return *this;
   }
 
+  /// @brief Appends an operand pattern to this instruction template.
   RecipeInstructionTemplate &&AddOperand(RecipeOperandPattern operand) && {
     Operands.push_back(std::move(operand));
     return std::move(*this);
@@ -1448,71 +1620,85 @@ struct RecipeMatchPattern {
   std::vector<RecipeOperandPattern> Operands;
   std::vector<RecipeInstructionPattern> Sequence;
 
+  /// @brief Sets the opcode name for this match pattern.
   RecipeMatchPattern &WithOpcode(std::string opcode) & {
     Opcode = std::move(opcode);
     return *this;
   }
 
+  /// @brief Sets the opcode name for this match pattern.
   RecipeMatchPattern &&WithOpcode(std::string opcode) && {
     Opcode = std::move(opcode);
     return std::move(*this);
   }
 
+  /// @brief Sets the capture name for this match pattern.
   RecipeMatchPattern &CaptureAs(std::string capture) & {
     Capture = std::move(capture);
     return *this;
   }
 
+  /// @brief Sets the capture name for this match pattern.
   RecipeMatchPattern &&CaptureAs(std::string capture) && {
     Capture = std::move(capture);
     return std::move(*this);
   }
 
+  /// @brief Sets the saturate modifier for this match pattern.
   RecipeMatchPattern &WithSaturate(std::string saturate) & {
     Saturate = std::move(saturate);
     return *this;
   }
 
+  /// @brief Sets the saturate modifier for this match pattern.
   RecipeMatchPattern &&WithSaturate(std::string saturate) && {
     Saturate = std::move(saturate);
     return std::move(*this);
   }
 
+  /// @brief Sets the interpolation mode for this match pattern.
   RecipeMatchPattern &WithInterpolationMode(std::string interpolationMode) & {
     InterpolationMode = std::move(interpolationMode);
     return *this;
   }
 
+  /// @brief Sets the interpolation mode for this match pattern.
   RecipeMatchPattern &&WithInterpolationMode(std::string interpolationMode) && {
     InterpolationMode = std::move(interpolationMode);
     return std::move(*this);
   }
 
+  /// @brief Sets the test_boolean control value for this match pattern.
   RecipeMatchPattern &WithTestBoolean(int32_t testBoolean) & {
     TestBoolean = testBoolean;
     return *this;
   }
 
+  /// @brief Sets the test_boolean control value for this match pattern.
   RecipeMatchPattern &&WithTestBoolean(int32_t testBoolean) && {
     TestBoolean = testBoolean;
     return std::move(*this);
   }
 
+  /// @brief Appends an operand pattern to this match pattern.
   RecipeMatchPattern &AddOperand(RecipeOperandPattern operand) & {
     Operands.push_back(std::move(operand));
     return *this;
   }
 
+  /// @brief Appends an operand pattern to this match pattern.
   RecipeMatchPattern &&AddOperand(RecipeOperandPattern operand) && {
     Operands.push_back(std::move(operand));
     return std::move(*this);
   }
 
+  /// @brief Appends an instruction pattern to this match sequence.
   RecipeMatchPattern &AddInstruction(RecipeInstructionPattern instruction) & {
     Sequence.push_back(std::move(instruction));
     return *this;
   }
 
+  /// @brief Appends an instruction pattern to this match sequence.
   RecipeMatchPattern &&AddInstruction(RecipeInstructionPattern instruction) && {
     Sequence.push_back(std::move(instruction));
     return std::move(*this);
@@ -1639,11 +1825,13 @@ struct RecipeRule {
   RecipeRulePredicate Predicate;
   RecipeRewriteCallback RewriteCallback;
 
+  /// @brief Sets the rule name used for state publication and diagnostics.
   RecipeRule &Named(std::string name) & {
     Name = std::move(name);
     return *this;
   }
 
+  /// @brief Sets the rule name used for state publication and diagnostics.
   RecipeRule &&Named(std::string name) && {
     Name = std::move(name);
     return std::move(*this);
@@ -1735,27 +1923,27 @@ struct RecipeRule {
     return std::move(*this);
   }
 
-  /// @brief Sets a sequence-window-relative anchor index for Before/After
-  /// rewriting.
+  /// @brief Sets a sequence-window-relative anchor index for Before/After rewriting.
   RecipeRule &InsertAfterRelativeIndex(int32_t index) & {
     RewriteCallback = {};
     InsertRelativeIndex = index;
     return *this;
   }
 
-  /// @brief Sets a sequence-window-relative anchor index for Before/After
-  /// rewriting.
+  /// @brief Sets a sequence-window-relative anchor index for Before/After rewriting.
   RecipeRule &&InsertAfterRelativeIndex(int32_t index) && {
     RewriteCallback = {};
     InsertRelativeIndex = index;
     return std::move(*this);
   }
 
+  /// @brief Sets the rule application mode (First, Last, or MatchAll).
   RecipeRule &ApplyMode(RecipeRuleApplicationMode applicationMode) & {
     ApplicationMode = applicationMode;
     return *this;
   }
 
+  /// @brief Sets the rule application mode (First, Last, or MatchAll).
   RecipeRule &&ApplyMode(RecipeRuleApplicationMode applicationMode) && {
     ApplicationMode = applicationMode;
     return std::move(*this);
@@ -1809,11 +1997,13 @@ struct RecipeRule {
     return std::move(*this);
   }
 
+  /// @brief Sets a predicate that gates whether this rule is evaluated.
   RecipeRule &When(RecipeRulePredicate predicate) & {
     Predicate = std::move(predicate);
     return *this;
   }
 
+  /// @brief Sets a predicate that gates whether this rule is evaluated.
   RecipeRule &&When(RecipeRulePredicate predicate) && {
     Predicate = std::move(predicate);
     return std::move(*this);
@@ -1849,35 +2039,41 @@ struct RecipeStepComparison {
   std::string Input;
   std::string Value;
 
+  /// @brief Sets the state key to compare against.
   RecipeStepComparison &FromState(std::string state) & {
     State = std::move(state);
     Input.clear();
     return *this;
   }
 
+  /// @brief Sets the state key to compare against.
   RecipeStepComparison &&FromState(std::string state) && {
     State = std::move(state);
     Input.clear();
     return std::move(*this);
   }
 
+  /// @brief Sets the input key to compare against.
   RecipeStepComparison &FromInput(std::string input) & {
     Input = std::move(input);
     State.clear();
     return *this;
   }
 
+  /// @brief Sets the input key to compare against.
   RecipeStepComparison &&FromInput(std::string input) && {
     Input = std::move(input);
     State.clear();
     return std::move(*this);
   }
 
+  /// @brief Sets the value to compare against.
   RecipeStepComparison &WithValue(std::string value) & {
     Value = std::move(value);
     return *this;
   }
 
+  /// @brief Sets the value to compare against.
   RecipeStepComparison &&WithValue(std::string value) && {
     Value = std::move(value);
     return std::move(*this);
@@ -1979,23 +2175,25 @@ struct RecipeStep {
     return std::move(*this);
   }
 
-  // Overload for declarative condition
+  /// @brief Sets a declarative condition that gates whether this step runs.
   RecipeStep &When(RecipeStepCondition condition) & {
     If = std::move(condition);
     return *this;
   }
 
+  /// @brief Sets a declarative condition that gates whether this step runs.
   RecipeStep &&When(RecipeStepCondition condition) && {
     If = std::move(condition);
     return std::move(*this);
   }
 
-  // Overload for programmatic predicate
+  /// @brief Sets a programmatic predicate that gates whether this step runs.
   RecipeStep &When(RecipeStepPredicate predicate) & {
     Predicate = std::move(predicate);
     return *this;
   }
 
+  /// @brief Sets a programmatic predicate that gates whether this step runs.
   RecipeStep &&When(RecipeStepPredicate predicate) && {
     Predicate = std::move(predicate);
     return std::move(*this);

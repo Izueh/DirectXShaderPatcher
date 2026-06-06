@@ -178,27 +178,32 @@ struct DxilRuleApplicationReport {
 /// @brief Fluent builder for DxilRewriteResult values.
 class DxilRewriteResultBuilder {
 public:
+  /// @brief Sets the success status of the rewrite result.
   DxilRewriteResultBuilder &Success(bool success = true) {
     result_.success = success;
     return *this;
   }
 
+  /// @brief Marks the replacement as handled by the callback.
   DxilRewriteResultBuilder &HandledReplacement(bool handled = true) {
     result_.handledReplacement = handled;
     return *this;
   }
 
+  /// @brief Sets the replacement value for Replace/ReplaceRange operations.
   DxilRewriteResultBuilder &ReplaceWith(llvm::Value *replacementValue) {
     result_.replacementValue = replacementValue;
     return *this;
   }
 
+  /// @brief Adds an instruction root to prune after the rewrite.
   DxilRewriteResultBuilder &Prune(llvm::Instruction *instruction) {
     if (instruction != nullptr)
       result_.pruneRoots.push_back(instruction);
     return *this;
   }
 
+  /// @brief Adds multiple instruction roots to prune after the rewrite.
   DxilRewriteResultBuilder &
   Prune(const std::vector<llvm::Instruction *> &instructions) {
     for (llvm::Instruction *instruction : instructions) {
@@ -261,22 +266,26 @@ public:
   explicit DxilOperandPatternBuilder(DxilOperandPattern pattern)
       : pattern_(std::move(pattern)) {}
 
+  /// @brief Sets the capture name for this operand pattern.
   DxilOperandPatternBuilder &Capture(std::string captureName) {
     pattern_.captureName = std::move(captureName);
     return *this;
   }
 
+  /// @brief Sets the match-capture name to compare this operand against.
   DxilOperandPatternBuilder &MatchCapture(std::string captureName) {
     pattern_.matchCaptureName = std::move(captureName);
     return *this;
   }
 
+  /// @brief Sets the list of operand patterns for nested matching.
   DxilOperandPatternBuilder &
   Args(std::vector<DxilOperandPattern> operandPatterns) {
     pattern_.operandPatterns = std::move(operandPatterns);
     return *this;
   }
 
+  /// @brief Sets the list of operand patterns for nested matching.
   DxilOperandPatternBuilder &
   Args(std::initializer_list<DxilOperandPattern> operandPatterns) {
     pattern_.operandPatterns.assign(operandPatterns.begin(),
@@ -284,6 +293,7 @@ public:
     return *this;
   }
 
+  /// @brief Matches operands of the specified resource class.
   DxilOperandPatternBuilder &
   ResourceClass(hlsl::DXIL::ResourceClass resourceClass) {
     pattern_.matchResourceClass = true;
@@ -291,11 +301,13 @@ public:
     return *this;
   }
 
+  /// @brief Matches any texture resource regardless of specific kind.
   DxilOperandPatternBuilder &AnyTexture() {
     pattern_.matchAnyTexture = true;
     return *this;
   }
 
+  /// @brief Matches operands of the specified resource kind.
   DxilOperandPatternBuilder &
   ResourceKind(hlsl::DXIL::ResourceKind resourceKind) {
     pattern_.matchResourceKind = true;
@@ -303,22 +315,26 @@ public:
     return *this;
   }
 
+  /// @brief Matches operands with the specified resource name.
   DxilOperandPatternBuilder &ResourceName(std::string resourceName) {
     pattern_.resourceName = std::move(resourceName);
     return *this;
   }
 
+  /// @brief Matches operands with a resource name matching the given pattern.
   DxilOperandPatternBuilder &
   ResourceNameLike(std::string resourceNameLikePattern) {
     pattern_.resourceNameLikePattern = std::move(resourceNameLikePattern);
     return *this;
   }
 
+  /// @brief Matches operands bound at the specified register bind point.
   DxilOperandPatternBuilder &BindPoint(unsigned bindPoint) {
     pattern_.resourceBindPoint = static_cast<int>(bindPoint);
     return *this;
   }
 
+  /// @brief Matches operands bound at the specified register space.
   DxilOperandPatternBuilder &Space(unsigned space) {
     pattern_.resourceSpace = static_cast<int>(space);
     return *this;
@@ -338,17 +354,20 @@ public:
   explicit DxilCallPatternBuilder(DxilCallPattern pattern)
       : pattern_(std::move(pattern)) {}
 
+  /// @brief Sets the capture name for this call pattern.
   DxilCallPatternBuilder &Capture(std::string captureName) {
     pattern_.captureName = std::move(captureName);
     return *this;
   }
 
+  /// @brief Sets the list of operand patterns for this call.
   DxilCallPatternBuilder &
   Args(std::vector<DxilOperandPattern> operandPatterns) {
     pattern_.operandPatterns = std::move(operandPatterns);
     return *this;
   }
 
+  /// @brief Sets the list of operand patterns for this call.
   DxilCallPatternBuilder &
   Args(std::initializer_list<DxilOperandPattern> operandPatterns) {
     pattern_.operandPatterns.assign(operandPatterns.begin(),
@@ -371,41 +390,49 @@ public:
     rule_.name = std::move(name);
   }
 
+  /// @brief Sets the match pattern for this rewrite rule.
   DxilRewriteRuleBuilder &Match(DxilCallPattern pattern) {
     rule_.pattern = std::move(pattern);
     return *this;
   }
 
+  /// @brief Adds a binding constraint pattern for this rewrite rule.
   DxilRewriteRuleBuilder &Bind(DxilCallPattern pattern) {
     rule_.bindingPatterns.push_back(std::move(pattern));
     return *this;
   }
 
+  /// @brief Sets a predicate that gates whether this rule is evaluated.
   DxilRewriteRuleBuilder &Where(DxilMatchPredicate predicate) {
     rule_.predicate = std::move(predicate);
     return *this;
   }
 
+  /// @brief Sets the rewrite mode (None, Before, After, Replace, ReplaceRange).
   DxilRewriteRuleBuilder &Mode(DxilRewriteMode mode) {
     rule_.mode = mode;
     return *this;
   }
 
+  /// @brief Sets the capture name to use as the replacement value.
   DxilRewriteRuleBuilder &ReplaceCapture(std::string captureName) {
     rule_.replaceCaptureName = std::move(captureName);
     return *this;
   }
 
+  /// @brief Sets the start offset for ReplaceRange relative to the match window.
   DxilRewriteRuleBuilder &RangeStartOffset(int32_t offset) {
     rule_.rangeStartOffset = offset;
     return *this;
   }
 
+  /// @brief Sets the end offset for ReplaceRange relative to the match window.
   DxilRewriteRuleBuilder &RangeEndOffset(int32_t offset) {
     rule_.rangeEndOffset = offset;
     return *this;
   }
 
+  /// @brief Sets both start and end offsets for ReplaceRange.
   DxilRewriteRuleBuilder &RangeOffsets(int32_t startOffset,
                                        int32_t endOffset) {
     rule_.rangeStartOffset = startOffset;
@@ -413,29 +440,34 @@ public:
     return *this;
   }
 
+  /// @brief Sets the capture name to use as the replacement value.
   DxilRewriteRuleBuilder &ReplaceWithCapture(std::string captureName) {
     rule_.replacementCaptureName = std::move(captureName);
     return *this;
   }
 
+  /// @brief Emits a single DXIL operation call.
   DxilRewriteRuleBuilder &EmitDxOp(hlsl::OP::OpCode dxilOpCode) {
     rule_.emittedCall.enabled = true;
     rule_.emittedCall.dxilOpCode = dxilOpCode;
     return *this;
   }
 
+  /// @brief Emits an extract value operation.
   DxilRewriteRuleBuilder &EmitExtract(unsigned extractIndex) {
     rule_.emittedCall.enabled = true;
     rule_.emittedCall.extractIndex = static_cast<int>(extractIndex);
     return *this;
   }
 
+  /// @brief Appends an operand to the emitted DXIL call.
   DxilRewriteRuleBuilder &EmitOperand(DxilRewriteEmitOperand operand) {
     rule_.emittedCall.enabled = true;
     rule_.emittedCall.operands.push_back(std::move(operand));
     return *this;
   }
 
+  /// @brief Sets the list of operands for the emitted DXIL call.
   DxilRewriteRuleBuilder &
   EmitOperands(std::vector<DxilRewriteEmitOperand> operands) {
     rule_.emittedCall.enabled = true;
@@ -443,16 +475,19 @@ public:
     return *this;
   }
 
+  /// @brief Appends an intermediate value to the emit sequence.
   DxilRewriteRuleBuilder &EmitValue(DxilRewriteEmitValue value) {
     rule_.emittedSequence.values.push_back(std::move(value));
     return *this;
   }
 
+  /// @brief Sets the replacement value name for the emit sequence.
   DxilRewriteRuleBuilder &ReplaceWithEmittedValue(std::string valueName) {
     rule_.emittedSequence.replacementValueName = std::move(valueName);
     return *this;
   }
 
+  /// @brief Adds a capture name whose matched instruction should be pruned.
   DxilRewriteRuleBuilder &PruneCapture(std::string captureName) {
     rule_.pruneCaptureNames.push_back(std::move(captureName));
     return *this;
@@ -465,6 +500,7 @@ public:
     return *this;
   }
 
+  /// @brief Sets a callback for custom rewrite logic.
   DxilRewriteRuleBuilder &Callback(DxilRewriteCallback callback) {
     rule_.replacementCallback = std::move(callback);
     return *this;
@@ -669,24 +705,31 @@ public:
   explicit RenderTargetStoreBuilder(RenderTargetStoreDesc desc)
       : desc_(std::move(desc)) {}
 
+  /// @brief Sets the output signature ID for the render-target store.
   RenderTargetStoreBuilder &Target(unsigned outputSigId) {
     desc_.outputSigId = outputSigId;
     return *this;
   }
 
+  /// @brief Sets the row index for the render-target store.
   RenderTargetStoreBuilder &Row(unsigned rowIndex) {
     desc_.rowIndex = rowIndex;
     return *this;
   }
 
+  /// @brief Sets the component index for the render-target store.
   RenderTargetStoreBuilder &Component(unsigned componentIndex) {
     desc_.componentIndex = componentIndex;
     return *this;
   }
 
+  /// @brief Sets component 0 (red channel).
   RenderTargetStoreBuilder &R() { return Component(0); }
+  /// @brief Sets component 1 (green channel).
   RenderTargetStoreBuilder &G() { return Component(1); }
+  /// @brief Sets component 2 (blue channel).
   RenderTargetStoreBuilder &B() { return Component(2); }
+  /// @brief Sets component 3 (alpha channel).
   RenderTargetStoreBuilder &A() { return Component(3); }
 
   RenderTargetStoreDesc Build() const { return desc_; }

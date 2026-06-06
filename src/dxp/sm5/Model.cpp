@@ -332,15 +332,9 @@ bool ParseOpcode(const std::string &name, Opcode &opcode) {
                                             implicitTestBoolean);
 }
 
-// -----------------------------------------------------------------------------
-// Instruction Layout: opcode → operand roles
-// -----------------------------------------------------------------------------
-
 namespace {
 
 using Role = OperandRole;
-
-// Helper to build an InstructionLayout entry from a list of roles.
 inline InstructionLayout layout(OpcodeType opcode) {
   InstructionLayout entry{};
   entry.Opcode = opcode;
@@ -400,7 +394,6 @@ inline InstructionLayout layout(OpcodeType opcode, Role r1, Role r2, Role r3,
   return entry;
 }
 
-// Data instructions: opcode → operand roles.
 static const std::array<InstructionLayout, 194> g_InstructionLayouts = {{
     // ---- Arithmetic (3-operand: dst, src0, src1) ----
     layout(D3D10_SB_OPCODE_ADD,   Role::Destination, Role::Source, Role::Source),
@@ -605,7 +598,6 @@ OperandRole GetOperandRole(OpcodeType opcode, size_t operandIndex) {
       }
     }
   }
-  // Unknown opcode: default to source (safe fallback)
   return OperandRole::Source;
 }
 

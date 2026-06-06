@@ -384,9 +384,7 @@ static bool MatchInstruction(
 
     if (!operandPattern.CaptureName.empty()) {
       capturedOperands[operandPattern.CaptureName] = &operand;
-      // Track operand position for role-based component mode conversion.
       capturedOperandPositions[operandPattern.CaptureName] = index;
-      // Set the operand's role (source/destination) at capture time.
       const_cast<Operand *>(&operand)->Role =
           GetOperandRole(instruction.Opcode.Value, index);
     }

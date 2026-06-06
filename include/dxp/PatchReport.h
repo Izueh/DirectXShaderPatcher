@@ -26,13 +26,9 @@ enum class PatchResourceKind {
 };
 
 struct PatchBindingValue {
-  /// Handle used by the recipe and reported back to the caller.
   std::string Handle;
-  /// Final shader-facing resource class that must be bound.
   PatchResourceKind ResourceKind = PatchResourceKind::Unknown;
-  /// Final bind register within the reported register space.
   uint32_t BindPoint = 0;
-  /// Final register space for the binding.
   uint32_t Space = 0;
 };
 
@@ -95,14 +91,8 @@ struct PatchContainerReport {
 /// Additional execution details can be added here without changing the
 /// mutable recipe-context contract.
 struct PatchReport {
-  /// Per-step execution summary, including rule reports and step-local
-  /// binding side effects when a caller needs execution detail.
   std::vector<PatchStepReport> Steps;
-  /// Final shader-facing bindings introduced by the patch, keyed by recipe
-  /// handle. This is the normalized output contract a host should read when it
-  /// needs to know what newly required resources must be bound.
   std::unordered_map<std::string, PatchBindingValue> NewBindings;
-  /// Summary of the final serialized output container.
   PatchContainerReport OutputContainer;
 };
 
