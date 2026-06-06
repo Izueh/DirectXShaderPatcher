@@ -1,6 +1,6 @@
 #pragma once
 
-#include "dxp/sm5/Model.h"
+#include "Model.h"
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/YAMLTraits.h"

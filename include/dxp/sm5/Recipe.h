@@ -1,7 +1,6 @@
 #pragma once
 
 #include "dxp/PatchReport.h"
-#include "dxp/sm5/Model.h"
 
 #include <any>
 #include <cstdint>

@@ -1,4 +1,4 @@
-#include "dxp/sm5/Parse.h"
+#include "Parse.h"
 
 #include "d3d11TokenizedProgramFormat.hpp"
 

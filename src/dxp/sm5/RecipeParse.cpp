@@ -1,11 +1,11 @@
 #include "dxp/sm5/RecipeParse.h"
 
-#include "dxp/sm5/YamlTraits.h"
+#include "YamlTraits.h"
 
 #include "d3d11TokenizedProgramFormat.hpp"
 
-#include "dxp/sm5/Model.h"
-#include "dxp/sm5/Transforms.h"
+#include "Model.h"
+#include "Transforms.h"
 
 #include <cctype>
 #include <climits>

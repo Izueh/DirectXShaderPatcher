@@ -2,11 +2,11 @@
 
 #include "d3d11TokenizedProgramFormat.hpp"
 
-#include "dxp/sm5/Container.h"
-#include "dxp/sm5/Model.h"
-#include "dxp/sm5/Parse.h"
-#include "dxp/sm5/Serialize.h"
-#include "dxp/sm5/Transforms.h"
+#include "Container.h"
+#include "Model.h"
+#include "Parse.h"
+#include "Serialize.h"
+#include "Transforms.h"
 
 #include <cctype>
 #include <cstring>

@@ -1,4 +1,4 @@
-#include "dxp/sm5/Model.h"
+#include "Model.h"
 
 #include "d3d11TokenizedProgramFormat.hpp"
 

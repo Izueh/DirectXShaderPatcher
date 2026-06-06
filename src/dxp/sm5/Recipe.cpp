@@ -3,8 +3,8 @@
 #include "d3d11TokenizedProgramFormat.hpp"
 
 #include "dxp/PatchReport.h"
-#include "dxp/sm5/Serialize.h"
-#include "dxp/sm5/Transforms.h"
+#include "Serialize.h"
+#include "Transforms.h"
 
 #include <algorithm>
 #include <cctype>

@@ -1,4 +1,4 @@
-#include "dxp/sm5/Serialize.h"
+#include "Serialize.h"
 
 #include "d3d11TokenizedProgramFormat.hpp"
 
