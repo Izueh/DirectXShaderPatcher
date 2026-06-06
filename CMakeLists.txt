@@ -130,16 +130,15 @@ add_library(dxp_lib STATIC
 )
 
 # Mark DXC and WDK includes as SYSTEM for consumers
+# PRIVATE: project-internal headers (consumers only need installed public headers)
+# SYSTEM PUBLIC: third-party headers consumers need transitively (warnings suppressed)
+target_include_directories(dxp_lib PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
 target_include_directories(dxp_lib SYSTEM PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src"
     "${DXC_SOURCE_DIR}/include"
-    "${DXC_SOURCE_DIR}/lib/Reflect"
     "${DXC_BINARY_DIR}/include"
-    "${DXC_SOURCE_DIR}/external/llvm/include"
-    "${DXC_BINARY_DIR}/external/llvm/include"
-    "${DXC_SOURCE_DIR}/external/llvm/tools/clang/include"
-    "${DXC_BINARY_DIR}/external/llvm/tools/clang/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/external/WDK/includes"
 )
 
