@@ -297,14 +297,14 @@ endif()
     if(TARGET dxp)
         install(
             TARGETS dxp
-            RUNTIME DESTINATION "."
+            RUNTIME DESTINATION "bin"
             COMPONENT ${DXP_CLI_COMPONENT}
         )
 
         if(EXISTS "${DXC_BINARY_DIR}/bin/dxcompiler.dll")
             install(
                 FILES "${DXC_BINARY_DIR}/bin/dxcompiler.dll"
-                DESTINATION "."
+                DESTINATION "bin"
                 COMPONENT ${DXP_CLI_COMPONENT}
             )
         endif()
