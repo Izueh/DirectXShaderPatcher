@@ -22,12 +22,12 @@ dxp sm5 validate recipes/sm5_recipe.yml
 dxp sm6 validate recipes/sm6_recipe.yml
 
 # Patch a shader with a recipe
-dxp sm5 patch input.cso recipe.recipe.yml output.cso
-dxp sm6 patch input.cso recipe.recipe.yml output.cso
+dxp sm5 patch recipe.recipe.yml input.cso output.cso
+dxp sm6 patch recipe.recipe.yml input.cso output.cso
 
 # Emit per-step diagnostics while applying a recipe
-dxp sm5 patch input.cso recipe.recipe.yml output.cso --trace
-dxp sm6 patch input.cso recipe.recipe.yml output.cso --trace
+dxp sm5 patch recipe.recipe.yml input.cso output.cso --trace
+dxp sm6 patch recipe.recipe.yml input.cso output.cso --trace
 ```
 
 ## Schemas

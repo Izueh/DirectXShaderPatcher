@@ -19,11 +19,12 @@ namespace {
 
 static void PrintUsage() {
   std::cerr << "Usage:\n"
-            << "  dxp sm5 patch <input.cso> <recipe.recipe.yml> <output.cso> [--trace]\n"
+            << "  dxp sm5 patch <recipe.recipe.yml> <input.cso> [output.cso] [--trace]\n"
             << "  dxp sm5 validate <recipe.recipe.yml>\n"
-            << "  dxp sm6 patch <input.cso> <recipe.recipe.yml> <output.cso> [--trace]\n"
+            << "  dxp sm6 patch <recipe.recipe.yml> <input.cso> [output.cso] [--trace]\n"
             << "  dxp sm6 validate <recipe.recipe.yml>\n"
-            << "Recipe files are YAML documents.\n";
+            << "Recipe files are YAML documents.\n"
+            << "If output is omitted, defaults to <input>.patched.<ext>.\n";
 }
 
 static bool ReadBinaryFile(const std::string &path,
@@ -210,20 +211,47 @@ int main(int argc, char **argv) {
   }
 
   if (cmd == "patch") {
-    if (argc != 6 && argc != 7) {
+    if (argc < 5 || argc > 7) {
       PrintUsage();
       return 1;
     }
 
-    const bool traceEnabled = argc == 7 && std::string(argv[6]) == "--trace";
-    if (argc == 7 && !traceEnabled) {
-      std::cerr << "Unknown option: " << argv[6] << "\n";
-      return 1;
+    const char *recipePath = argv[3];
+    const char *inputPath = argv[4];
+
+    // Determine output path and trace flag
+    const char *outputPath = nullptr;
+    bool traceEnabled = false;
+
+    if (argc == 5) {
+      // dxp <sm5|sm6> patch <recipe> <input>
+      outputPath = nullptr;
+      traceEnabled = false;
+    } else if (argc == 6) {
+      if (std::string(argv[5]) == "--trace") {
+        traceEnabled = true;
+      } else {
+        outputPath = argv[5];
+      }
+    } else {
+      // argc == 7
+      if (std::string(argv[6]) == "--trace") {
+        traceEnabled = true;
+        outputPath = argv[5];
+      } else {
+        std::cerr << "Unknown option: " << argv[6] << "\n";
+        return 1;
+      }
     }
 
-    const char *inputPath = argv[3];
-    const char *recipePath = argv[4];
-    const char *outputPath = argv[5];
+    // Derive default output path if not provided
+    std::string resolvedOutputPath;
+    if (!outputPath) {
+      const std::filesystem::path inputP(inputPath);
+      resolvedOutputPath =
+          inputP.stem().string() + ".patched" + inputP.extension().string();
+      outputPath = resolvedOutputPath.c_str();
+    }
 
     exitCode = (backend == "sm5")
              ? RunPatchSm5Command(inputPath, recipePath, outputPath,
