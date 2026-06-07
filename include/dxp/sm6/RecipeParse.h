@@ -32,14 +32,36 @@ struct DxilContainerPatchOptions {
 struct DxilRecipeParseResult {
   DxilRecipe recipe;
   DxilContainerPatchOptions patchOptions;
+  /// Non-empty on failure. Contains glaze YAML parse errors (with line/column)
+  /// or post-parse validation messages.
   std::string error;
 };
 
 /// @brief Parses a DXIL recipe from YAML text.
+///
+/// On failure, `result.error` contains glaze YAML parse diagnostics with
+/// line/column information (e.g. "recipe:5:22: unknown_key") or
+/// post-parse validation messages.
+///
+/// @param recipeText YAML recipe contents.
+/// @param result Receives the parsed recipe or parse error.
+/// @param sourceName Logical source name used in diagnostics.
+/// @return `true` on success.
 bool ParseDxilRecipeText(const std::string &recipeText,
                          DxilRecipeParseResult &result,
                          const std::string &sourceName = "recipe");
 
 /// @brief Parses a DXIL recipe from a file path.
+///
+/// This is equivalent to loading the file contents and calling
+/// `ParseDxilRecipeText`.
+///
+/// On failure, `result.error` contains glaze YAML parse diagnostics with
+/// line/column information (e.g. "recipe:5:22: unknown_key") or
+/// post-parse validation messages.
+///
+/// @param recipePath Path to the YAML recipe file.
+/// @param result Receives the parsed recipe or parse error.
+/// @return `true` on success.
 bool ParseDxilRecipeFile(const std::string &recipePath,
                          DxilRecipeParseResult &result);
