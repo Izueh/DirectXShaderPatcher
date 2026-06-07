@@ -1824,6 +1824,8 @@ struct RecipeRule {
   RecipeRuleRewriteMode RewriteMode = RecipeRuleRewriteMode::Replace;
   RecipeRulePredicate Predicate;
   RecipeRewriteCallback RewriteCallback;
+  /// @brief When true, declarations are refreshed after this rule applies.
+  bool RefreshDeclarations = false;
 
   /// @brief Sets the rule name used for state publication and diagnostics.
   RecipeRule &Named(std::string name) & {

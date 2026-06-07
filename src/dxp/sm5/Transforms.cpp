@@ -504,8 +504,6 @@ RewriteAction::RewriteAction()
   RangeEnd(0), InsertPosition(0), RemoveStart(0), RemoveEnd(0),
   RequiredTempCount(0) {}
 
-namespace {
-
 static bool TryGetDeclaredTempCount(const Operand &operand,
                                     uint32_t &tempCount) {
   if (!operand.Indices.empty()) {
@@ -526,7 +524,7 @@ static bool TryGetDeclaredTempCount(const Operand &operand,
   return false;
 }
 
-static void RebuildMetadata(Program &program) {
+void RefreshDeclarations(Program &program) {
   program.Resources.clear();
   program.CBuffers.clear();
   program.Samplers.clear();
@@ -599,6 +597,8 @@ static void RebuildMetadata(Program &program) {
   }
 }
 
+namespace {
+
 static bool ReplaceRangeAt(Program &program, uint32_t start, uint32_t end,
                            const std::vector<Instruction> &replacement) {
   if (start > end || end >= program.Instructions.size())
@@ -609,7 +609,6 @@ static bool ReplaceRangeAt(Program &program, uint32_t start, uint32_t end,
   program.Instructions.insert(program.Instructions.begin() +
                                   static_cast<ptrdiff_t>(start),
                               replacement.begin(), replacement.end());
-  RebuildMetadata(program);
   return true;
 }
 
@@ -620,7 +619,6 @@ static bool ReplaceInstruction(Program &program, uint32_t index,
   if (index >= program.Instructions.size())
     return false;
   program.Instructions[index] = newInstruction;
-  RebuildMetadata(program);
   return true;
 }
 
@@ -636,7 +634,6 @@ static bool InsertBefore(Program &program, uint32_t index,
   program.Instructions.insert(program.Instructions.begin() +
                                   static_cast<ptrdiff_t>(index),
                               newInstructions.begin(), newInstructions.end());
-  RebuildMetadata(program);
   return true;
 }
 
@@ -647,7 +644,6 @@ static bool InsertAfter(Program &program, uint32_t index,
   program.Instructions.insert(program.Instructions.begin() +
                                   static_cast<ptrdiff_t>(index + 1),
                               newInstructions.begin(), newInstructions.end());
-  RebuildMetadata(program);
   return true;
 }
 
@@ -685,6 +681,6 @@ bool ApplyRewriteActions(Program &program,
   return true;
 }
 
-void RebuildProgramMetadata(Program &program) { RebuildMetadata(program); }
+
 
 } // namespace dxp::sm5

@@ -118,6 +118,36 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(glaze)
 
+# -----------------------------------------------------------------------------
+# 4b. Google Benchmark (optional, enabled by DXP_BUILD_BENCHMARKS)
+# -----------------------------------------------------------------------------
+option(DXP_BUILD_BENCHMARKS "Build benchmark targets (requires internet for FetchContent)" OFF)
+if(DXP_BUILD_BENCHMARKS)
+    message(STATUS "Google Benchmark: enabled")
+    set(BENCHMARK_ENABLE_TESTING OFF CACHE INTERNAL "")
+    set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE INTERNAL "")
+    set(BENCHMARK_ENABLE_INSTALL OFF CACHE INTERNAL "")
+    set(BENCHMARK_ENABLE_EXCEPTIONS ON CACHE INTERNAL "")
+
+    FetchContent_Declare(
+        google_benchmark
+        GIT_REPOSITORY https://github.com/google/benchmark.git
+        GIT_TAG v1.9.5
+    )
+    FetchContent_MakeAvailable(google_benchmark)
+
+    # Benchmark's logging code uses std::ostream without /EHsc, triggering
+    # C4530 in MSVC STL headers. Project-wide /WX turns it into an error.
+    target_compile_options(benchmark PRIVATE /EHsc)
+
+    # Force Release flags on the benchmark library so Google Benchmark's
+    # internal NDEBUG check passes and we get /O2 optimization.
+    target_compile_definitions(benchmark PRIVATE NDEBUG)
+    target_compile_options(benchmark PRIVATE /O2)
+else()
+    message(STATUS "Google Benchmark: disabled (set DXP_BUILD_BENCHMARKS=ON to enable)")
+endif()
+
 if(MSVC)
     add_compile_options(/Zc:preprocessor)
 endif()
@@ -493,3 +523,22 @@ dxp_add_test(dxp_validate_sm5_recipe_noop         "tools/dxp.cpp"  "${CMAKE_CURR
 dxp_add_test(dxp_patch_sm5_recipe_noop_0x7AFF256C  "tools/dxp.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso"  "${CMAKE_CURRENT_SOURCE_DIR}/test/recipes/sm5_noop.recipe.yml"  "${CMAKE_CURRENT_BINARY_DIR}/test-output/0x7AFF256C.ps_5_0.noop.cli.patched.cso")
 dxp_add_test(dxp_validate_sm5_recipe_objective  "tools/dxp.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/recipes/sm5_objective.recipe.yml")
 dxp_add_test(dxp_patch_sm5_recipe_objective_0x7AFF256C  "tools/dxp.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso"  "${CMAKE_CURRENT_SOURCE_DIR}/test/recipes/sm5_objective.recipe.yml"  "${CMAKE_CURRENT_BINARY_DIR}/test-output/0x7AFF256C.ps_5_0.objective.recipe.cli.patched.cso")
+
+# -----------------------------------------------------------------------------
+# 9. Google Benchmark targets (optional)
+# -----------------------------------------------------------------------------
+if(DXP_BUILD_BENCHMARKS)
+    add_executable(sm5_benchmarks
+        "test/benchmarks/benchmark_helpers.cpp"
+        "test/benchmarks/sm5_benchmarks.cpp"
+    )
+    target_include_directories(sm5_benchmarks PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_link_libraries(sm5_benchmarks PRIVATE dxp_lib benchmark::benchmark)
+
+    if(WIN32)
+        add_dependencies(sm5_benchmarks copy_dxcompiler_runtime)
+    endif()
+
+    # Register benchmarks as a CTest test so they run via ctest
+    add_test(NAME sm5_benchmarks COMMAND sm5_benchmarks --benchmark_min_time=0.01s)
+endif()

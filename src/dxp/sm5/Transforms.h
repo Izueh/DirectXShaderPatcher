@@ -187,8 +187,8 @@ struct RewriteAction {
 bool ApplyRewriteActions(Program &program,
                          const std::vector<RewriteAction> &actions);
 
-/// @brief Rebuilds derived declaration metadata from the instruction stream.
-/// @param program Program whose metadata should be refreshed.
-void RebuildProgramMetadata(Program &program);
+/// @brief Refreshes derived declaration metadata from the instruction stream.
+/// @param program Program whose declarations should be refreshed.
+void RefreshDeclarations(Program &program);
 
 } // namespace dxp::sm5

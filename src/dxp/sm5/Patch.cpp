@@ -706,14 +706,6 @@ PatchResult PatchContainer(const std::vector<uint8_t> &inputContainer,
     return result;
   }
 
-  const bool shouldRefreshResources =
-      result.RecipeContext.ResourceBindingsChanged &&
-      !result.RecipeContext.ResourcesRefreshed;
-  if (shouldRefreshResources) {
-    RebuildProgramMetadata(program);
-    result.RecipeContext.ResourcesRefreshed = true;
-  }
-
   if (!result.RecipeContext.ModuleVerified) {
     std::vector<uint8_t> verifiedShaderBytes;
     if (!RebuildShaderChunk(program, verifiedShaderBytes)) {

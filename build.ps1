@@ -3,6 +3,7 @@ param(
     [ValidateSet("debug", "release")]
     [string]$Mode = "debug",
     [switch]$RunTests,
+    [switch]$RunBenchmarks,
     [switch]$Pack
 )
 
@@ -23,6 +24,10 @@ Set-Location $PSScriptRoot
 
 $preset = "ninja-msvc-${Mode}"
 
+if ($RunBenchmarks) {
+    $preset = "ninja-msvc-release-bench"
+}
+
 cmake --preset $preset
 if ($LASTEXITCODE -ne 0) { Write-Error "Configure failed"; exit 1 }
 
@@ -32,6 +37,17 @@ if ($LASTEXITCODE -ne 0) { Write-Error "Build failed"; exit 1 }
 if ($RunTests) {
     ctest --preset $preset --output-on-failure
     if ($LASTEXITCODE -ne 0) { Write-Error "Tests failed"; exit 1 }
+}
+
+if ($RunBenchmarks) {
+    $benchExe = "out/build/${preset}/sm5_benchmarks.exe"
+    if (-not (Test-Path $benchExe)) {
+        Write-Error "Benchmark executable not found: $benchExe"
+        exit 1
+    }
+    Write-Host "Running SM5 benchmarks..." -ForegroundColor Cyan
+    & $benchExe --benchmark_min_time=0.01s
+    if ($LASTEXITCODE -ne 0) { Write-Error "Benchmarks failed"; exit 1 }
 }
 
 if ($Pack) {

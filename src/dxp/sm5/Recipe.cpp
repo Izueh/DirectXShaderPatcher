@@ -151,6 +151,7 @@ struct RuntimeRule {
   RecipeRuleRewriteMode RewriteMode = RecipeRuleRewriteMode::Replace;
   std::function<bool(RecipeContext &)> Predicate;
   RecipeRewriteCallback RewriteCallback;
+  bool RefreshDeclarations = false;
 };
 
 static bool HasDeclarativeMatchPattern(const RecipeMatchPattern &match) {
@@ -2862,12 +2863,18 @@ ExecuteRewriteRules(Program &program, const std::string &stepName,
       continue;
     }
 
+    bool declarationsAffected = ruleModel.RefreshDeclarations;
+
     if (!ApplyRewriteActions(program, actions))
       return MakeRecipeStepFailure(
           context, "step[" + stepName + "].rule[" +
                        std::to_string(ruleIndex) +
                        "]: failed to apply rewrite action");
     EnsureTempDeclaration(program, requiredTempCount);
+
+    if (declarationsAffected) {
+      RefreshDeclarations(program);
+    }
 
     std::string validationError;
     if (!ValidateProgramStructure(program, validationError)) {
@@ -2877,8 +2884,8 @@ ExecuteRewriteRules(Program &program, const std::string &stepName,
     }
 
     result.Changed = true;
-    result.ResourceBindingsChanged = true;
-    result.ResourcesRefreshed = false;
+    result.ResourceBindingsChanged = declarationsAffected;
+    result.ResourcesRefreshed = declarationsAffected;
     result.ModuleVerified = false;
     ruleReport.Changed = true;
     result.RuleReports.push_back(std::move(ruleReport));
@@ -3402,10 +3409,6 @@ bool ExecuteRecipe(Program &program, const Recipe &recipe,
     auto result = ExecuteRecipeStep(program, step, context);
     if (context.State.find(step.Name) == context.State.end()) {
       context.SetState<bool>(step.Name, result.Success);
-    }
-    if (result.Success && result.ResourceBindingsChanged) {
-      RebuildProgramMetadata(program);
-      result.ResourcesRefreshed = true;
     }
     if (afterStep != nullptr && *afterStep) {
       (*afterStep)(step.Name, result, context);
