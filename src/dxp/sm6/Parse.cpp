@@ -544,21 +544,6 @@ static bool ParseYamlRecipeEmitOperandModel(
   return true;
 }
 
-static void SetYamlParseError(::dxp::ParseError &error,
-                              const glz::error_ctx &ec,
-                              const std::string &text,
-                              const std::string &sourceName) {
-  // glaze v7.7.1 error_ctx does not expose line/column/path directly;
-  // format_error embeds them in the message string.
-  error.message = sourceName + ": " + glz::format_error(ec, text);
-}
-
-static void SetParseError(::dxp::ParseError &error,
-                          const std::string &sourceName,
-                          const std::string &message) {
-  error.message = sourceName + ": " + message;
-}
-
 static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
                                       DxilRecipeParseResult &result,
                                       llvm::StringRef sourceName) {
@@ -567,12 +552,13 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
   std::string text = StripBom(std::string(recipeText));
   auto ec = glz::read_yaml(document, text);
   if (ec) {
-    SetYamlParseError(result.yaml_diagnostic, ec, text, sourceName.str());
+    std::string error_msg = glz::format_error(ec, text);
+    result.error = sourceName.str() + ": " + error_msg;
     return false;
   }
 
   if (document.version != 1) {
-    result.yaml_diagnostic.message = "unsupported recipe schema version";
+    result.error = sourceName.str() + ": unsupported recipe schema version";
     return false;
   }
 
@@ -593,7 +579,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
           DxilCallPattern &pattern) -> bool {
     hlsl::OP::OpCode rootOpcode = static_cast<hlsl::OP::OpCode>(0);
     if (!ParseRecipeOpCode(opcodeText, rootOpcode, parseError)) {
-      result.yaml_diagnostic.message = "invalid " + owningKind.str() +
+      result.error = sourceName.str() + ": invalid " + owningKind.str() +
                      " opcode for '" + owningId.str() + "': " + parseError;
       return false;
     }
@@ -605,7 +591,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
       DxilOperandPattern operandPattern;
       if (!ParseYamlRecipeOperandModel(operandModel, operandPattern,
                                        parseError)) {
-        result.yaml_diagnostic.message = "invalid operand in " +
+        result.error = sourceName.str() + ": invalid operand in " +
                        owningKind.str() + " '" + owningId.str() +
                        "': " + parseError;
         return false;
@@ -651,7 +637,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
   for (const YamlRecipeTextureModel &textureModel :
        document.resources.textures) {
     if (!parseTextureModel(textureModel, false, parsedTextures)) {
-      result.yaml_diagnostic.message = "invalid texture resource '" +
+      result.error = sourceName.str() + ": invalid texture resource '" +
                      textureModel.id + "': " + parseError;
       return false;
     }
@@ -659,7 +645,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
   for (const YamlRecipeTextureModel &textureModel :
        document.resources.texture_uavs) {
     if (!parseTextureModel(textureModel, true, parsedUavs)) {
-      result.yaml_diagnostic.message = "invalid texture_uav resource '" +
+      result.error = sourceName.str() + ": invalid texture_uav resource '" +
                      textureModel.id + "': " + parseError;
       return false;
     }
@@ -677,7 +663,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
       if (!ParseRecipeCompTypeKind(fieldModel.type, field.compType,
                                    parseError)) {
         delete schema;
-        result.yaml_diagnostic.message = "invalid cbuffer field '" +
+        result.error = sourceName.str() + ": invalid cbuffer field '" +
                        fieldModel.name + "': " + parseError;
         return false;
       }
@@ -690,7 +676,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
     if (!ParseYamlRecipeBindingModel(cbufferModel.binding, desc.binding,
                                      parseError)) {
       delete schema;
-      result.yaml_diagnostic.message = "invalid cbuffer binding for '" +
+      result.error = sourceName.str() + ": invalid cbuffer binding for '" +
                      cbufferModel.id + "': " + parseError;
       return false;
     }
@@ -698,7 +684,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
     desc.schema = schema;
     if (!parsedCBuffers.emplace(cbufferModel.id, std::move(desc)).second) {
       delete schema;
-      result.yaml_diagnostic.message =
+      result.error =
           sourceName.str() + ": duplicate cbuffer id '" + cbufferModel.id + "'";
       return false;
     }
@@ -710,12 +696,12 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
     desc.name = samplerModel.name;
     if (!ParseYamlRecipeBindingModel(samplerModel.binding, desc.binding,
                                      parseError)) {
-      result.yaml_diagnostic.message = "invalid sampler binding for '" +
+      result.error = sourceName.str() + ": invalid sampler binding for '" +
                      samplerModel.id + "': " + parseError;
       return false;
     }
     if (!parsedSamplers.emplace(samplerModel.id, std::move(desc)).second) {
-      result.yaml_diagnostic.message =
+      result.error =
           sourceName.str() + ": duplicate sampler id '" + samplerModel.id + "'";
       return false;
     }
@@ -734,7 +720,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
 
     if (!parsedPrefilters.emplace(prefilterModel.id, std::move(pattern))
              .second) {
-      result.yaml_diagnostic.message = "duplicate prefilter id '" +
+      result.error = sourceName.str() + ": duplicate prefilter id '" +
                      prefilterModel.id + "'";
       return false;
     }
@@ -750,7 +736,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
     rule.pruneDeadInstructions = ruleModel.match.prune_dead;
     rule.pruneCaptureNames = ruleModel.match.prune_captures;
     if (!ParseRecipeRewriteMode(ruleModel.match.mode, rule.mode, parseError)) {
-      result.yaml_diagnostic.message = "invalid rewrite rule mode for '" +
+      result.error = sourceName.str() + ": invalid rewrite rule mode for '" +
                      ruleModel.id + "': " + parseError;
       return false;
     }
@@ -767,14 +753,14 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
     for (const YamlRecipeBindingPatternModel &bindingModel :
          ruleModel.bindings) {
       if (LowercaseRecipeToken(bindingModel.kind) != "dxop") {
-        result.yaml_diagnostic.message = "unsupported binding kind '" +
+        result.error = sourceName.str() + ": unsupported binding kind '" +
                        bindingModel.kind + "'";
         return false;
       }
 
       hlsl::OP::OpCode bindingOpcode = static_cast<hlsl::OP::OpCode>(0);
       if (!ParseRecipeOpCode(bindingModel.opcode, bindingOpcode, parseError)) {
-        result.yaml_diagnostic.message = 
+        result.error = sourceName.str() +
                        ": invalid binding opcode for rule '" + ruleModel.id +
                        "': " + parseError;
         return false;
@@ -788,7 +774,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
         DxilOperandPattern operandPattern;
         if (!ParseYamlRecipeOperandModel(operandModel, operandPattern,
                                          parseError)) {
-          result.yaml_diagnostic.message = 
+          result.error = sourceName.str() +
                          ": invalid binding operand in rule '" + ruleModel.id +
                          "': " + parseError;
           return false;
@@ -807,7 +793,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
                                           parsedUavs, parsedCBuffers,
                                           parsedSamplers, resourceRef);
         if (!resourceRef.found) {
-          result.yaml_diagnostic.message = "unknown resource id '" +
+          result.error = sourceName.str() + ": unknown resource id '" +
                          emitModel.resource + "'";
           return false;
         }
@@ -819,7 +805,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
                                           parsedUavs, parsedCBuffers,
                                           parsedSamplers, resourceRef);
         if (!resourceRef.found) {
-          result.yaml_diagnostic.message = "unknown resource id '" +
+          result.error = sourceName.str() + ": unknown resource id '" +
                          emitModel.resource + "'";
           return false;
         }
@@ -832,7 +818,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
         emittedValue.kind = DxilRewriteEmitValueKind::DxOpCall;
         if (!ParseRecipeOpCode(emitModel.opcode, emittedValue.dxilOpCode,
                                parseError)) {
-          result.yaml_diagnostic.message = 
+          result.error = sourceName.str() +
                          ": invalid emit call opcode in rule '" + ruleModel.id +
                          "': " + parseError;
           return false;
@@ -841,7 +827,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
           if (!ParseRecipeComponentType(emitModel.type,
                                         emittedValue.resultComponentType,
                                         parseError)) {
-            result.yaml_diagnostic.message = 
+            result.error = sourceName.str() +
                            ": invalid emit call type in rule '" + ruleModel.id +
                            "': " + parseError;
             return false;
@@ -854,7 +840,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
           if (!ParseYamlRecipeEmitOperandModel(
                   operandModel, parsedTextures, parsedUavs, parsedCBuffers,
                   parsedSamplers, emitOperand, parseError)) {
-            result.yaml_diagnostic.message = 
+            result.error = sourceName.str() +
                            ": invalid emit operand in rule '" + ruleModel.id +
                            "': " + parseError;
             return false;
@@ -873,7 +859,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
                 emitModel.opcode, instructionOpcode, parseError) ||
             !ParseRecipeComponentType(emitModel.type, componentType,
                                       parseError)) {
-          result.yaml_diagnostic.message = "invalid binop emit in rule '" +
+          result.error = sourceName.str() + ": invalid binop emit in rule '" +
                          ruleModel.id + "': " + parseError;
           return false;
         }
@@ -885,7 +871,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
           if (!ParseYamlRecipeEmitOperandModel(
                   operandModel, parsedTextures, parsedUavs, parsedCBuffers,
                   parsedSamplers, emitOperand, parseError)) {
-            result.yaml_diagnostic.message = 
+            result.error = sourceName.str() +
                            ": invalid binop operand in rule '" + ruleModel.id +
                            "': " + parseError;
             return false;
@@ -901,7 +887,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
                                               parseError) ||
             !ParseRecipeComponentType(emitModel.type, componentType,
                                       parseError)) {
-          result.yaml_diagnostic.message = "invalid cast emit in rule '" +
+          result.error = sourceName.str() + ": invalid cast emit in rule '" +
                          ruleModel.id + "': " + parseError;
           return false;
         }
@@ -913,7 +899,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
           if (!ParseYamlRecipeEmitOperandModel(
                   operandModel, parsedTextures, parsedUavs, parsedCBuffers,
                   parsedSamplers, emitOperand, parseError)) {
-            result.yaml_diagnostic.message = 
+            result.error = sourceName.str() +
                            ": invalid cast operand in rule '" + ruleModel.id +
                            "': " + parseError;
             return false;
@@ -922,7 +908,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
         }
         rule.emittedSequence.values.push_back(std::move(emittedValue));
       } else {
-        result.yaml_diagnostic.message = "unsupported emit kind '" +
+        result.error = sourceName.str() + ": unsupported emit kind '" +
                        emitModel.kind + "'";
         return false;
       }
@@ -936,29 +922,29 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
     const bool hasCustomRangeOffsets =
         rule.rangeStartOffset != 0 || rule.rangeEndOffset != -1;
     if (hasReplacementCapture && hasReplacementValue) {
-      result.yaml_diagnostic.message =
+      result.error =
           sourceName.str() + ": rewrite rule '" + ruleModel.id +
           "' must provide exactly one of replace_with or replace_with_capture";
       return false;
     }
 
     if (rule.rangeStartOffset < 0) {
-      result.yaml_diagnostic.message = "rewrite rule '" + ruleModel.id +
+      result.error = sourceName.str() + ": rewrite rule '" + ruleModel.id +
                      "' range_start_offset must be >= 0";
       return false;
     }
     if (rule.rangeEndOffset < -1) {
-      result.yaml_diagnostic.message = "rewrite rule '" + ruleModel.id +
+      result.error = sourceName.str() + ": rewrite rule '" + ruleModel.id +
                      "' range_end_offset must be -1 or >= 0";
       return false;
     }
     if (rule.mode != DxilRewriteMode::ReplaceRange && hasCustomRangeOffsets) {
-      result.yaml_diagnostic.message = "rewrite rule '" + ruleModel.id +
+      result.error = sourceName.str() + ": rewrite rule '" + ruleModel.id +
                      "' range offsets require mode ReplaceRange";
       return false;
     }
     if (!rule.replaceCaptureName.empty()) {
-      result.yaml_diagnostic.message = "rewrite rule '" + ruleModel.id +
+      result.error = sourceName.str() + ": rewrite rule '" + ruleModel.id +
                      "' must not define replace; Replace rewrites the full "
                      "matched instruction and ReplaceRange uses "
                      "range_start_offset/range_end_offset within that match";
@@ -969,7 +955,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
       if (!rule.replaceCaptureName.empty() || !ruleModel.emit.empty() ||
           hasReplacementCapture || hasReplacementValue ||
           !rule.pruneCaptureNames.empty() || hasCustomRangeOffsets) {
-        result.yaml_diagnostic.message =
+        result.error =
             sourceName.str() + ": rewrite rule '" + ruleModel.id +
             "' with mode None must not define replace, emit, replace_with, "
             "replace_with_capture, prune_captures, or range offsets";
@@ -977,19 +963,19 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
       }
     } else if (!hasReplacementCapture && !hasReplacementValue &&
                ruleModel.emit.empty()) {
-      result.yaml_diagnostic.message = "rewrite rule '" + ruleModel.id +
+      result.error = sourceName.str() + ": rewrite rule '" + ruleModel.id +
                      "' without rewrite payload must use mode None";
       return false;
     } else if (!hasReplacementCapture && !hasReplacementValue &&
                !ruleModel.emit.empty()) {
-      result.yaml_diagnostic.message = "rewrite rule '" + ruleModel.id +
+      result.error = sourceName.str() + ": rewrite rule '" + ruleModel.id +
                      "' with emit values must provide replace_with or "
                      "replace_with_capture";
       return false;
     }
 
     if (!parsedRewriteRules.emplace(ruleModel.id, std::move(rule)).second) {
-      result.yaml_diagnostic.message = "duplicate rewrite rule id '" +
+      result.error = sourceName.str() + ": duplicate rewrite rule id '" +
                      ruleModel.id + "'";
       return false;
     }
@@ -1000,7 +986,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
     DxilRecipeStepCondition stepCondition;
     if (!BuildStepCondition(stepModel.if_condition, stepCondition,
                             parseError)) {
-      result.yaml_diagnostic.message = "invalid step if condition: " +
+      result.error = sourceName.str() + ": invalid step if condition: " +
                      parseError;
       return false;
     }
@@ -1008,7 +994,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
     if (loweredKind == "add_texture") {
       auto it = parsedTextures.find(stepModel.id);
       if (it == parsedTextures.end()) {
-        result.yaml_diagnostic.message =
+        result.error =
             sourceName.str() + ": unknown texture id '" + stepModel.id + "'";
         return false;
       }
@@ -1018,7 +1004,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
     } else if (loweredKind == "add_texture_uav") {
       auto it = parsedUavs.find(stepModel.id);
       if (it == parsedUavs.end()) {
-        result.yaml_diagnostic.message = "unknown texture_uav id '" +
+        result.error = sourceName.str() + ": unknown texture_uav id '" +
                        stepModel.id + "'";
         return false;
       }
@@ -1028,7 +1014,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
     } else if (loweredKind == "add_cbuffer") {
       auto it = parsedCBuffers.find(stepModel.id);
       if (it == parsedCBuffers.end()) {
-        result.yaml_diagnostic.message =
+        result.error =
             sourceName.str() + ": unknown cbuffer id '" + stepModel.id + "'";
         return false;
       }
@@ -1038,7 +1024,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
     } else if (loweredKind == "add_sampler") {
       auto it = parsedSamplers.find(stepModel.id);
       if (it == parsedSamplers.end()) {
-        result.yaml_diagnostic.message =
+        result.error =
             sourceName.str() + ": unknown sampler id '" + stepModel.id + "'";
         return false;
       }
@@ -1048,7 +1034,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
     } else if (loweredKind == "apply_rule") {
       auto it = parsedRewriteRules.find(stepModel.rule);
       if (it == parsedRewriteRules.end()) {
-        result.yaml_diagnostic.message = "unknown rewrite rule '" +
+        result.error = sourceName.str() + ": unknown rewrite rule '" +
                        stepModel.rule + "'";
         return false;
       }
@@ -1056,7 +1042,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
       DxilRecipeRuleApplicationMode applicationMode;
       if (!ParseRecipeRuleApplicationMode(stepModel.mode, applicationMode,
                                           parseError)) {
-        result.yaml_diagnostic.message = "invalid apply_rule mode for '" +
+        result.error = sourceName.str() + ": invalid apply_rule mode for '" +
                        stepModel.rule + "': " + parseError;
         return false;
       }
@@ -1070,7 +1056,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
                                 .When(stepCondition));
     } else if (loweredKind == "apply_rules") {
       if (stepModel.rules.empty()) {
-        result.yaml_diagnostic.message =
+        result.error =
             sourceName.str() + ": apply_rules requires a non-empty rules list";
         return false;
       }
@@ -1080,7 +1066,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
       for (const std::string &ruleId : stepModel.rules) {
         auto it = parsedRewriteRules.find(ruleId);
         if (it == parsedRewriteRules.end()) {
-          result.yaml_diagnostic.message =
+          result.error =
               sourceName.str() + ": unknown rewrite rule '" + ruleId + "'";
           return false;
         }
@@ -1091,13 +1077,13 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
           DxilRecipeRuleApplicationMode::MatchAll;
       if (!ParseRecipeRuleApplicationMode(stepModel.mode, applicationMode,
                                           parseError)) {
-        result.yaml_diagnostic.message =
+        result.error =
             sourceName.str() + ": invalid apply_rules mode: " + parseError;
         return false;
       }
 
       if (applicationMode != DxilRecipeRuleApplicationMode::MatchAll) {
-        result.yaml_diagnostic.message =
+        result.error =
             sourceName.str() + ": apply_rules only supports match_all mode";
         return false;
       }
@@ -1112,7 +1098,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
       const bool hasPattern = !stepModel.pattern.empty();
       const bool hasPatterns = !stepModel.patterns.empty();
       if (hasPattern == hasPatterns) {
-        result.yaml_diagnostic.message =
+        result.error =
             sourceName.str() +
             ": prefilter requires exactly one of pattern or patterns";
         return false;
@@ -1122,7 +1108,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
       if (hasPattern) {
         auto it = parsedPrefilters.find(stepModel.pattern);
         if (it == parsedPrefilters.end()) {
-          result.yaml_diagnostic.message = "unknown prefilter pattern '" +
+          result.error = sourceName.str() + ": unknown prefilter pattern '" +
                          stepModel.pattern + "'";
           return false;
         }
@@ -1132,7 +1118,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
         for (const std::string &patternId : stepModel.patterns) {
           auto it = parsedPrefilters.find(patternId);
           if (it == parsedPrefilters.end()) {
-            result.yaml_diagnostic.message = "unknown prefilter pattern '" +
+            result.error = sourceName.str() + ": unknown prefilter pattern '" +
                            patternId + "'";
             return false;
           }
@@ -1150,7 +1136,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
                     .When(stepCondition));
     } else if (loweredKind == "refresh_resources") {
       if (!stepModel.set.empty()) {
-        result.yaml_diagnostic.message =
+        result.error =
             sourceName.str() + ": step set is only valid for prefilter";
         return false;
       }
@@ -1159,7 +1145,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
                 .When(stepCondition));
     } else if (loweredKind == "prune_dead_code") {
       if (!stepModel.set.empty()) {
-        result.yaml_diagnostic.message =
+        result.error =
             sourceName.str() + ": step set is only valid for prefilter";
         return false;
       }
@@ -1167,7 +1153,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
                 .Require(stepModel.required)
                 .When(stepCondition));
     } else {
-      result.yaml_diagnostic.message =
+      result.error =
           sourceName.str() + ": unsupported step kind '" + stepModel.kind + "'";
       return false;
     }
@@ -1190,7 +1176,7 @@ bool ParseDxilRecipeFile(const std::string &recipePath,
   std::ifstream file(recipePath);
   if (!file) {
     result = DxilRecipeParseResult();
-    result.yaml_diagnostic.message = "failed to open recipe file '" + recipePath + "'";
+    result.error = "failed to open recipe file '" + recipePath + "'";
     return false;
   }
 

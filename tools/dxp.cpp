@@ -71,8 +71,7 @@ static bool WriteBinaryFile(const std::string &path,
 static int RunValidateSm6Command(const char *recipePath) {
   DxilRecipeParseResult parseResult;
   if (!ParseDxilRecipeFile(recipePath, parseResult)) {
-    std::cerr << "SM6 recipe validation failed: "
-              << parseResult.yaml_diagnostic.format(recipePath) << "\n";
+    std::cerr << "SM6 recipe validation failed: " << parseResult.error << "\n";
     return 1;
   }
 
@@ -84,8 +83,7 @@ static int RunValidateSm6Command(const char *recipePath) {
 static int RunValidateSm5Command(const char *recipePath) {
   dxp::sm5::RecipeParseResult parseResult;
   if (!dxp::sm5::ParseRecipeFile(recipePath, parseResult)) {
-    std::cerr << "SM5 recipe validation failed: "
-              << parseResult.Error.format(recipePath) << "\n";
+    std::cerr << "SM5 recipe validation failed: " << parseResult.Error << "\n";
     return 1;
   }
 
@@ -104,8 +102,7 @@ static int RunPatchSm6Command(const char *inputPath, const char *recipePath,
 
   DxilRecipeParseResult parseResult;
   if (!ParseDxilRecipeFile(recipePath, parseResult)) {
-    std::cerr << "Failed to parse SM6 recipe file: "
-              << parseResult.yaml_diagnostic.format(recipePath) << "\n";
+    std::cerr << "Failed to parse SM6 recipe file: " << parseResult.error << "\n";
     return 1;
   }
 
@@ -143,8 +140,8 @@ static int RunPatchSm5Command(const char *inputPath, const char *recipePath,
 
   dxp::sm5::RecipeParseResult parseResult;
   if (!dxp::sm5::ParseRecipeFile(recipePath, parseResult)) {
-    std::cerr << "Failed to parse SM5 recipe file: "
-              << parseResult.Error.format(recipePath) << "\n";
+    std::cerr << "Failed to parse SM5 recipe file: " << parseResult.Error
+              << "\n";
     return 1;
   }
 

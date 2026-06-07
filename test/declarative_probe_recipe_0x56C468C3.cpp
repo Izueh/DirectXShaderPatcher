@@ -178,7 +178,7 @@ steps:
   if (!ParseDxilRecipeText(matchOnlyRecipeText, matchOnlyParseResult,
                            "inline-sm6-match-only-test")) {
     std::cerr << "Failed to parse inline SM6 match-only recipe: "
-              << matchOnlyParseResult.yaml_diagnostic << "\n";
+              << matchOnlyParseResult.error << "\n";
     return 1;
   }
 
