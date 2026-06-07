@@ -3,9 +3,14 @@
 #include "../../../include/dxp/sm6/Resources.h"
 #include "../../../include/dxp/sm6/Transforms.h"
 
+#include "YamlSchema.h"
+
+#include <glaze/yaml.hpp>
+
 #include <algorithm>
 #include <cctype>
 #include <cstddef>
+#include <cstdint>
 #include <fstream>
 #include <string>
 #include <unordered_map>
@@ -16,7 +21,6 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/Support/Regex.h"
-#include "llvm/Support/YAMLTraits.h"
 
 #include "dxc/DXIL/DxilCompType.h"
 #include "dxc/DXIL/DxilConstants.h"
@@ -320,154 +324,22 @@ static bool ParseRecipeCastInstructionOpcode(const std::string &text,
   return false;
 }
 
-struct YamlRecipeBindingModel {
-  std::string bind = "auto";
-  unsigned space = 0;
-};
+// Strip UTF-8 BOM (EF BB BF) if present
+static std::string StripBom(std::string text) {
+  if (text.size() >= 3 &&
+      static_cast<uint8_t>(text[0]) == 0xEF &&
+      static_cast<uint8_t>(text[1]) == 0xBB &&
+      static_cast<uint8_t>(text[2]) == 0xBF) {
+    text.erase(0, 3);
+  }
+  return text;
+}
 
-struct YamlRecipeTextureModel {
-  std::string id;
-  std::string name;
-  std::string kind;
-  std::string element;
-  unsigned width = 0;
-  YamlRecipeBindingModel binding;
-};
+} // namespace
 
-struct YamlRecipeFieldModel {
-  std::string name;
-  std::string type;
-  unsigned width = 0;
-  unsigned offset = 0;
-};
+using namespace dxp::sm6;
 
-struct YamlRecipeCBufferModel {
-  std::string id;
-  std::string name;
-  std::string type;
-  unsigned size = 0;
-  YamlRecipeBindingModel binding;
-  std::vector<YamlRecipeFieldModel> fields;
-};
-
-struct YamlRecipeSamplerModel {
-  std::string id;
-  std::string name;
-  YamlRecipeBindingModel binding;
-};
-
-struct YamlRecipeResourcesModel {
-  std::vector<YamlRecipeTextureModel> textures;
-  std::vector<YamlRecipeTextureModel> texture_uavs;
-  std::vector<YamlRecipeCBufferModel> cbuffers;
-  std::vector<YamlRecipeSamplerModel> samplers;
-};
-
-struct YamlRecipeOperandModel {
-  unsigned index = 0;
-  std::string kind;
-  std::string capture;
-  unsigned value = 0;
-  std::string opcode;
-  std::string resource_class;
-  std::string resource_kind;
-  std::string resource_name;
-  std::string resource_name_like;
-  int bind = -1;
-  int space = -1;
-  std::vector<YamlRecipeOperandModel> operands;
-};
-
-struct YamlRecipeBindingPatternModel {
-  std::string kind;
-  std::string capture;
-  std::string opcode;
-  std::vector<YamlRecipeOperandModel> operands;
-};
-
-struct YamlRecipeEmitOperandModel {
-  unsigned index = 0;
-  std::string kind;
-  std::string capture;
-  std::string id;
-  unsigned value = 0;
-};
-
-struct YamlRecipeEmitModel {
-  std::string kind;
-  std::string id;
-  std::string resource;
-  std::string handle;
-  std::string opcode;
-  std::string type;
-  std::string aggregate;
-  unsigned index = 0;
-  std::vector<YamlRecipeEmitOperandModel> operands;
-};
-
-struct YamlRecipeMatchModel {
-  std::string opcode;
-  std::string capture;
-  std::string replace;
-  std::string mode = "Replace";
-  int32_t range_start_offset = 0;
-  int32_t range_end_offset = -1;
-  bool prune_dead = true;
-  std::vector<std::string> prune_captures;
-  std::vector<YamlRecipeOperandModel> operands;
-};
-
-struct YamlRecipePrefilterModel {
-  std::string id;
-  std::string name;
-  std::string opcode;
-  std::string capture;
-  std::vector<YamlRecipeOperandModel> operands;
-};
-
-struct YamlRecipeRuleModel {
-  std::string id;
-  std::string name;
-  YamlRecipeMatchModel match;
-  std::vector<YamlRecipeBindingPatternModel> bindings;
-  std::vector<YamlRecipeEmitModel> emit;
-  std::string replace_with;
-  std::string replace_with_capture;
-};
-
-struct YamlRecipeStepConditionModel {
-  std::string state;
-  std::vector<YamlRecipeStepConditionModel> all;
-  std::vector<YamlRecipeStepConditionModel> any;
-  bool not_condition = false;
-};
-
-struct YamlRecipeStepModel {
-  std::string kind;
-  std::string id;
-  std::string pattern;
-  std::vector<std::string> patterns;
-  std::string rule;
-  std::vector<std::string> rules;
-  std::string name;
-  std::string set;
-  std::string mode;
-  bool required = true;
-  YamlRecipeStepConditionModel if_condition;
-};
-
-struct YamlRecipeOptionsModel {
-  bool restore_reflection = true;
-};
-
-struct YamlRecipeDocumentModel {
-  unsigned version = 1;
-  YamlRecipeOptionsModel options;
-  YamlRecipeResourcesModel resources;
-  std::vector<YamlRecipePrefilterModel> prefilters;
-  std::vector<YamlRecipeRuleModel> rewrite_rules;
-  std::vector<YamlRecipeStepModel> steps;
-};
+namespace {
 
 static bool BuildStepCondition(const YamlRecipeStepConditionModel &conditionModel,
                                DxilRecipeStepCondition &condition,
@@ -518,213 +390,6 @@ static bool BuildStepCondition(const YamlRecipeStepConditionModel &conditionMode
 
   return true;
 }
-
-} // namespace
-
-LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeFieldModel)
-LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeTextureModel)
-LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeCBufferModel)
-LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeSamplerModel)
-LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeOperandModel)
-LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeBindingPatternModel)
-LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeEmitOperandModel)
-LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeEmitModel)
-LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipePrefilterModel)
-LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeRuleModel)
-LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeStepConditionModel)
-LLVM_YAML_IS_SEQUENCE_VECTOR(YamlRecipeStepModel)
-LLVM_YAML_IS_SEQUENCE_VECTOR(std::string)
-
-namespace llvm {
-namespace yaml {
-
-template <> struct MappingTraits<YamlRecipeBindingModel> {
-  static void mapping(IO &io, YamlRecipeBindingModel &binding) {
-    io.mapOptional("bind", binding.bind, std::string("auto"));
-    io.mapOptional("space", binding.space, 0u);
-  }
-};
-
-template <> struct MappingTraits<YamlRecipeTextureModel> {
-  static void mapping(IO &io, YamlRecipeTextureModel &texture) {
-    io.mapRequired("id", texture.id);
-    io.mapRequired("name", texture.name);
-    io.mapRequired("kind", texture.kind);
-    io.mapRequired("element", texture.element);
-    io.mapRequired("width", texture.width);
-    io.mapOptional("binding", texture.binding);
-  }
-};
-
-template <> struct MappingTraits<YamlRecipeFieldModel> {
-  static void mapping(IO &io, YamlRecipeFieldModel &field) {
-    io.mapRequired("name", field.name);
-    io.mapRequired("type", field.type);
-    io.mapRequired("width", field.width);
-    io.mapRequired("offset", field.offset);
-  }
-};
-
-template <> struct MappingTraits<YamlRecipeCBufferModel> {
-  static void mapping(IO &io, YamlRecipeCBufferModel &cbuffer) {
-    io.mapRequired("id", cbuffer.id);
-    io.mapRequired("name", cbuffer.name);
-    io.mapRequired("type", cbuffer.type);
-    io.mapRequired("size", cbuffer.size);
-    io.mapOptional("binding", cbuffer.binding);
-    io.mapRequired("fields", cbuffer.fields);
-  }
-};
-
-template <> struct MappingTraits<YamlRecipeSamplerModel> {
-  static void mapping(IO &io, YamlRecipeSamplerModel &sampler) {
-    io.mapRequired("id", sampler.id);
-    io.mapRequired("name", sampler.name);
-    io.mapOptional("binding", sampler.binding);
-  }
-};
-
-template <> struct MappingTraits<YamlRecipeResourcesModel> {
-  static void mapping(IO &io, YamlRecipeResourcesModel &resources) {
-    io.mapOptional("textures", resources.textures);
-    io.mapOptional("texture_uavs", resources.texture_uavs);
-    io.mapOptional("cbuffers", resources.cbuffers);
-    io.mapOptional("samplers", resources.samplers);
-  }
-};
-
-template <> struct MappingTraits<YamlRecipeOperandModel> {
-  static void mapping(IO &io, YamlRecipeOperandModel &operand) {
-    io.mapRequired("index", operand.index);
-    io.mapRequired("kind", operand.kind);
-    io.mapOptional("capture", operand.capture);
-    io.mapOptional("value", operand.value, 0u);
-    io.mapOptional("opcode", operand.opcode);
-    io.mapOptional("resource_class", operand.resource_class);
-    io.mapOptional("resource_kind", operand.resource_kind);
-    io.mapOptional("resource_name", operand.resource_name);
-    io.mapOptional("resource_name_like", operand.resource_name_like);
-    io.mapOptional("bind", operand.bind, -1);
-    io.mapOptional("space", operand.space, -1);
-    io.mapOptional("operands", operand.operands);
-  }
-};
-
-template <> struct MappingTraits<YamlRecipeBindingPatternModel> {
-  static void mapping(IO &io, YamlRecipeBindingPatternModel &binding) {
-    io.mapRequired("kind", binding.kind);
-    io.mapRequired("capture", binding.capture);
-    io.mapRequired("opcode", binding.opcode);
-    io.mapOptional("operands", binding.operands);
-  }
-};
-
-template <> struct MappingTraits<YamlRecipeEmitOperandModel> {
-  static void mapping(IO &io, YamlRecipeEmitOperandModel &operand) {
-    io.mapRequired("index", operand.index);
-    io.mapRequired("kind", operand.kind);
-    io.mapOptional("capture", operand.capture);
-    io.mapOptional("id", operand.id);
-    io.mapOptional("value", operand.value, 0u);
-  }
-};
-
-template <> struct MappingTraits<YamlRecipeEmitModel> {
-  static void mapping(IO &io, YamlRecipeEmitModel &emit) {
-    io.mapRequired("kind", emit.kind);
-    io.mapOptional("id", emit.id);
-    io.mapOptional("resource", emit.resource);
-    io.mapOptional("handle", emit.handle);
-    io.mapOptional("opcode", emit.opcode);
-    io.mapOptional("type", emit.type);
-    io.mapOptional("aggregate", emit.aggregate);
-    io.mapOptional("index", emit.index, 0u);
-    io.mapOptional("operands", emit.operands);
-  }
-};
-
-template <> struct MappingTraits<YamlRecipeMatchModel> {
-  static void mapping(IO &io, YamlRecipeMatchModel &match) {
-    io.mapRequired("opcode", match.opcode);
-    io.mapOptional("replace", match.replace);
-    io.mapOptional("capture", match.capture);
-    io.mapOptional("mode", match.mode, std::string("Replace"));
-    io.mapOptional("range_start_offset", match.range_start_offset, 0);
-    io.mapOptional("range_end_offset", match.range_end_offset, -1);
-    io.mapOptional("prune_dead", match.prune_dead, true);
-    io.mapOptional("prune_captures", match.prune_captures);
-    io.mapOptional("operands", match.operands);
-  }
-};
-
-template <> struct MappingTraits<YamlRecipePrefilterModel> {
-  static void mapping(IO &io, YamlRecipePrefilterModel &prefilter) {
-    io.mapRequired("id", prefilter.id);
-    io.mapOptional("name", prefilter.name);
-    io.mapRequired("opcode", prefilter.opcode);
-    io.mapOptional("capture", prefilter.capture);
-    io.mapOptional("operands", prefilter.operands);
-  }
-};
-
-template <> struct MappingTraits<YamlRecipeRuleModel> {
-  static void mapping(IO &io, YamlRecipeRuleModel &rule) {
-    io.mapRequired("id", rule.id);
-    io.mapOptional("name", rule.name);
-    io.mapRequired("match", rule.match);
-    io.mapOptional("bindings", rule.bindings);
-    io.mapOptional("emit", rule.emit);
-    io.mapOptional("replace_with", rule.replace_with);
-    io.mapOptional("replace_with_capture", rule.replace_with_capture);
-  }
-};
-
-template <> struct MappingTraits<YamlRecipeStepConditionModel> {
-  static void mapping(IO &io, YamlRecipeStepConditionModel &condition) {
-    io.mapOptional("state", condition.state);
-    io.mapOptional("all", condition.all);
-    io.mapOptional("any", condition.any);
-    io.mapOptional("not", condition.not_condition, false);
-  }
-};
-
-template <> struct MappingTraits<YamlRecipeStepModel> {
-  static void mapping(IO &io, YamlRecipeStepModel &step) {
-    io.mapRequired("kind", step.kind);
-    io.mapOptional("id", step.id);
-    io.mapOptional("pattern", step.pattern);
-    io.mapOptional("patterns", step.patterns);
-    io.mapOptional("rule", step.rule);
-    io.mapOptional("rules", step.rules);
-    io.mapOptional("name", step.name);
-    io.mapOptional("set", step.set);
-    io.mapOptional("if", step.if_condition);
-    io.mapOptional("mode", step.mode, std::string());
-    io.mapOptional("required", step.required, true);
-  }
-};
-
-template <> struct MappingTraits<YamlRecipeOptionsModel> {
-  static void mapping(IO &io, YamlRecipeOptionsModel &options) {
-    io.mapOptional("restore_reflection", options.restore_reflection, true);
-  }
-};
-
-template <> struct MappingTraits<YamlRecipeDocumentModel> {
-  static void mapping(IO &io, YamlRecipeDocumentModel &document) {
-    io.mapOptional("version", document.version, 1u);
-    io.mapOptional("options", document.options);
-    io.mapOptional("resources", document.resources);
-    io.mapOptional("prefilters", document.prefilters);
-    io.mapOptional("rewrite_rules", document.rewrite_rules);
-    io.mapOptional("steps", document.steps);
-  }
-};
-
-} // namespace yaml
-} // namespace llvm
-
-namespace {
 
 static bool
 ParseYamlRecipeBindingModel(const YamlRecipeBindingModel &bindingModel,
@@ -884,10 +549,11 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
                                       llvm::StringRef sourceName) {
   result = DxilRecipeParseResult();
   YamlRecipeDocumentModel document;
-  llvm::yaml::Input input(recipeText);
-  input >> document;
-  if (input.error()) {
-    result.error = sourceName.str() + ": " + input.error().message();
+  std::string text = StripBom(std::string(recipeText));
+  auto ec = glz::read_yaml(document, text);
+  if (ec) {
+    std::string error_msg = glz::format_error(ec, text);
+    result.error = sourceName.str() + ": " + error_msg;
     return false;
   }
 

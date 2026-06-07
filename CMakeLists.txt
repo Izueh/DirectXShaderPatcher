@@ -2,9 +2,10 @@ cmake_minimum_required(VERSION 3.24)
 project(DirectXShaderPatcher LANGUAGES C CXX)
 
 include(CTest)
+include(FetchContent)
 
-# Use strict C++17 mode
-set(CMAKE_CXX_STANDARD 17)
+# Use strict C++23 mode
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -108,7 +109,21 @@ else()
 endif()
 
 # -----------------------------------------------------------------------------
-# 4. Library
+# 4. Glaze (YAML parsing)
+# -----------------------------------------------------------------------------
+FetchContent_Declare(
+  glaze
+  GIT_REPOSITORY https://github.com/stephenberry/glaze.git
+  GIT_TAG v7.7.1
+)
+FetchContent_MakeAvailable(glaze)
+
+if(MSVC)
+    add_compile_options(/Zc:preprocessor)
+endif()
+
+# -----------------------------------------------------------------------------
+# 5. Library
 # -----------------------------------------------------------------------------
 add_library(dxp_lib STATIC
     "external/DirectXShaderCompiler/lib/DxilHash/DxilHash.cpp"
@@ -155,6 +170,7 @@ target_link_libraries(dxp_lib PRIVATE
     LLVMSupport
     dxcompiler
     Ole32
+    glaze::glaze
 )
 
 # -----------------------------------------------------------------------------
