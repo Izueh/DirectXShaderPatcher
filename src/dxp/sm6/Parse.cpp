@@ -28,12 +28,6 @@
 
 namespace {
 
-static llvm::StringRef MakeYamlError(llvm::Twine msg) {
-  thread_local std::string buffer;
-  buffer = msg.str();
-  return llvm::StringRef(buffer);
-}
-
 template <typename TValue> struct RecipeParseEntry {
   const char *name = nullptr;
   TValue value{};
