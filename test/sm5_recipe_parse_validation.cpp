@@ -217,7 +217,7 @@ int main() {
       return 1;
     }
 
-    if (!Contains(parseResult.Error,
+    if (!Contains(parseResult.Error.message,
                   "SM5 step if comparison requires exactly one of state or "
                   "input")) {
       std::cerr << "Expected predicate selector exclusivity validation "
@@ -236,7 +236,7 @@ int main() {
       return 1;
     }
 
-    if (!Contains(parseResult.Error, "interpolation_mode is only valid for "
+    if (!Contains(parseResult.Error.message, "interpolation_mode is only valid for "
                                      "dcl_input_ps and dcl_input_ps_siv")) {
       std::cerr << "Expected interpolation_mode opcode validation error.\n";
       return 1;
@@ -263,7 +263,7 @@ int main() {
       return 1;
     }
 
-    if (!Contains(parseResult.Error,
+    if (!Contains(parseResult.Error.message,
                   "schema version 1 requires steps and does not allow top-level rewrite_rules")) {
       std::cerr << "Expected top-level rewrite_rules validation error.\n";
       return 1;
@@ -281,7 +281,7 @@ int main() {
       return 1;
     }
 
-    if (!Contains(parseResult.Error,
+    if (!Contains(parseResult.Error.message,
                   "SM5 check_shader_version steps require major and minor")) {
       std::cerr << "Expected equivalent check-step validation error.\n";
       return 1;
@@ -296,7 +296,7 @@ int main() {
       return 1;
     }
 
-    if (!Contains(parseResult.Error,
+    if (!Contains(parseResult.Error.message,
                   "SM5 step mode is only valid for apply_rules steps")) {
       std::cerr << "Expected step mode validation error.\n";
       return 1;
@@ -314,7 +314,7 @@ int main() {
       return 1;
     }
 
-    if (!Contains(parseResult.Error,
+    if (!Contains(parseResult.Error.message,
                   "duplicate SM5 name 'shared_name' reused by rule "
                   "(already used by step)")) {
       std::cerr << "Expected cross-kind duplicate name validation error.\n";
@@ -332,7 +332,7 @@ int main() {
       return 1;
     }
 
-    if (!Contains(parseResult.Error,
+    if (!Contains(parseResult.Error.message,
                   "SM5 rule names are required and must be unique")) {
       std::cerr << "Expected explicit rule-name requirement validation "
                    "error.\n";
@@ -349,7 +349,7 @@ int main() {
       return 1;
     }
 
-    if (!Contains(parseResult.Error,
+    if (!Contains(parseResult.Error.message,
                   "unknown resource declaration handle 'missing_texture'")) {
       std::cerr << "Expected strict from_handle validation error for unknown "
                    "handle.\n";
@@ -366,7 +366,7 @@ int main() {
       return 1;
     }
 
-    if (!Contains(parseResult.Error,
+    if (!Contains(parseResult.Error.message,
                   "index immediate_lo only accepts integer literals")) {
       std::cerr << "Expected integer-only index immediate validation error.\n";
       return 1;
@@ -383,7 +383,7 @@ int main() {
       return 1;
     }
 
-    if (!Contains(parseResult.Error, "add_temp steps require handles")) {
+    if (!Contains(parseResult.Error.message, "add_temp steps require handles")) {
       std::cerr << "Expected add_temp handle validation error.\n";
       return 1;
     }
@@ -400,7 +400,7 @@ int main() {
       return 1;
     }
 
-    if (!Contains(parseResult.Error,
+    if (!Contains(parseResult.Error.message,
                   "add_temp steps no longer support handle; use handles")) {
       std::cerr << "Expected add_temp handle/handles exclusivity "
                    "validation error.\n";
@@ -420,7 +420,7 @@ int main() {
       return 1;
     }
 
-    if (!Contains(parseResult.Error,
+    if (!Contains(parseResult.Error.message,
                   "SM5 emit operands may use explicit indices or "
                   "immediate shorthand arrays "
                   "(immediates_u32/immediates_u64/immediates_i32/"
@@ -442,7 +442,7 @@ int main() {
       return 1;
     }
 
-    if (!Contains(parseResult.Error,
+    if (!Contains(parseResult.Error.message,
                   "SM5 immediates_u32/immediates_u64/immediates_i32/"
                   "immediates_i64/immediates_f32/immediates_f64 are only "
                   "valid on emit operands")) {
@@ -461,7 +461,7 @@ int main() {
       return 1;
     }
 
-    if (!Contains(parseResult.Error,
+    if (!Contains(parseResult.Error.message,
                   "operand match_capture 'op_tok' expects operand capture but "
                   "found instruction capture")) {
       std::cerr << "Expected operand match_capture kind validation error.\n";
@@ -479,7 +479,7 @@ int main() {
       return 1;
     }
 
-    if (!Contains(parseResult.Error,
+    if (!Contains(parseResult.Error.message,
                   "index match_capture 'dst' expects index capture but found "
                   "operand capture")) {
       std::cerr << "Expected index match_capture kind validation error.\n";
@@ -496,7 +496,7 @@ int main() {
       return 1;
     }
 
-    if (!Contains(parseResult.Error, "unsupported operand components.kind")) {
+    if (!Contains(parseResult.Error.message, "unsupported operand components.kind")) {
       std::cerr << "Expected operand components.kind validation error.\n";
       return 1;
     }

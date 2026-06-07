@@ -66,13 +66,13 @@ All 48 tests pass. Full migration complete.
 
 ## Remaining Work (Optional)
 
-### 8. Update public API — Structured parse errors (not started)
-- [ ] 8.1 Create `include/dxp/ParseError.h` with `ParseError` struct (line, column, path, message)
-- [ ] 8.2 Update `RecipeParseResult` and `DxilRecipeParseResult` to use `ParseError` instead of `std::string`
-- [ ] 8.3 Update SM5 `RecipeParse.cpp` to populate structured error fields from glaze `error_ctx`
-- [ ] 8.4 Update SM6 `Parse.cpp` to populate structured error fields from glaze `error_ctx`
-- [ ] 8.5 Update CLI `dxp.cpp` to display structured error details (line, column, path prefix, message)
-- [ ] 8.6 Run full test suite to verify no regressions
+### 8. Update public API — Structured parse errors ✅
+- [x] 8.1 Create `include/dxp/ParseError.h` with `ParseError` struct (line, column, path, message)
+- [x] 8.2 Update `RecipeParseResult` (uses `ParseError Error`) and `DxilRecipeParseResult` (uses `::dxp::ParseError yaml_diagnostic`) to use `ParseError` instead of `std::string`
+- [x] 8.3 Update SM5 `RecipeParse.cpp` to populate structured error fields from glaze `error_ctx`
+- [x] 8.4 Update SM6 `Parse.cpp` to populate structured error fields from glaze `error_ctx`
+- [x] 8.5 Update CLI `dxp.cpp` to display structured error details via `ParseError::format(sourceName)`
+- [x] 8.6 Run full test suite — 48/48 tests pass
 
 ---
 

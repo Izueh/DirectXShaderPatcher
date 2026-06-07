@@ -2,6 +2,8 @@
 
 #include "YamlSchema.h"
 
+#include <glaze/yaml.hpp>
+
 #include "d3d11TokenizedProgramFormat.hpp"
 
 #include "Model.h"
@@ -1769,6 +1771,21 @@ static bool BuildStepCondition(const YamlStepCondition &conditionModel,
 
 } // end anonymous namespace
 
+static void SetYamlParseError(ParseError &error,
+                              const glz::error_ctx &ec,
+                              const std::string &text,
+                              const std::string &sourceName) {
+  // glaze v7.7.1 error_ctx does not expose line/column/path directly;
+  // format_error embeds them in the message string.
+  error.message = glz::format_error(ec, text);
+}
+
+static void SetParseError(ParseError &error,
+                          const std::string &sourceName,
+                          const std::string &message) {
+  error.message = sourceName + ": " + message;
+}
+
 bool ParseRecipeText(const std::string &recipeText,
                      RecipeParseResult &result,
                      const std::string &sourceName) {
@@ -1778,26 +1795,25 @@ bool ParseRecipeText(const std::string &recipeText,
   std::string text = StripBom(recipeText);
   auto ec = glz::read_yaml(document, text);
   if (ec) {
-    std::string error_msg = glz::format_error(ec, text);
-    result.Error = sourceName + ": " + error_msg;
+    SetYamlParseError(result.Error, ec, text, sourceName);
     return false;
   }
 
   if (document.version != 1) {
-    result.Error = sourceName + ": unsupported SM5 recipe schema version";
+    result.Error.message = "unsupported SM5 recipe schema version";
     return false;
   }
 
   std::string parseError;
 
   if (!document.rewrite_rules.empty()) {
-    result.Error = sourceName + ": schema version 1 requires steps and "
+    result.Error.message = "schema version 1 requires steps and "
                                       "does not allow top-level rewrite_rules";
     return false;
   }
   if (document.steps.empty()) {
-    result.Error =
-        sourceName + ": schema version 1 requires at least one step";
+    result.Error.message =
+        "schema version 1 requires at least one step";
     return false;
   }
   if (!document.input_decls.empty() || !document.output_decls.empty() ||
@@ -1805,19 +1821,19 @@ bool ParseRecipeText(const std::string &recipeText,
       !document.structured_resource_decls.empty() ||
       !document.cbuffer_decls.empty() || !document.sampler_decls.empty() ||
       !document.uav_decls.empty()) {
-    result.Error = sourceName +
-                   ": schema version 1 does not allow top-level "
+    result.Error.message =
+                   "schema version 1 does not allow top-level "
                    "*_decls; use add_* declaration steps";
     return false;
   }
 
   if (!ValidateUniqueDeclarationHandles(document, parseError)) {
-    result.Error = sourceName + ": " + parseError;
+    result.Error.message = parseError;
     return false;
   }
 
   if (!ValidateEmitHandleReferences(document, parseError)) {
-    result.Error = sourceName + ": " + parseError;
+    result.Error.message = parseError;
     return false;
   }
 
@@ -1826,7 +1842,7 @@ bool ParseRecipeText(const std::string &recipeText,
                         std::vector<RecipeRule> &rules) -> bool {
     RecipeRule rule;
     if (!ParseRule(ruleModel, inheritedMode, rule, parseError)) {
-      result.Error = sourceName + ": " + parseError;
+      result.Error.message = parseError;
       return false;
     }
     rules.push_back(std::move(rule));
@@ -1842,7 +1858,7 @@ bool ParseRecipeText(const std::string &recipeText,
       return true;
     }
 
-    result.Error = sourceName + ": duplicate SM5 name '" + name +
+    result.Error.message = "duplicate SM5 name '" + name +
                    "' reused by " + kind + " (already used by " +
                    it->second + ")";
     return false;
@@ -1852,8 +1868,8 @@ bool ParseRecipeText(const std::string &recipeText,
     const std::string stepKind =
       stepModel.kind.empty() ? "apply_rules" : stepModel.kind;
     if (stepModel.name.empty()) {
-      result.Error = sourceName +
-                     ": SM5 step names are required and must be unique";
+      result.Error.message =
+                     "SM5 step names are required and must be unique";
       return false;
     }
     const std::string stepName = stepModel.name;
@@ -1864,7 +1880,7 @@ bool ParseRecipeText(const std::string &recipeText,
 
     RecipeStepCondition stepCondition;
     if (!BuildStepCondition(stepModel.if_condition, stepCondition, parseError)) {
-      result.Error = sourceName + ": " + parseError;
+      result.Error.message = parseError;
       return false;
     }
 
@@ -1876,8 +1892,8 @@ bool ParseRecipeText(const std::string &recipeText,
 
       for (const YamlRule &ruleModel : stepModel.rules) {
         if (ruleModel.name.empty()) {
-          result.Error = sourceName +
-                         ": SM5 rule names are required and must be unique";
+          result.Error.message = 
+                         "SM5 rule names are required and must be unique";
           return false;
         }
         if (!reserveName(ruleModel.name, "rule")) {
@@ -1897,18 +1913,18 @@ bool ParseRecipeText(const std::string &recipeText,
 
     if (stepKind == "check_shader_version") {
       if (!stepModel.rules.empty()) {
-        result.Error = sourceName +
-                       ": SM5 check_shader_version steps cannot define rules";
+        result.Error.message = 
+                       "SM5 check_shader_version steps cannot define rules";
         return false;
       }
       if (stepModel.mode != RecipeRuleApplicationMode::First) {
-        result.Error = sourceName +
-                       ": SM5 step mode is only valid for apply_rules steps";
+        result.Error.message = 
+                       "SM5 step mode is only valid for apply_rules steps";
         return false;
       }
       if (stepModel.major < 0 || stepModel.minor < 0) {
-        result.Error = sourceName +
-                       ": SM5 check_shader_version steps require major and minor";
+        result.Error.message = 
+                       "SM5 check_shader_version steps require major and minor";
         return false;
       }
 
@@ -1923,23 +1939,23 @@ bool ParseRecipeText(const std::string &recipeText,
 
     if (stepKind == "check_opcode_count") {
       if (!stepModel.rules.empty()) {
-        result.Error = sourceName +
-                       ": SM5 check_opcode_count steps cannot define rules";
+        result.Error.message = 
+                       "SM5 check_opcode_count steps cannot define rules";
         return false;
       }
       if (stepModel.mode != RecipeRuleApplicationMode::First) {
-        result.Error = sourceName +
-                       ": SM5 step mode is only valid for apply_rules steps";
+        result.Error.message = 
+                       "SM5 step mode is only valid for apply_rules steps";
         return false;
       }
       if (stepModel.opcode.empty()) {
-        result.Error = sourceName +
-                       ": SM5 check_opcode_count steps require opcode";
+        result.Error.message = 
+                       "SM5 check_opcode_count steps require opcode";
         return false;
       }
       if (stepModel.expected_count == INT_MIN) {
-        result.Error = sourceName +
-                       ": SM5 check_opcode_count steps require expected_count";
+        result.Error.message = 
+                       "SM5 check_opcode_count steps require expected_count";
         return false;
       }
 
@@ -1953,18 +1969,18 @@ bool ParseRecipeText(const std::string &recipeText,
 
     if (stepKind == "check_resource_count") {
       if (!stepModel.rules.empty()) {
-        result.Error = sourceName +
-                       ": SM5 check_resource_count steps cannot define rules";
+        result.Error.message = 
+                       "SM5 check_resource_count steps cannot define rules";
         return false;
       }
       if (stepModel.mode != RecipeRuleApplicationMode::First) {
-        result.Error = sourceName +
-                       ": SM5 step mode is only valid for apply_rules steps";
+        result.Error.message = 
+                       "SM5 step mode is only valid for apply_rules steps";
         return false;
       }
       if (stepModel.expected_resources == INT_MIN) {
-        result.Error = sourceName +
-                       ": SM5 check_resource_count steps require expected_resources";
+        result.Error.message = 
+                       "SM5 check_resource_count steps require expected_resources";
         return false;
       }
 
@@ -1976,14 +1992,14 @@ bool ParseRecipeText(const std::string &recipeText,
     }
 
     if (stepModel.mode != RecipeRuleApplicationMode::First) {
-      result.Error = sourceName +
-                     ": SM5 step mode is only valid for apply_rules steps";
+      result.Error.message = 
+                     "SM5 step mode is only valid for apply_rules steps";
       return false;
     }
 
     if (!stepModel.rules.empty()) {
-      result.Error =
-          sourceName + ": SM5 non-apply_rules steps cannot define rules";
+      result.Error.message =
+          "SM5 non-apply_rules steps cannot define rules";
       return false;
     }
 
@@ -2002,33 +2018,32 @@ bool ParseRecipeText(const std::string &recipeText,
                                 .When(stepCondition));
     } else if (stepKind == "add_temp") {
       if (!stepModel.handle.empty()) {
-        result.Error = sourceName +
-                       ": add_temp steps no longer support handle; use "
-                       "handles";
+        result.Error.message =
+                       "add_temp steps no longer support handle; use handles";
         return false;
       }
 
       if (stepModel.handles.empty()) {
-        result.Error = sourceName +
-                       ": add_temp steps require handles";
+        result.Error.message = 
+                       "add_temp steps require handles";
         return false;
       }
       if (stepModel.bind_point >= 0) {
-        result.Error = sourceName +
-                       ": add_temp steps do not allow bind_point";
+        result.Error.message = 
+                       "add_temp steps do not allow bind_point";
         return false;
       }
       if (stepModel.auto_bind) {
-        result.Error = sourceName +
-                       ": add_temp steps do not allow auto_bind";
+        result.Error.message = 
+                       "add_temp steps do not allow auto_bind";
         return false;
       }
 
       std::vector<std::string> tempHandles;
       for (const std::string &tempHandle : stepModel.handles) {
         if (tempHandle.empty()) {
-          result.Error = sourceName +
-                         ": add_temp handles entries must be non-empty";
+          result.Error.message = 
+                         "add_temp handles entries must be non-empty";
           return false;
         }
         tempHandles.push_back(tempHandle);
@@ -2138,7 +2153,7 @@ bool ParseRecipeText(const std::string &recipeText,
                                 .AbortOnFailureFlag(stepModel.abort_on_failure)
                                 .When(stepCondition));
     } else {
-      result.Error = sourceName + ": unsupported SM5 step kind '" +
+      result.Error.message = "unsupported SM5 step kind '" +
                      stepModel.kind + "'";
       return false;
     }
@@ -2150,7 +2165,7 @@ bool ParseRecipeText(const std::string &recipeText,
 bool ParseRecipeFile(const std::string &recipePath, RecipeParseResult &result) {
   std::ifstream file(recipePath);
   if (!file) {
-    result.Error = "failed to open recipe file: " + recipePath;
+    result.Error.message = "failed to open recipe file: " + recipePath;
     return false;
   }
 

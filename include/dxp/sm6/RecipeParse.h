@@ -10,6 +10,7 @@
 #include "llvm/IR/Module.h"
 
 #include "Recipe.h"
+#include "../ParseError.h"
 
 /// @brief Owns the loaded LLVM and DXIL state for a shader container.
 struct DxilLoadedShaderState {
@@ -32,14 +33,25 @@ struct DxilContainerPatchOptions {
 struct DxilRecipeParseResult {
   DxilRecipe recipe;
   DxilContainerPatchOptions patchOptions;
-  std::string error;
+  ::dxp::ParseError yaml_diagnostic;
 };
 
 /// @brief Parses a DXIL recipe from YAML text.
+///
+/// On failure, result.yaml_diagnostic contains structured location info
+/// (line, column, path) for YAML parse errors, or a plain message
+/// for post-parse validation failures.
 bool ParseDxilRecipeText(const std::string &recipeText,
                          DxilRecipeParseResult &result,
                          const std::string &sourceName = "recipe");
 
 /// @brief Parses a DXIL recipe from a file path.
+///
+/// This is equivalent to loading the file contents and calling
+/// `ParseDxilRecipeText`.
+///
+/// On failure, result.yaml_diagnostic contains structured location info
+/// (line, column, path) for YAML parse errors, or a plain message
+/// for post-parse validation failures.
 bool ParseDxilRecipeFile(const std::string &recipePath,
                          DxilRecipeParseResult &result);
