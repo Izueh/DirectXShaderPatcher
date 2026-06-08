@@ -328,15 +328,7 @@ static bool ValidateRuleCaptureReferences(const RecipeRule &rule,
       }
     }
 
-    // Validate instruction-level capture on emit templates.
     if (!instruction.Capture.empty()) {
-      if (!instruction.CaptureFields.AnySelected()) {
-        // capture_fields without capture is fine — capture alone means raw copy.
-      } else if (instruction.CaptureFields.AnySelected()) {
-        // capture_fields requires a capture name (already set above).
-      }
-
-      // Validate that the capture name references an existing instruction capture.
       if (!ValidateCaptureReference(captures, instruction.Capture, "instruction",
                                     captures.Instructions,
                                     "emit instruction capture", error)) {
@@ -706,7 +698,6 @@ static bool CompileEmitInstructionTemplate(
   }
 
   if (emitModel.Opcode.empty()) {
-    // Capture-only emit: store the capture name and fields for resolution at instantiation time.
     instruction.Capture = emitModel.Capture;
     instruction.CaptureFields.Opcode = emitModel.CaptureFields.Opcode;
     instruction.CaptureFields.Saturate = emitModel.CaptureFields.Saturate;
@@ -2433,7 +2424,6 @@ static bool InstantiateInstruction(const Instruction &instructionTemplate,
                                    RecipeContext &context,
                                    Instruction &instruction,
                                    std::string &error) {
-  // Handle captured instruction emit.
   if (!instructionTemplate.Capture.empty()) {
     const auto it = context.captures.instructions.find(instructionTemplate.Capture);
     if (it == context.captures.instructions.end()) {
@@ -2446,8 +2436,6 @@ static bool InstantiateInstruction(const Instruction &instructionTemplate,
     const auto &fields = instructionTemplate.CaptureFields;
 
     if (fields.AnySelected()) {
-      // Apply field projection: start from a default instruction and only
-      // copy the selected fields from the captured instruction.
       instruction = Instruction{};
       if (fields.Opcode) {
         instruction.Opcode = captured.Opcode;
@@ -2466,7 +2454,6 @@ static bool InstantiateInstruction(const Instruction &instructionTemplate,
         instruction.CustomData = captured.CustomData;
       }
     } else {
-      // Raw copy: emit the captured instruction as-is.
       instruction = captured;
     }
 

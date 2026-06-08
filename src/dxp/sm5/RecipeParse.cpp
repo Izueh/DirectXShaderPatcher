@@ -679,10 +679,7 @@ static bool ValidateRuleCaptureReferences(
       }
     }
 
-    // Validate instruction-level capture on emit templates.
     if (!instruction.Capture.empty()) {
-      // Check local captures (from this rule's match.capture/sequence[].capture)
-      // first, then fall back to global captures (from previous rules/steps).
       if (!ValidateCaptureReference(globalCaptures, instruction.Capture,
                                     "instruction", globalCaptures.Instructions,
                                     "emit instruction capture", error) &&
@@ -1399,7 +1396,6 @@ static bool ParseRule(const YamlRule &ruleModel,
       return false;
     }
 
-    // capture_fields requires a capture name (not valid with opcode-only emit).
     const bool hasCaptureFields = emitModel.capture_fields.opcode ||
                                   emitModel.capture_fields.saturate ||
                                   emitModel.capture_fields.test_boolean ||
@@ -1411,7 +1407,6 @@ static bool ParseRule(const YamlRule &ruleModel,
     }
 
     if (hasCapture) {
-      // Capture-only emit: replay a previously captured instruction.
       RecipeInstructionCaptureFields captureFields;
       captureFields.Opcode = emitModel.capture_fields.opcode;
       captureFields.Saturate = emitModel.capture_fields.saturate;
@@ -1425,7 +1420,6 @@ static bool ParseRule(const YamlRule &ruleModel,
           .WithCaptureFields(std::move(captureFields));
       rule.AddEmit(std::move(emitInstruction));
     } else {
-      // Opcode-based emit: construct instruction from opcode + operands.
       Instruction instruction;
       Opcode parsedOpcode;
       std::string canonicalOpcodeName;

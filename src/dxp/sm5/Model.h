@@ -193,10 +193,7 @@ struct Instruction {
   uint32_t SourceLength = 0;
   std::vector<uint32_t> RawTokens;
   std::string Name;
-  /// When non-empty, this instruction is a replay of a captured instruction.
-  /// The captured instruction is looked up by this name in the capture store.
   std::string Capture;
-  /// Field projection configuration for captured instruction replay.
   InstructionCaptureFields CaptureFields;
 };
 
