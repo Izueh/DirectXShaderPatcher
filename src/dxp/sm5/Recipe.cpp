@@ -327,6 +327,27 @@ static bool ValidateRuleCaptureReferences(const RecipeRule &rule,
         return false;
       }
     }
+
+    // Validate instruction-level capture on emit templates.
+    if (!instruction.Capture.empty()) {
+      if (!instruction.CaptureFields.AnySelected()) {
+        // capture_fields without capture is fine — capture alone means raw copy.
+      } else if (instruction.CaptureFields.AnySelected()) {
+        // capture_fields requires a capture name (already set above).
+      }
+
+      // Validate that the capture name references an existing instruction capture.
+      if (!ValidateCaptureReference(captures, instruction.Capture, "instruction",
+                                    captures.Instructions,
+                                    "emit instruction capture", error)) {
+        return false;
+      }
+    }
+
+    if (instruction.CaptureFields.AnySelected() && instruction.Capture.empty()) {
+      error = "SM5 emit instruction capture_fields requires capture name";
+      return false;
+    }
   }
 
   return true;
@@ -674,9 +695,25 @@ static bool CompileEmitInstructionTemplate(
     std::string &error, const char *errorPrefix = "SM5 emit") {
   instruction = Instruction{};
 
-  if (emitModel.Opcode.empty()) {
-    error = std::string(errorPrefix) + " entries require opcode";
+  if (!emitModel.Opcode.empty() && !emitModel.Capture.empty()) {
+    error = std::string(errorPrefix) + " cannot specify both opcode and capture";
     return false;
+  }
+
+  if (emitModel.Opcode.empty() && emitModel.Capture.empty()) {
+    error = std::string(errorPrefix) + " entries require opcode or capture";
+    return false;
+  }
+
+  if (emitModel.Opcode.empty()) {
+    // Capture-only emit: store the capture name and fields for resolution at instantiation time.
+    instruction.Capture = emitModel.Capture;
+    instruction.CaptureFields.Opcode = emitModel.CaptureFields.Opcode;
+    instruction.CaptureFields.Saturate = emitModel.CaptureFields.Saturate;
+    instruction.CaptureFields.TestBoolean = emitModel.CaptureFields.TestBoolean;
+    instruction.CaptureFields.Operands = emitModel.CaptureFields.Operands;
+    instruction.CaptureFields.Immediates = emitModel.CaptureFields.Immediates;
+    return true;
   }
 
   int32_t resolvedTestBoolean = emitModel.TestBoolean;
@@ -2396,6 +2433,51 @@ static bool InstantiateInstruction(const Instruction &instructionTemplate,
                                    RecipeContext &context,
                                    Instruction &instruction,
                                    std::string &error) {
+  // Handle captured instruction emit.
+  if (!instructionTemplate.Capture.empty()) {
+    const auto it = context.captures.instructions.find(instructionTemplate.Capture);
+    if (it == context.captures.instructions.end()) {
+      error = std::string(instructionPath) + ": unknown captured instruction '" +
+              instructionTemplate.Capture + "'";
+      return false;
+    }
+
+    const Instruction &captured = it->second;
+    const auto &fields = instructionTemplate.CaptureFields;
+
+    if (fields.AnySelected()) {
+      // Apply field projection: start from a default instruction and only
+      // copy the selected fields from the captured instruction.
+      instruction = Instruction{};
+      if (fields.Opcode) {
+        instruction.Opcode = captured.Opcode;
+      }
+      if (fields.Saturate) {
+        instruction.Controls.Saturate = captured.Controls.Saturate;
+      }
+      if (fields.TestBoolean) {
+        instruction.Controls.HasTestBoolean = captured.Controls.HasTestBoolean;
+        instruction.Controls.TestBoolean = captured.Controls.TestBoolean;
+      }
+      if (fields.Operands) {
+        instruction.Operands = captured.Operands;
+      }
+      if (fields.Immediates) {
+        instruction.CustomData = captured.CustomData;
+      }
+    } else {
+      // Raw copy: emit the captured instruction as-is.
+      instruction = captured;
+    }
+
+    if (!ValidateInstructionStructure(instruction, instructionPath, error)) {
+      return false;
+    }
+
+    instruction = FinalizeInstruction(std::move(instruction));
+    return true;
+  }
+
   instruction = instructionTemplate;
   instruction.Operands.clear();
   instruction.RawTokens.clear();

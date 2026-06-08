@@ -384,6 +384,13 @@ std::vector<MatchResult> CollectMatches(const Program &program,
     result.operands = std::move(localOperands);
     result.instructions = std::move(localInstructions);
     result.indexValues = std::move(localIndexValues);
+
+    // Store instruction capture at the match level (single-instruction).
+    if (!pattern.CaptureName.empty()) {
+      result.instructions[pattern.CaptureName] = program.Instructions[index];
+      result.indexValues[pattern.CaptureName + "_index"] = index;
+    }
+
     matches.push_back(std::move(result));
   }
   return matches;

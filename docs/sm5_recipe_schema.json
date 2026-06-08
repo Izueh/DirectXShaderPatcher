@@ -426,12 +426,28 @@
         }
       }
     },
+    "instructionCaptureFields": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "opcode": { "type": "boolean" },
+        "saturate": { "type": "boolean" },
+        "test_boolean": { "type": "boolean" },
+        "operands": { "type": "boolean" },
+        "immediates": { "type": "boolean" }
+      }
+    },
     "emitInstruction": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["opcode"],
+      "anyOf": [
+        { "required": ["opcode"] },
+        { "required": ["capture"] }
+      ],
       "properties": {
         "opcode": { "type": "string" },
+        "capture": { "type": "string" },
+        "capture_fields": { "$ref": "#/$defs/instructionCaptureFields" },
         "saturate": { "type": "string" },
         "interpolation_mode": { "type": "string" },
         "test_boolean": { "type": "integer" },

@@ -161,6 +161,7 @@ namespace:
 | Name type | Where defined | Example |
 |---|---|---|
 | Capture names | `match.Operands[].capture`, `emit[].Operands[].capture` | `dst`, `src` |
+| Instruction capture names | `match.capture`, `match.sequence[].capture`, `emit[].capture` | `frc_instr`, `mul_instr` |
 | Match-capture names | `match.Operands[].match_capture`, `emit[].Operands[].match_capture` | `dst` (references a capture) |
 | From-handle names | `emit[].Operands[].from_handle` | `my_texture` |
 | Variable names | `immediates_u32`/`immediates_u64`/`immediates_i32`/`immediates_i64`/`immediates_f32`/`immediates_f64` shorthand array entries (when a value is a non-numeric identifier) | `my_reg` |
@@ -190,6 +191,129 @@ the key `<captureName>_index`.
 replayed from captures. When `capture_fields: { components: true }` is used on
 an emit operand, the component mode is automatically converted based on the
 role change (source → destination, etc.). See the [Operand Roles](#operand-roles-and-component-mode-conversion) section for details.
+
+### Instruction Capture and Emit
+
+Instructions matched via `match.capture` or `match.sequence[].capture` are
+stored in the global `CaptureStore` and can be emitted in subsequent rules or
+steps using `emit[].capture` — mirroring the operand capture/emit pattern.
+
+#### Single-Instruction Capture
+
+Add `capture` to a single-instruction `match` block to store the matched
+instruction:
+
+```yaml
+rules:
+  - name: capture_frc
+    match:
+      opcode: frc
+      operands:
+        - capture: src
+      capture: frc_instr
+    emit:
+      - opcode: frc
+        operands:
+          - capture: src
+```
+
+#### Sequence Capture
+
+Add `capture` to any entry in `match.sequence` to store that specific
+instruction from the sequence:
+
+```yaml
+rules:
+  - name: capture_frc_then_mul
+    match:
+      sequence:
+        - opcode: frc
+          capture: frc_instr
+          operands:
+            - capture: frc_src
+        - opcode: mul
+          operands:
+            - capture: mul_dst
+            - capture: mul_src
+    emit:
+      - capture: frc_instr
+      - opcode: mul
+        operands:
+          - capture: mul_dst
+          - capture: mul_src
+```
+
+#### Emitting Captured Instructions
+
+Use `emit[].capture` with the capture name to emit the stored instruction as a
+raw copy. Captured instructions are emitted in their entirety by default.
+
+```yaml
+emit:
+  - capture: frc_instr
+```
+
+#### Instruction Capture Fields Projection
+
+Like operand capture, `capture_fields` can project specific fields from a
+captured instruction. When specified, only the listed fields are replayed;
+all other fields (operands, immediates, etc.) are omitted:
+
+```yaml
+emit:
+  - capture: frc_instr
+    capture_fields:
+      opcode: true
+      saturate: true
+      operands: true
+```
+
+Supported instruction capture fields:
+
+- `opcode` — replay the opcode
+- `saturate` — replay the saturate modifier
+- `test_boolean` — replay the test boolean value
+- `operands` — replay all operands
+- `immediates` — replay all immediates
+
+#### Cross-Step Instruction Capture
+
+Instruction captures persist across steps. A capture defined in an earlier
+step is available in `emit[].capture` in any subsequent step:
+
+```yaml
+steps:
+  - name: capture_step
+    rules:
+      - name: capture_rule
+        match:
+          opcode: frc
+          capture: frc_instr
+        emit:
+          - opcode: frc
+            operands:
+              - capture: src
+
+  - name: emit_step
+    rules:
+      - name: emit_frc
+        match:
+          opcode: add
+        emit:
+          - capture: frc_instr
+          - opcode: add
+            operands:
+              - capture: add_dst
+              - capture: add_src
+```
+
+#### Validation Rules
+
+- `capture` on a match block requires `opcode` or `sequence`.
+- `capture` and `opcode` cannot both be specified on the same `emit` entry.
+- `capture_fields` requires a `capture` name on the same emit entry.
+- The `capture` reference must resolve to an instruction capture defined in
+  any rule across any step in the recipe.
 
 ## Operand Roles and Component Mode Conversion
 
@@ -245,6 +369,15 @@ Emit operand fields:
 - `components.value`
 - `num_components`
 - `modifier`
+
+Emit instruction fields:
+
+- `opcode` or `capture` (mutually exclusive)
+- `capture_fields` (requires `capture`)
+- `saturate`
+- `interpolation_mode`
+- `test_boolean`
+- `operands`
 
 Notes:
 

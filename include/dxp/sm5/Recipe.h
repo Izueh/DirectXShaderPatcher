@@ -1568,13 +1568,101 @@ struct RecipeInstructionPattern {
   }
 };
 
+/// @brief Controls which fields of a captured instruction participate in
+/// projected match/replay operations.
+///
+/// When all fields are false, operations fall back to full instruction semantics.
+/// Mirrors the operand-level `RecipeOperandCaptureFields`.
+struct RecipeInstructionCaptureFields {
+  bool Opcode = false;
+  bool Saturate = false;
+  bool TestBoolean = false;
+  bool Operands = false;
+  bool Immediates = false;
+
+  /// @brief Enables opcode field projection for captured instructions.
+  RecipeInstructionCaptureFields &WithOpcode(bool enabled = true) & {
+    Opcode = enabled;
+    return *this;
+  }
+
+  /// @brief Enables opcode field projection for captured instructions.
+  RecipeInstructionCaptureFields &&WithOpcode(bool enabled = true) && {
+    Opcode = enabled;
+    return std::move(*this);
+  }
+
+  /// @brief Enables saturate field projection for captured instructions.
+  RecipeInstructionCaptureFields &WithSaturate(bool enabled = true) & {
+    Saturate = enabled;
+    return *this;
+  }
+
+  /// @brief Enables saturate field projection for captured instructions.
+  RecipeInstructionCaptureFields &&WithSaturate(bool enabled = true) && {
+    Saturate = enabled;
+    return std::move(*this);
+  }
+
+  /// @brief Enables test_boolean field projection for captured instructions.
+  RecipeInstructionCaptureFields &WithTestBoolean(bool enabled = true) & {
+    TestBoolean = enabled;
+    return *this;
+  }
+
+  /// @brief Enables test_boolean field projection for captured instructions.
+  RecipeInstructionCaptureFields &&WithTestBoolean(bool enabled = true) && {
+    TestBoolean = enabled;
+    return std::move(*this);
+  }
+
+  /// @brief Enables operand field projection for captured instructions.
+  RecipeInstructionCaptureFields &WithOperands(bool enabled = true) & {
+    Operands = enabled;
+    return *this;
+  }
+
+  /// @brief Enables operand field projection for captured instructions.
+  RecipeInstructionCaptureFields &&WithOperands(bool enabled = true) && {
+    Operands = enabled;
+    return std::move(*this);
+  }
+
+  /// @brief Enables immediate field projection for captured instructions.
+  RecipeInstructionCaptureFields &WithImmediates(bool enabled = true) & {
+    Immediates = enabled;
+    return *this;
+  }
+
+  /// @brief Enables immediate field projection for captured instructions.
+  RecipeInstructionCaptureFields &&WithImmediates(bool enabled = true) && {
+    Immediates = enabled;
+    return std::move(*this);
+  }
+
+  bool AnySelected() const {
+    return Opcode || Saturate || TestBoolean || Operands || Immediates;
+  }
+};
+
 /// @brief Describes one instruction emitted by a rewrite rule.
+///
+/// An emit instruction may either be constructed from scratch (opcode + operands)
+/// or replayed from a previously captured instruction via `Capture` +
+/// `CaptureFields`. When `Capture` is set, the instruction is looked up in
+/// `context.captures.instructions` and emitted as a raw copy (unless
+/// `CaptureFields` projects specific fields).
 struct RecipeInstructionTemplate {
   std::string Opcode;
   std::string Saturate;
   std::string InterpolationMode;
   int32_t TestBoolean = -1;
   std::vector<RecipeOperandPattern> Operands;
+  /// Capture name for replaying a previously captured instruction wholesale.
+  /// Invalid when `Opcode` is also set.
+  std::string Capture;
+  /// Field projection configuration for captured instruction replay.
+  RecipeInstructionCaptureFields CaptureFields;
 
   /// @brief Sets the opcode name for this instruction template.
   RecipeInstructionTemplate &WithOpcode(std::string opcode) & {
@@ -1633,6 +1721,74 @@ struct RecipeInstructionTemplate {
   /// @brief Appends an operand pattern to this instruction template.
   RecipeInstructionTemplate &&AddOperand(RecipeOperandPattern operand) && {
     Operands.push_back(std::move(operand));
+    return std::move(*this);
+  }
+
+  /// @brief Sets the capture name for this instruction template.
+  RecipeInstructionTemplate &CaptureAs(std::string capture) & {
+    Capture = std::move(capture);
+    return *this;
+  }
+
+  /// @brief Sets the capture name for this instruction template.
+  RecipeInstructionTemplate &&CaptureAs(std::string capture) && {
+    Capture = std::move(capture);
+    return std::move(*this);
+  }
+
+  /// @brief Sets the capture fields projection configuration.
+  RecipeInstructionTemplate &WithCaptureFields(
+      RecipeInstructionCaptureFields captureFields) & {
+    CaptureFields = captureFields;
+    return *this;
+  }
+
+  /// @brief Sets the capture fields projection configuration.
+  RecipeInstructionTemplate &&WithCaptureFields(
+      RecipeInstructionCaptureFields captureFields) && {
+    CaptureFields = std::move(captureFields);
+    return std::move(*this);
+  }
+
+  /// @brief Captures and replays the opcode field from a named capture.
+  RecipeInstructionTemplate &ReplayOpcodeFrom(std::string capture) & {
+    Capture = std::move(capture);
+    CaptureFields.Opcode = true;
+    return *this;
+  }
+
+  /// @brief Captures and replays the opcode field from a named capture.
+  RecipeInstructionTemplate &&ReplayOpcodeFrom(std::string capture) && {
+    Capture = std::move(capture);
+    CaptureFields.Opcode = true;
+    return std::move(*this);
+  }
+
+  /// @brief Captures and replays the saturate field from a named capture.
+  RecipeInstructionTemplate &ReplaySaturateFrom(std::string capture) & {
+    Capture = std::move(capture);
+    CaptureFields.Saturate = true;
+    return *this;
+  }
+
+  /// @brief Captures and replays the saturate field from a named capture.
+  RecipeInstructionTemplate &&ReplaySaturateFrom(std::string capture) && {
+    Capture = std::move(capture);
+    CaptureFields.Saturate = true;
+    return std::move(*this);
+  }
+
+  /// @brief Captures and replays the operands field from a named capture.
+  RecipeInstructionTemplate &ReplayOperandsFrom(std::string capture) & {
+    Capture = std::move(capture);
+    CaptureFields.Operands = true;
+    return *this;
+  }
+
+  /// @brief Captures and replays the operands field from a named capture.
+  RecipeInstructionTemplate &&ReplayOperandsFrom(std::string capture) && {
+    Capture = std::move(capture);
+    CaptureFields.Operands = true;
     return std::move(*this);
   }
 };

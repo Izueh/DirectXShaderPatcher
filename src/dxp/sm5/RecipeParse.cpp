@@ -678,6 +678,20 @@ static bool ValidateRuleCaptureReferences(
         return false;
       }
     }
+
+    // Validate instruction-level capture on emit templates.
+    if (!instruction.Capture.empty()) {
+      // Check local captures (from this rule's match.capture/sequence[].capture)
+      // first, then fall back to global captures (from previous rules/steps).
+      if (!ValidateCaptureReference(globalCaptures, instruction.Capture,
+                                    "instruction", globalCaptures.Instructions,
+                                    "emit instruction capture", error) &&
+          !ValidateCaptureReference(globalCaptures, instruction.Capture,
+                                    "instruction", localCaptures.Instructions,
+                                    "emit instruction capture", error)) {
+        return false;
+      }
+    }
   }
 
   return true;
@@ -1373,61 +1387,96 @@ static bool ParseRule(const YamlRule &ruleModel,
   }
 
   for (const YamlEmitInstruction &emitModel : ruleModel.emit) {
-    if (emitModel.opcode.empty()) {
-      error = "SM5 emit entries require opcode";
+    const bool hasOpcode = !emitModel.opcode.empty();
+    const bool hasCapture = !emitModel.capture.empty();
+
+    if (!hasOpcode && !hasCapture) {
+      error = "SM5 emit entries require opcode or capture";
+      return false;
+    }
+    if (hasOpcode && hasCapture) {
+      error = "SM5 emit entries cannot specify both opcode and capture";
       return false;
     }
 
-    Instruction instruction;
-    Opcode parsedOpcode;
-    std::string canonicalOpcodeName;
-    int32_t resolvedTestBoolean = emitModel.test_boolean;
-    if (!ResolveOpcodeAndTestBoolean(emitModel.opcode, emitModel.test_boolean,
-                                     parsedOpcode, canonicalOpcodeName,
-                                     resolvedTestBoolean, error, "emit")) {
+    // capture_fields requires a capture name (not valid with opcode-only emit).
+    const bool hasCaptureFields = emitModel.capture_fields.opcode ||
+                                  emitModel.capture_fields.saturate ||
+                                  emitModel.capture_fields.test_boolean ||
+                                  emitModel.capture_fields.operands ||
+                                  emitModel.capture_fields.immediates;
+    if (hasCaptureFields && !hasCapture) {
+      error = "SM5 emit instruction capture_fields requires capture name";
       return false;
     }
-    instruction.Opcode = parsedOpcode;
-    instruction.Controls.Saturate = emitModel.saturate;
-    if (resolvedTestBoolean >= 0) {
-      instruction.Controls.HasTestBoolean = true;
-      instruction.Controls.TestBoolean =
-          static_cast<uint32_t>(resolvedTestBoolean);
-    }
-    if (emitModel.interpolation_mode != dxp::sm5::InterpolationMode::Undefined) {
-      instruction.Controls.HasInputInterpolationMode = true;
-      instruction.Controls.InputInterpolationMode =
-          static_cast<uint32_t>(emitModel.interpolation_mode);
-      const auto opcode = static_cast<OpcodeType>(instruction.Opcode);
-      if (opcode != D3D10_SB_OPCODE_DCL_INPUT_PS &&
-          opcode != D3D10_SB_OPCODE_DCL_INPUT_PS_SIV) {
-        error = "SM5 interpolation_mode is only valid for dcl_input_ps and "
-                "dcl_input_ps_siv";
+
+    if (hasCapture) {
+      // Capture-only emit: replay a previously captured instruction.
+      RecipeInstructionCaptureFields captureFields;
+      captureFields.Opcode = emitModel.capture_fields.opcode;
+      captureFields.Saturate = emitModel.capture_fields.saturate;
+      captureFields.TestBoolean = emitModel.capture_fields.test_boolean;
+      captureFields.Operands = emitModel.capture_fields.operands;
+      captureFields.Immediates = emitModel.capture_fields.immediates;
+
+      RecipeInstructionTemplate emitInstruction =
+          RecipeInstructionTemplate{}
+          .CaptureAs(emitModel.capture)
+          .WithCaptureFields(std::move(captureFields));
+      rule.AddEmit(std::move(emitInstruction));
+    } else {
+      // Opcode-based emit: construct instruction from opcode + operands.
+      Instruction instruction;
+      Opcode parsedOpcode;
+      std::string canonicalOpcodeName;
+      int32_t resolvedTestBoolean = emitModel.test_boolean;
+      if (!ResolveOpcodeAndTestBoolean(emitModel.opcode, emitModel.test_boolean,
+                                       parsedOpcode, canonicalOpcodeName,
+                                       resolvedTestBoolean, error, "emit")) {
         return false;
       }
-    }
-    for (const YamlOperand &operandModel : emitModel.operands) {
-      Operand operand;
-      if (!ParseEmitOperand(operandModel, operand, error)) {
-        return false;
+      instruction.Opcode = parsedOpcode;
+      instruction.Controls.Saturate = emitModel.saturate;
+      if (resolvedTestBoolean >= 0) {
+        instruction.Controls.HasTestBoolean = true;
+        instruction.Controls.TestBoolean =
+            static_cast<uint32_t>(resolvedTestBoolean);
       }
-      instruction.Operands.push_back(std::move(operand));
-    }
-    RecipeInstructionTemplate emitInstruction =
-        RecipeInstructionTemplate{}
-        .WithOpcode(canonicalOpcodeName)
-        .WithSaturate(emitModel.saturate ? "true" : "false")
-        .WithInterpolationMode(interpolationModeToString(emitModel.interpolation_mode))
-        .WithTestBoolean(resolvedTestBoolean);
-    for (const YamlOperand &operandModel : emitModel.operands) {
-      RecipeOperandPattern operandPattern;
-      if (!FillRecipeOperandPattern(operandModel, operandPattern, true,
-                                    error)) {
-        return false;
+      if (emitModel.interpolation_mode != dxp::sm5::InterpolationMode::Undefined) {
+        instruction.Controls.HasInputInterpolationMode = true;
+        instruction.Controls.InputInterpolationMode =
+            static_cast<uint32_t>(emitModel.interpolation_mode);
+        const auto opcode = static_cast<OpcodeType>(instruction.Opcode);
+        if (opcode != D3D10_SB_OPCODE_DCL_INPUT_PS &&
+            opcode != D3D10_SB_OPCODE_DCL_INPUT_PS_SIV) {
+          error = "SM5 interpolation_mode is only valid for dcl_input_ps and "
+                  "dcl_input_ps_siv";
+          return false;
+        }
       }
-      emitInstruction.AddOperand(std::move(operandPattern));
+      for (const YamlOperand &operandModel : emitModel.operands) {
+        Operand operand;
+        if (!ParseEmitOperand(operandModel, operand, error)) {
+          return false;
+        }
+        instruction.Operands.push_back(std::move(operand));
+      }
+      RecipeInstructionTemplate emitInstruction =
+          RecipeInstructionTemplate{}
+          .WithOpcode(canonicalOpcodeName)
+          .WithSaturate(emitModel.saturate ? "true" : "false")
+          .WithInterpolationMode(interpolationModeToString(emitModel.interpolation_mode))
+          .WithTestBoolean(resolvedTestBoolean);
+      for (const YamlOperand &operandModel : emitModel.operands) {
+        RecipeOperandPattern operandPattern;
+        if (!FillRecipeOperandPattern(operandModel, operandPattern, true,
+                                      error)) {
+          return false;
+        }
+        emitInstruction.AddOperand(std::move(operandPattern));
+      }
+      rule.AddEmit(std::move(emitInstruction));
     }
-    rule.AddEmit(std::move(emitInstruction));
   }
 
   // Per-rule capture validation is deferred until all steps are parsed,

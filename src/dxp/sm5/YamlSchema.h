@@ -85,12 +85,22 @@ struct YamlMatch {
   std::vector<YamlInstructionMatch> sequence;
 };
 
+struct YamlInstructionCaptureFields {
+  bool opcode = false;
+  bool saturate = false;
+  bool test_boolean = false;
+  bool operands = false;
+  bool immediates = false;
+};
+
 struct YamlEmitInstruction {
   std::string opcode;
   bool saturate = false;
   InterpolationMode interpolation_mode;
   int32_t test_boolean = -1;
   std::vector<YamlOperand> operands;
+  std::string capture;
+  YamlInstructionCaptureFields capture_fields;
 };
 
 struct YamlRule {

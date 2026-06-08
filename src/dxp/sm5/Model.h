@@ -8,6 +8,20 @@
 namespace dxp {
 namespace sm5 {
 
+/// @brief Controls which fields of a captured instruction participate in
+/// projected match/replay operations.
+struct InstructionCaptureFields {
+  bool Opcode = false;
+  bool Saturate = false;
+  bool TestBoolean = false;
+  bool Operands = false;
+  bool Immediates = false;
+
+  bool AnySelected() const {
+    return Opcode || Saturate || TestBoolean || Operands || Immediates;
+  }
+};
+
 using OperandType = uint32_t;
 using OperandModifier = uint32_t;
 using OpcodeType = uint32_t;
@@ -179,6 +193,11 @@ struct Instruction {
   uint32_t SourceLength = 0;
   std::vector<uint32_t> RawTokens;
   std::string Name;
+  /// When non-empty, this instruction is a replay of a captured instruction.
+  /// The captured instruction is looked up by this name in the capture store.
+  std::string Capture;
+  /// Field projection configuration for captured instruction replay.
+  InstructionCaptureFields CaptureFields;
 };
 
 struct ResourceDecl {
