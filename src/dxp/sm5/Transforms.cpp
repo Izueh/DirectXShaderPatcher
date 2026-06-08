@@ -551,13 +551,11 @@ void RefreshDeclarations(Program &program) {
 
 namespace {
 
-// Unified entry for the single-pass forward rebuild.
-// All five RewriteActionType variants are normalized into one struct.
 struct RewriteEntry {
-  uint32_t pos;                    // instruction index this entry targets
-  uint8_t type : 4;                // RewriteActionType
-  uint8_t priority : 4;            // 0=Insert (emit first), 1=Replace/Remove
-  uint32_t removeEnd;              // end of consumed range (Replace/Remove only)
+  uint32_t pos;
+  uint8_t type : 4;
+  uint8_t priority : 4;
+  uint32_t removeEnd;
   std::vector<Instruction> newInstructions;
 };
 
@@ -608,14 +606,12 @@ bool ApplyRewriteActions(Program &program,
   if (actions.empty())
     return true;
 
-  // 1. Normalize all actions into unified entries.
   std::vector<RewriteEntry> entries;
   entries.reserve(actions.size());
   for (const auto &action : actions) {
     entries.push_back(NormalizeEntry(action));
   }
 
-  // 2. Sort ascending by position, then by priority (Insert before Replace).
   std::sort(entries.begin(), entries.end(),
             [](const RewriteEntry &a, const RewriteEntry &b) {
               if (a.pos != b.pos)
@@ -623,7 +619,6 @@ bool ApplyRewriteActions(Program &program,
               return a.priority < b.priority;
             });
 
-  // 3. Compute output size: original + inserted - removed.
   size_t outSize = program.Instructions.size();
   for (const auto &e : entries) {
     outSize += e.newInstructions.size();
@@ -633,7 +628,6 @@ bool ApplyRewriteActions(Program &program,
     }
   }
 
-  // 4. Forward pass: single O(N) walk through the instruction stream.
   std::vector<Instruction> output;
   output.reserve(outSize);
 
@@ -646,11 +640,9 @@ bool ApplyRewriteActions(Program &program,
       const auto &e = entries[eIdx];
 
       if (e.type == static_cast<uint8_t>(RewriteActionType::InsertBefore)) {
-        // Emit new instructions, keep original at this position.
         output.insert(output.end(), e.newInstructions.begin(),
                       e.newInstructions.end());
       } else {
-        // Replace or Remove: emit replacement (if any), skip originals.
         output.insert(output.end(), e.newInstructions.begin(),
                       e.newInstructions.end());
         instrIdx = e.removeEnd + 1;  // advance past consumed range
@@ -668,14 +660,12 @@ bool ApplyRewriteActions(Program &program,
     }
   }
 
-  // 5. Handle trailing inserts after the last instruction.
   while (eIdx < entries.size()) {
     output.insert(output.end(), entries[eIdx].newInstructions.begin(),
                   entries[eIdx].newInstructions.end());
     ++eIdx;
   }
 
-  // 6. Swap in the rebuilt instruction list.
   program.Instructions = std::move(output);
   return true;
 }

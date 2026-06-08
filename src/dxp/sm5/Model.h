@@ -8,8 +8,6 @@
 namespace dxp {
 namespace sm5 {
 
-/// @brief Controls which fields of a captured instruction participate in
-/// projected match/replay operations.
 struct InstructionCaptureFields {
   bool Opcode = false;
   bool Saturate = false;

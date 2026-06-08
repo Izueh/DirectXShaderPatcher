@@ -395,7 +395,6 @@ inline InstructionLayout layout(OpcodeType opcode, Role r1, Role r2, Role r3,
 }
 
 static const std::array<InstructionLayout, 194> g_InstructionLayouts = {{
-    // ---- Arithmetic (3-operand: dst, src0, src1) ----
     layout(D3D10_SB_OPCODE_ADD,   Role::Destination, Role::Source, Role::Source),
     layout(D3D10_SB_OPCODE_DIV,   Role::Destination, Role::Source, Role::Source),
     layout(D3D10_SB_OPCODE_DP2,   Role::Destination, Role::Source, Role::Source),
@@ -415,7 +414,6 @@ static const std::array<InstructionLayout, 194> g_InstructionLayouts = {{
     layout(D3D10_SB_OPCODE_SQRT,  Role::Destination, Role::Source),
     layout(D3D10_SB_OPCODE_UTOF,  Role::Destination, Role::Source),
 
-    // ---- Integer arithmetic (3-operand: dst, src0, src1) ----
     layout(D3D10_SB_OPCODE_IADD,  Role::Destination, Role::Source, Role::Source),
     layout(D3D10_SB_OPCODE_IMAD,  Role::Destination, Role::Source, Role::Source,
            Role::Source),
@@ -423,7 +421,6 @@ static const std::array<InstructionLayout, 194> g_InstructionLayouts = {{
     layout(D3D10_SB_OPCODE_IMIN,  Role::Destination, Role::Source, Role::Source),
     layout(D3D10_SB_OPCODE_ITOF,  Role::Destination, Role::Source),
 
-    // ---- Integer multi-destination (2 dst, 2 src): dst0, dst1, src0, src1 ----
     layout(D3D10_SB_OPCODE_IMUL,  Role::Destination, Role::Destination,
            Role::Source, Role::Source),
     layout(D3D10_SB_OPCODE_UMUL,  Role::Destination, Role::Destination,
@@ -431,18 +428,15 @@ static const std::array<InstructionLayout, 194> g_InstructionLayouts = {{
     layout(D3D10_SB_OPCODE_UDIV,  Role::Destination, Role::Destination,
            Role::Source, Role::Source),
 
-    // ---- Integer 3-operand (shifts) ----
     layout(D3D10_SB_OPCODE_ISHL,  Role::Destination, Role::Source, Role::Source),
     layout(D3D10_SB_OPCODE_ISHR,  Role::Destination, Role::Source, Role::Source),
 
-    // ---- Integer 3-operand ----
     layout(D3D10_SB_OPCODE_UMAD,  Role::Destination, Role::Source, Role::Source,
            Role::Source),
     layout(D3D10_SB_OPCODE_UMAX,  Role::Destination, Role::Source, Role::Source),
     layout(D3D10_SB_OPCODE_UMIN,  Role::Destination, Role::Source, Role::Source),
     layout(D3D10_SB_OPCODE_USHR,  Role::Destination, Role::Source, Role::Source),
 
-    // ---- Comparison (3-operand: dst (bool), src0, src1) ----
     layout(D3D10_SB_OPCODE_EQ,    Role::Destination, Role::Source, Role::Source),
     layout(D3D10_SB_OPCODE_GE,    Role::Destination, Role::Source, Role::Source),
     layout(D3D10_SB_OPCODE_IEQ,   Role::Destination, Role::Source, Role::Source),
@@ -454,38 +448,30 @@ static const std::array<InstructionLayout, 194> g_InstructionLayouts = {{
     layout(D3D10_SB_OPCODE_ULT,   Role::Destination, Role::Source, Role::Source),
     layout(D3D10_SB_OPCODE_UGE,   Role::Destination, Role::Source, Role::Source),
 
-    // ---- Unary (2-operand: dst, src) ----
     layout(D3D10_SB_OPCODE_NOT,   Role::Destination, Role::Source),
     layout(D3D10_SB_OPCODE_INEG,  Role::Destination, Role::Source),
     layout(D3D10_SB_OPCODE_DERIV_RTX, Role::Destination, Role::Source),
     layout(D3D10_SB_OPCODE_DERIV_RTY, Role::Destination, Role::Source),
 
-    // ---- Rounding (2-operand: dst, src) ----
     layout(D3D10_SB_OPCODE_ROUND_NE, Role::Destination, Role::Source),
     layout(D3D10_SB_OPCODE_ROUND_NI, Role::Destination, Role::Source),
     layout(D3D10_SB_OPCODE_ROUND_PI, Role::Destination, Role::Source),
     layout(D3D10_SB_OPCODE_ROUND_Z,  Role::Destination, Role::Source),
 
-    // ---- Move (2-operand: dst, src) ----
     layout(D3D10_SB_OPCODE_MOV,   Role::Destination, Role::Source),
     layout(D3D10_SB_OPCODE_MOVC,  Role::Destination, Role::Source, Role::Source),
 
-    // ---- Bitwise (3-operand: dst, src0, src1) ----
     layout(D3D10_SB_OPCODE_AND,   Role::Destination, Role::Source, Role::Source),
     layout(D3D10_SB_OPCODE_OR,    Role::Destination, Role::Source, Role::Source),
     layout(D3D10_SB_OPCODE_XOR,   Role::Destination, Role::Source, Role::Source),
 
-    // ---- Load (2-operand: dst, src) ----
     layout(D3D10_SB_OPCODE_LD,    Role::Destination, Role::Source),
 
-    // ---- Load multisampled (3-operand: dst, src0, src1) ----
     layout(D3D10_SB_OPCODE_LD_MS, Role::Destination, Role::Source, Role::Source,
            Role::Source),
 
-    // ---- Resource info (2-operand: dst, src) ----
     layout(D3D10_SB_OPCODE_RESINFO, Role::Destination, Role::Source),
 
-    // ---- Sampling (4-operand: dst, src0, src1, src2) ----
     layout(D3D10_SB_OPCODE_SAMPLE,     Role::Destination, Role::Source,
            Role::Source, Role::Source),
     layout(D3D10_SB_OPCODE_SAMPLE_C,   Role::Destination, Role::Source,
@@ -499,21 +485,17 @@ static const std::array<InstructionLayout, 194> g_InstructionLayouts = {{
     layout(D3D10_SB_OPCODE_SAMPLE_B,   Role::Destination, Role::Source,
            Role::Source, Role::Source, Role::Source),
 
-    // ---- LOD / Gather (4-operand: dst, src0, src1, src2) ----
     layout(D3D10_1_SB_OPCODE_LOD,    Role::Destination, Role::Source,
            Role::Source, Role::Source),
     layout(D3D10_1_SB_OPCODE_GATHER4, Role::Destination, Role::Source,
            Role::Source, Role::Source),
 
-    // ---- Sample info (2-operand: dst, src) ----
     layout(D3D10_1_SB_OPCODE_SAMPLE_POS, Role::Destination, Role::Source),
     layout(D3D10_1_SB_OPCODE_SAMPLE_INFO, Role::Destination, Role::Source),
 
-    // ---- Dual-destination (dst0, dst1, src) ----
     layout(D3D10_SB_OPCODE_SINCOS, Role::Destination, Role::Destination,
            Role::Source),
 
-    // ---- Single-operand (dst only) ----
     layout(D3D10_SB_OPCODE_EMIT,      Role::Destination),
     layout(D3D10_SB_OPCODE_EMITTHENCUT, Role::Destination),
     layout(D3D10_SB_OPCODE_CUT,       Role::Destination),
@@ -537,7 +519,6 @@ static const std::array<InstructionLayout, 194> g_InstructionLayouts = {{
     layout(D3D10_SB_OPCODE_RETC,      Role::Source),
     layout(D3D10_SB_OPCODE_SWITCH,    Role::Source),
 
-    // ---- DCL opcodes (declarative, non-data) ----
     layout(D3D10_SB_OPCODE_DCL_RESOURCE,            Role::Destination,
            Role::Source, Role::Source),
     layout(D3D10_SB_OPCODE_DCL_CONSTANT_BUFFER,     Role::Destination,
@@ -569,13 +550,11 @@ static const std::array<InstructionLayout, 194> g_InstructionLayouts = {{
            Role::Source),
     layout(D3D10_SB_OPCODE_DCL_GLOBAL_FLAGS),
 
-    // ---- DX11 extended opcodes ----
     layout(D3D11_SB_OPCODE_DCL_FUNCTION_BODY,      Role::Destination),
     layout(D3D11_SB_OPCODE_DCL_FUNCTION_TABLE,     Role::Destination),
     layout(D3D11_SB_OPCODE_DCL_INTERFACE,          Role::Destination),
     layout(D3D11_SB_OPCODE_INTERFACE_CALL,         Role::Source),
 
-    // ---- Custom data ----
     layout(D3D10_SB_OPCODE_CUSTOMDATA),
 }};
 

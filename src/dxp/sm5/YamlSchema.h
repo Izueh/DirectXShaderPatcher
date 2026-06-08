@@ -10,9 +10,6 @@
 
 #include "glaze/yaml.hpp"
 
-// ---------------------------------------------------------------------------
-// YAML schema structs — mirror the declarative recipe format
-// ---------------------------------------------------------------------------
 
 namespace dxp::sm5 {
 
@@ -239,11 +236,6 @@ struct YamlRecipeDocument {
 
 } // namespace dxp::sm5
 
-// ---------------------------------------------------------------------------
-// glaze custom deserialization for YamlImmediateScalar
-// Reads a plain YAML scalar (string or number) and stores it in .value
-// Uses glz::custom wrapper for proper sequence element handling
-// ---------------------------------------------------------------------------
 
 namespace glz {
 
@@ -258,9 +250,6 @@ struct meta<dxp::sm5::YamlImmediateScalar> {
 
 } // namespace glz
 
-// ---------------------------------------------------------------------------
-// glaze::meta for SM5 enums — snake_case YAML keys → enum values
-// ---------------------------------------------------------------------------
 
 namespace glz {
 
@@ -372,9 +361,6 @@ struct meta<dxp::sm5::SamplerMode> {
   };
 };
 
-// ---------------------------------------------------------------------------
-// glz::meta for structs with non-matching YAML keys
-// ---------------------------------------------------------------------------
 
 template <>
 struct meta<dxp::sm5::YamlStepCondition> {
