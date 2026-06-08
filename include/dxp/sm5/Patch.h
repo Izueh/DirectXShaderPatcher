@@ -130,4 +130,17 @@ bool InspectProgram(const uint8_t *inputData, size_t inputSize,
                     ProgramInspection &inspection,
                     std::string *error = nullptr);
 
+/// @brief Executes a pre-compiled recipe against an already-parsed program.
+///
+/// This is the core execution path — it skips container parsing and
+/// serialization, making it suitable for benchmarking the match/rewrite
+/// pipeline or for repeated execution of a single recipe.
+///
+/// @param program Program to patch (mutated in place).
+/// @param recipe Recipe to execute (pre-compiled from YAML).
+/// @param context Execution context (captures, variables, state).
+/// @return The step result, including match counts and changed flags.
+RecipeStepResult ExecuteRecipe(Program &program, const Recipe &recipe,
+                               RecipeContext &context);
+
 } // namespace dxp::sm5

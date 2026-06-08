@@ -1,4 +1,5 @@
 #include "dxp/sm5/Recipe.h"
+#include "dxp/sm5/Patch.h"
 
 #include "d3d11TokenizedProgramFormat.hpp"
 
@@ -381,22 +382,6 @@ ToRuntimeRewriteActionType(RecipeRewriteActionKind kind) {
 
 static bool IsMutatingRewriteMode(RecipeRuleRewriteMode mode) {
   return mode != RecipeRuleRewriteMode::None;
-}
-
-static uint32_t GetRewriteActionAnchorIndex(const RewriteAction &action) {
-  switch (action.Type) {
-  case RewriteActionType::ReplaceOne:
-    return action.ReplaceIndex;
-  case RewriteActionType::ReplaceRange:
-    return action.RangeStart;
-  case RewriteActionType::InsertBefore:
-  case RewriteActionType::InsertAfter:
-    return action.InsertPosition;
-  case RewriteActionType::RemoveRange:
-    return action.RemoveStart;
-  }
-
-  return 0;
 }
 
 static bool ResolveRangeReplacement(const RuntimeRule &rule,
@@ -2874,34 +2859,8 @@ ExecuteRewriteRules(Program &program, const std::string &stepName,
       ++ruleReport.AppliedCount;
     }
 
-    std::sort(actions.begin(), actions.end(),
-              [](const RewriteAction &lhs, const RewriteAction &rhs) {
-                const uint32_t lhsIndex = GetRewriteActionAnchorIndex(lhs);
-                const uint32_t rhsIndex = GetRewriteActionAnchorIndex(rhs);
-                if (lhsIndex != rhsIndex) {
-                  return lhsIndex > rhsIndex;
-                }
-
-                if (lhs.Type == rhs.Type) {
-                  return false;
-                }
-
-                if (lhs.Type == RewriteActionType::InsertAfter) {
-                  return true;
-                }
-                if (rhs.Type == RewriteActionType::InsertAfter) {
-                  return false;
-                }
-
-                if (lhs.Type == RewriteActionType::InsertBefore) {
-                  return false;
-                }
-                if (rhs.Type == RewriteActionType::InsertBefore) {
-                  return true;
-                }
-
-                return lhsIndex > rhsIndex;
-              });
+    // Actions are sorted ascending internally by ApplyRewriteActions
+    // (single-pass forward rebuild), so no pre-sorting is needed.
 
     if (actions.empty()) {
       result.RuleReports.push_back(std::move(ruleReport));
@@ -3493,6 +3452,67 @@ bool ExecuteRecipe(Program &program, const Recipe &recipe,
   }
 
   return true;
+}
+
+/// Public API: execute a pre-compiled recipe against a parsed program.
+RecipeStepResult ExecuteRecipe(Program &program, const Recipe &recipe,
+                               RecipeContext &context) {
+  ScopedProgramBinding boundProgram(context, program);
+  context.captures.clear();
+  context.ReservedTempBase = 0;
+  context.ReservedTempCount = 0;
+  context.TempBindings.clear();
+  context.InputBindings.clear();
+  context.OutputBindings.clear();
+  context.TextureBindings.clear();
+  context.RawResourceBindings.clear();
+  context.StructuredResourceBindings.clear();
+  context.CBufferBindings.clear();
+  context.SamplerBindings.clear();
+  context.UavBindings.clear();
+
+  for (const auto &input : context.Inputs) {
+    if (!context.HasVariable(input.first)) {
+      context.Variables[input.first] = input.second;
+    }
+  }
+  context.HasInitialVariablesSnapshot = false;
+  context.SnapshotInitialVariables();
+
+  context.ReservedTempBase = program.TempCount;
+  context.ReservedTempCount = 0;
+
+  RecipeStepResult overallResult;
+  overallResult.Success = true;
+
+  for (const auto &step : recipe.GetSteps()) {
+    if (!ShouldExecuteStep(step, context)) {
+      context.SetState<bool>(step.Name, false);
+      continue;
+    }
+
+    auto result = ExecuteRecipeStep(program, step, context);
+    if (context.State.find(step.Name) == context.State.end()) {
+      context.SetState<bool>(step.Name, result.Success);
+    }
+    context.TotalRuleMatches += result.MatchCount;
+    context.ProgramModified = context.ProgramModified || result.Changed;
+    context.ResourceBindingsChanged =
+        context.ResourceBindingsChanged || result.ResourceBindingsChanged;
+    context.ResourcesRefreshed =
+        context.ResourcesRefreshed || result.ResourcesRefreshed;
+    context.ModuleVerified = context.ModuleVerified || result.ModuleVerified;
+    if (!result.Success && step.AbortOnFailure) {
+      overallResult.Success = false;
+      overallResult.Error = result.Error;
+      context.LastError = result.Error;
+      break;
+    }
+    if (result.StopRecipe)
+      break;
+  }
+
+  return overallResult;
 }
 
 } // namespace dxp::sm5

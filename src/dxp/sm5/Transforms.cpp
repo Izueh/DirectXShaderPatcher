@@ -551,85 +551,131 @@ void RefreshDeclarations(Program &program) {
 
 namespace {
 
-static bool ReplaceRangeAt(Program &program, uint32_t start, uint32_t end,
-                           const std::vector<Instruction> &replacement) {
-  if (start > end || end >= program.Instructions.size())
-    return false;
-  program.Instructions.erase(
-      program.Instructions.begin() + static_cast<ptrdiff_t>(start),
-      program.Instructions.begin() + static_cast<ptrdiff_t>(end + 1));
-  program.Instructions.insert(program.Instructions.begin() +
-                                  static_cast<ptrdiff_t>(start),
-                              replacement.begin(), replacement.end());
-  return true;
+// Unified entry for the single-pass forward rebuild.
+// All five RewriteActionType variants are normalized into one struct.
+struct RewriteEntry {
+  uint32_t pos;                    // instruction index this entry targets
+  uint8_t type : 4;                // RewriteActionType
+  uint8_t priority : 4;            // 0=Insert (emit first), 1=Replace/Remove
+  uint32_t removeEnd;              // end of consumed range (Replace/Remove only)
+  std::vector<Instruction> newInstructions;
+};
+
+static RewriteEntry NormalizeEntry(const RewriteAction &action) {
+  RewriteEntry e{};
+  switch (action.Type) {
+  case RewriteActionType::ReplaceOne:
+    e.pos = action.ReplaceIndex;
+    e.type = static_cast<uint8_t>(RewriteActionType::ReplaceRange);
+    e.priority = 1;
+    e.removeEnd = action.ReplaceIndex;
+    e.newInstructions = std::move(action.NewInstructions);
+    break;
+  case RewriteActionType::ReplaceRange:
+    e.pos = action.RangeStart;
+    e.type = static_cast<uint8_t>(RewriteActionType::ReplaceRange);
+    e.priority = 1;
+    e.removeEnd = action.RangeEnd;
+    e.newInstructions = std::move(action.NewInstructions);
+    break;
+  case RewriteActionType::RemoveRange:
+    e.pos = action.RemoveStart;
+    e.type = static_cast<uint8_t>(RewriteActionType::RemoveRange);
+    e.priority = 1;
+    e.removeEnd = action.RemoveEnd;
+    break;
+  case RewriteActionType::InsertBefore:
+    e.pos = action.InsertPosition;
+    e.type = static_cast<uint8_t>(RewriteActionType::InsertBefore);
+    e.priority = 0;
+    e.newInstructions = std::move(action.NewInstructions);
+    break;
+  case RewriteActionType::InsertAfter:
+    // InsertAfter at X = InsertBefore at X+1
+    e.pos = action.InsertPosition + 1;
+    e.type = static_cast<uint8_t>(RewriteActionType::InsertBefore);
+    e.priority = 0;
+    e.newInstructions = std::move(action.NewInstructions);
+    break;
+  }
+  return e;
 }
 
 } // namespace
 
-static bool ReplaceInstruction(Program &program, uint32_t index,
-                               const Instruction &newInstruction) {
-  if (index >= program.Instructions.size())
-    return false;
-  program.Instructions[index] = newInstruction;
-  return true;
-}
-
-static bool ReplaceRange(Program &program, uint32_t start, uint32_t end,
-                         const std::vector<Instruction> &newInstructions) {
-  return ReplaceRangeAt(program, start, end, newInstructions);
-}
-
-static bool InsertBefore(Program &program, uint32_t index,
-                         const std::vector<Instruction> &newInstructions) {
-  if (index > program.Instructions.size())
-    return false;
-  program.Instructions.insert(program.Instructions.begin() +
-                                  static_cast<ptrdiff_t>(index),
-                              newInstructions.begin(), newInstructions.end());
-  return true;
-}
-
-static bool InsertAfter(Program &program, uint32_t index,
-                        const std::vector<Instruction> &newInstructions) {
-  if (index >= program.Instructions.size())
-    return false;
-  program.Instructions.insert(program.Instructions.begin() +
-                                  static_cast<ptrdiff_t>(index + 1),
-                              newInstructions.begin(), newInstructions.end());
-  return true;
-}
-
-static bool RemoveRange(Program &program, uint32_t start, uint32_t end) {
-  return ReplaceRangeAt(program, start, end, {});
-}
-
 bool ApplyRewriteActions(Program &program,
                          const std::vector<RewriteAction> &actions) {
+  if (actions.empty())
+    return true;
+
+  // 1. Normalize all actions into unified entries.
+  std::vector<RewriteEntry> entries;
+  entries.reserve(actions.size());
   for (const auto &action : actions) {
-    bool ok = false;
-    switch (action.Type) {
-    case RewriteActionType::ReplaceOne:
-      ok = !action.NewInstructions.empty() &&
-           ReplaceInstruction(program, action.ReplaceIndex,
-                              action.NewInstructions.front());
-      break;
-    case RewriteActionType::ReplaceRange:
-      ok = ReplaceRange(program, action.RangeStart, action.RangeEnd,
-                        action.NewInstructions);
-      break;
-    case RewriteActionType::InsertBefore:
-      ok = InsertBefore(program, action.InsertPosition, action.NewInstructions);
-      break;
-    case RewriteActionType::InsertAfter:
-      ok = InsertAfter(program, action.InsertPosition, action.NewInstructions);
-      break;
-    case RewriteActionType::RemoveRange:
-      ok = RemoveRange(program, action.RemoveStart, action.RemoveEnd);
-      break;
-    }
-    if (!ok)
-      return false;
+    entries.push_back(NormalizeEntry(action));
   }
+
+  // 2. Sort ascending by position, then by priority (Insert before Replace).
+  std::sort(entries.begin(), entries.end(),
+            [](const RewriteEntry &a, const RewriteEntry &b) {
+              if (a.pos != b.pos)
+                return a.pos < b.pos;
+              return a.priority < b.priority;
+            });
+
+  // 3. Compute output size: original + inserted - removed.
+  size_t outSize = program.Instructions.size();
+  for (const auto &e : entries) {
+    outSize += e.newInstructions.size();
+    if (e.type == static_cast<uint8_t>(RewriteActionType::ReplaceRange) ||
+        e.type == static_cast<uint8_t>(RewriteActionType::RemoveRange)) {
+      outSize -= (e.removeEnd - e.pos + 1);
+    }
+  }
+
+  // 4. Forward pass: single O(N) walk through the instruction stream.
+  std::vector<Instruction> output;
+  output.reserve(outSize);
+
+  uint32_t instrIdx = 0;
+  size_t eIdx = 0;
+
+  while (instrIdx < program.Instructions.size()) {
+    // Process all entries targeting this position.
+    while (eIdx < entries.size() && entries[eIdx].pos == instrIdx) {
+      const auto &e = entries[eIdx];
+
+      if (e.type == static_cast<uint8_t>(RewriteActionType::InsertBefore)) {
+        // Emit new instructions, keep original at this position.
+        output.insert(output.end(), e.newInstructions.begin(),
+                      e.newInstructions.end());
+      } else {
+        // Replace or Remove: emit replacement (if any), skip originals.
+        output.insert(output.end(), e.newInstructions.begin(),
+                      e.newInstructions.end());
+        instrIdx = e.removeEnd + 1;  // advance past consumed range
+        break;                        // exit inner loop, outer loop continues
+      }
+      ++eIdx;
+    }
+
+    // Emit original instruction only if not consumed by Replace/Remove.
+    if (instrIdx < program.Instructions.size() &&
+        (eIdx >= entries.size() || entries[eIdx].pos != instrIdx)) {
+      output.push_back(std::move(program.Instructions[instrIdx]));
+      ++instrIdx;
+    }
+  }
+
+  // 5. Handle trailing inserts after the last instruction.
+  while (eIdx < entries.size()) {
+    output.insert(output.end(), entries[eIdx].newInstructions.begin(),
+                  entries[eIdx].newInstructions.end());
+    ++eIdx;
+  }
+
+  // 6. Swap in the rebuilt instruction list.
+  program.Instructions = std::move(output);
   return true;
 }
 

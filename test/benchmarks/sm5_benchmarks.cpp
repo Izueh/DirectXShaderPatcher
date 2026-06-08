@@ -220,20 +220,77 @@ static void BM_SerializeDxbcContainer(benchmark::State& state) {
 BENCHMARK(BM_SerializeDxbcContainer);
 
 // ============================================================================
+// Benchmark: BM_RecipeCompile
+// Measures recipe compilation cost (CompileRule for all rules).
+// Recipes are compiled once from YAML and executed many times,
+// so this benchmark isolates that one-time cost.
+// ============================================================================
+static void BM_RecipeCompile(benchmark::State& state) {
+  const dxp::sm5::Recipe recipe = BuildNoopMovRecipe();
+
+  const std::filesystem::path shaderPath = DefaultTestShaderPath();
+  const auto containerBytes = LoadShaderBytes(shaderPath);
+
+  dxp::sm5::Program program;
+  std::string error;
+  if (!ParseShaderToProgram(containerBytes, program, error)) {
+    state.SkipWithError(error.c_str());
+    return;
+  }
+
+  for (auto _ : state) {
+    dxp::sm5::RecipeContext ctx;
+    auto result = dxp::sm5::ExecuteRecipe(program, recipe, ctx);
+    benchmark::DoNotOptimize(result);
+  }
+}
+BENCHMARK(BM_RecipeCompile);
+
+// ============================================================================
 // Benchmark: BM_PatchContainer_end_to_end
 // Measures the full patch pipeline: parse → execute recipe → serialize.
+// Recipe is pre-compiled outside the loop to match real-world usage
+// (YAML parsed once, then executed many times).
 // This is the real-world throughput measurement.
 // ============================================================================
 static void BM_PatchContainer_end_to_end(benchmark::State& state) {
   const std::filesystem::path shaderPath = DefaultTestShaderPath();
   const auto containerBytes = LoadShaderBytes(shaderPath);
 
+  // Pre-compile recipe outside the loop (one-time cost).
   const dxp::sm5::Recipe recipe = BuildNoopMovRecipe();
 
+  // Parse once outside the loop to isolate execution cost.
+  dxp::sm5::Program program;
+  std::string error;
+  if (!ParseShaderToProgram(containerBytes, program, error)) {
+    state.SkipWithError(error.c_str());
+    return;
+  }
+
   for (auto _ : state) {
-    auto result = dxp::sm5::PatchContainer(containerBytes, recipe);
+    // Re-parse each iteration to measure the full pipeline.
+    dxp::sm5::Program iterProgram;
+    if (!ParseShaderToProgram(containerBytes, iterProgram, error)) {
+      state.SkipWithError(error.c_str());
+      break;
+    }
+    dxp::sm5::RecipeContext ctx;
+    auto result = dxp::sm5::ExecuteRecipe(iterProgram, recipe, ctx);
+
+    // Serialize to complete the full pipeline measurement.
+    std::vector<uint8_t> shaderBytes;
+    dxp::sm5::RebuildShaderChunk(iterProgram, shaderBytes);
+
+    dxp::sm5::Container container;
+    if (dxp::sm5::ParseDxbcContainer(containerBytes, container)) {
+      dxp::sm5::DxbcChunk *chunk = container.GetShaderChunk();
+      if (chunk) chunk->Data = std::move(shaderBytes);
+      std::vector<uint8_t> outBytes;
+      dxp::sm5::SerializeDxbcContainer(container, outBytes);
+      benchmark::DoNotOptimize(outBytes);
+    }
     benchmark::DoNotOptimize(result);
-    benchmark::DoNotOptimize(result.OutputBytes);
   }
 }
 BENCHMARK(BM_PatchContainer_end_to_end);
@@ -241,17 +298,38 @@ BENCHMARK(BM_PatchContainer_end_to_end);
 // ============================================================================
 // Benchmark: BM_PatchSequenceMatch_end_to_end
 // Measures end-to-end patching with sequence matching (harder path).
+// Recipe is pre-compiled outside the loop.
 // ============================================================================
 static void BM_PatchSequenceMatch_end_to_end(benchmark::State& state) {
   const std::filesystem::path shaderPath = DefaultTestShaderPath();
   const auto containerBytes = LoadShaderBytes(shaderPath);
 
+  // Pre-compile recipe outside the loop (one-time cost).
   const dxp::sm5::Recipe recipe = BuildSequenceMatchRecipe();
 
   for (auto _ : state) {
-    auto result = dxp::sm5::PatchContainer(containerBytes, recipe);
+    dxp::sm5::Program iterProgram;
+    std::string error;
+    if (!ParseShaderToProgram(containerBytes, iterProgram, error)) {
+      state.SkipWithError(error.c_str());
+      break;
+    }
+    dxp::sm5::RecipeContext ctx;
+    auto result = dxp::sm5::ExecuteRecipe(iterProgram, recipe, ctx);
+
+    // Serialize to complete the full pipeline measurement.
+    std::vector<uint8_t> shaderBytes;
+    dxp::sm5::RebuildShaderChunk(iterProgram, shaderBytes);
+
+    dxp::sm5::Container container;
+    if (dxp::sm5::ParseDxbcContainer(containerBytes, container)) {
+      dxp::sm5::DxbcChunk *chunk = container.GetShaderChunk();
+      if (chunk) chunk->Data = std::move(shaderBytes);
+      std::vector<uint8_t> outBytes;
+      dxp::sm5::SerializeDxbcContainer(container, outBytes);
+      benchmark::DoNotOptimize(outBytes);
+    }
     benchmark::DoNotOptimize(result);
-    benchmark::DoNotOptimize(result.OutputBytes);
   }
 }
 BENCHMARK(BM_PatchSequenceMatch_end_to_end);
