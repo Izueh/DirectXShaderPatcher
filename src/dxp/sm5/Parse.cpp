@@ -47,18 +47,6 @@ static uint32_t DecodeNumComponents(uint32_t token0) {
 }
 
 static uint32_t DecodeComponentMode(uint32_t token0) {
-  // Extract the full component selection field (bits [11:2]) from
-  // OperandToken0.  The selection mode occupies bits [3:2] and the
-  // mode-specific data occupies different bit ranges depending on the
-  // mode:
-  //   MASK_MODE    — mask bits [7:4]
-  //   SWIZZLE_MODE — swizzle bits [11:4]
-  //   SELECT_1_MODE — component bits [5:4]
-  //
-  // NOSWIZZLE is encoded as SWIZZLE_MODE with X-X-X-X (0xE40).  The
-  // Operand::ComponentMode field stores it as the raw swizzle value
-  // (3648) without the selection-mode bits so that an exact equality
-  // check against D3D10_SB_OPERAND_4_COMPONENT_NOSWIZZLE works.
   const uint32_t selectionMode =
       DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(token0);
 

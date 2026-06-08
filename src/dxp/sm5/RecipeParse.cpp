@@ -1785,7 +1785,6 @@ static bool BuildStepCondition(const YamlStepCondition &conditionModel,
 
 } // end anonymous namespace
 
-/// @brief Collects all named identifiers from a single rule into a set.
 static void CollectRuleNames(const dxp::sm5::RecipeRule &rule,
                              std::unordered_set<std::string> &names) {
   // Collect all capture names from match operands
@@ -1830,8 +1829,6 @@ static void CollectRuleNames(const dxp::sm5::RecipeRule &rule,
   }
 }
 
-/// @brief Validates that all recipe-defined names are unique.
-/// Called during Recipe construction, after YAML parsing.
 static bool ValidateNameUniqueness(const dxp::sm5::Recipe &recipe,
                                    std::string &error) {
   std::unordered_set<std::string> seen;

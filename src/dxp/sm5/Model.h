@@ -27,14 +27,11 @@ constexpr uint32_t kInterpolationModeUndefined = 0u;
 constexpr ProgramType kProgramTypePixelShader = 0u;
 constexpr OpcodeType kOpcodeCustomData = 54u;
 
-/// @brief Indicates whether an operand position is a source (read) or
-/// destination (write) in a data instruction.
 enum class OperandRole : uint32_t {
   Source = 0,
   Destination = 1,
 };
 
-/// @brief D3D11 interpolation mode tokens used in dcl_input_ps.
 enum class InterpolationMode : uint32_t {
   Undefined = 0,
   Constant = 1,
@@ -46,7 +43,6 @@ enum class InterpolationMode : uint32_t {
   LinearNoperspectiveSample = 7,
 };
 
-/// @brief D3D11 resource dimension tokens used in dcl_resource_*.
 enum class ResourceDimension : uint32_t {
   Texture1D = 0,
   Texture2D = 1,
@@ -58,34 +54,25 @@ enum class ResourceDimension : uint32_t {
   TextureCubeArray = 7,
 };
 
-/// @brief D3D11 constant buffer access pattern tokens.
 enum class CbufferAccessPattern : uint32_t {
   ImmediateIndexed = 0,
   DynamicIndexed = 1,
 };
 
-/// @brief D3D11 sampler mode tokens used in dcl_sampler.
 enum class SamplerMode : uint32_t {
   Default = 0,
   Comparison = 1,
   Mono = 2,
 };
 
-/// @brief Maximum number of operands any SM5 instruction can have.
 constexpr size_t kMaxInstructionOperands = 5;
 
-/// @brief Describes the operand layout for a single SM5 opcode.
-///
-/// Each entry maps an opcode to an ordered list of operand roles.
-/// The `Roles` array holds up to `kMaxInstructionOperands` roles;
-/// `RoleCount` specifies how many are valid.
 struct InstructionLayout {
   OpcodeType Opcode = 0;
   OperandRole Roles[kMaxInstructionOperands];
   uint8_t RoleCount = 0;
 };
 
-/// @brief Wraps an SM5 opcode value with typed conversions.
 struct Opcode {
   OpcodeType Value = 0u;
 
@@ -101,7 +88,6 @@ struct Opcode {
   static Opcode CustomData() { return Opcode{kOpcodeCustomData}; }
 };
 
-/// @brief Wraps an SM5 extended opcode value with typed conversions.
 struct ExtendedOpcode {
   ExtendedOpcodeType Value = 0u;
 
@@ -118,7 +104,6 @@ struct ExtendedOpcode {
   }
 };
 
-/// @brief Stores optional opcode control bits decoded from an instruction.
 struct OpcodeControls {
   bool Saturate = false;
   bool HasTestBoolean = false;
@@ -131,24 +116,15 @@ struct OpcodeControls {
   std::vector<ExtendedOpcode> ExtendedOpCodes;
 };
 
-/// @brief Represents one decoded operand from the instruction stream.
 struct Operand {
-  /// @brief Encodes how an operand index is represented in the token stream.
   enum class IndexRepresentation : uint32_t {
-    Immediate32 = 0,             ///< 32-bit immediate value
-    Immediate64 = 1,             ///< 64-bit immediate value (two DWORDs)
-    Relative = 2,                ///< Relative addressing via a sub-operand
-    Immediate32PlusRelative = 3, ///< 32-bit immediate plus relative
-    Immediate64PlusRelative = 4, ///< 64-bit immediate plus relative
+    Immediate32 = 0,
+    Immediate64 = 1,
+    Relative = 2,
+    Immediate32PlusRelative = 3,
+    Immediate64PlusRelative = 4,
   };
 
-  /// @brief One ordered index slot of a decoded operand.
-  ///
-  /// Operands can carry zero, one, or two index slots depending on operand type
-  /// (e.g., a `temp` has one index for the register number; an
-  /// `indexable_temp` has two). `IndexEntries` holds the authoritative ordered
-  /// list; `Indices` is a flattened immediate-value view used by
-  /// serialization and binding helpers.
   struct Index {
     IndexRepresentation Representation = IndexRepresentation::Immediate32;
     bool HasImmediateLo = false;
@@ -188,14 +164,11 @@ struct Operand {
            CaptureIndices || CaptureImmediates;
   }
 
-  /// @brief Returns the operand's role (Source or Destination).
-  /// @return The stored role, or Source if unset.
   OperandRole GetOperandRole() const {
     return Role;
   }
 };
 
-/// @brief Represents one decoded instruction from the instruction stream.
 struct Instruction {
   dxp::sm5::Opcode Opcode = dxp::sm5::Opcode::Unknown();
   OpcodeControls Controls;
@@ -208,7 +181,6 @@ struct Instruction {
   std::string Name;
 };
 
-/// @brief Describes a declared shader resource binding.
 struct ResourceDecl {
   uint32_t RegisterBindPoint = 0;
   uint32_t RegisterSpace = 0;
@@ -220,7 +192,6 @@ struct ResourceDecl {
   std::string CaptureName;
 };
 
-/// @brief Describes a declared sampler binding.
 struct SamplerDecl {
   uint32_t RegisterBindPoint = 0;
   uint32_t RegisterSpace = 0;
@@ -229,7 +200,6 @@ struct SamplerDecl {
   std::string CaptureName;
 };
 
-/// @brief Describes a declared constant buffer binding.
 struct CBufferDecl {
   uint32_t RegisterBindPoint = 0;
   uint32_t RegisterSpace = 0;
@@ -239,19 +209,16 @@ struct CBufferDecl {
   std::string CaptureName;
 };
 
-/// @brief Describes a compute shader thread-group declaration.
 struct ThreadGroupDecl {
   uint32_t GroupSizeX = 1;
   uint32_t GroupSizeY = 1;
   uint32_t GroupSizeZ = 1;
 };
 
-/// @brief Stores decoded global shader flags.
 struct GlobalFlags {
   uint32_t Flags = 0;
 };
 
-/// @brief Owns the decoded representation of an SM5 program.
 struct Program {
   ProgramType ProgramType = kProgramTypePixelShader;
   uint32_t MajorVersion = 0;

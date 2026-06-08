@@ -167,62 +167,50 @@ public:
     schema_.sizeInBytes = static_cast<unsigned>(sizeof(TStruct));
   }
 
-  /// @brief Adds a 32-bit float field to the constant buffer schema.
   CBufferSchemaBuilder &Float(const std::string &name, unsigned offset) {
     return AddField(name, hlsl::CompType::getF32().GetKind(), 1, offset);
   }
 
-  /// @brief Adds a 2-component float vector field to the schema.
   CBufferSchemaBuilder &Float2(const std::string &name, unsigned offset) {
     return AddField(name, hlsl::CompType::getF32().GetKind(), 2, offset);
   }
 
-  /// @brief Adds a 3-component float vector field to the schema.
   CBufferSchemaBuilder &Float3(const std::string &name, unsigned offset) {
     return AddField(name, hlsl::CompType::getF32().GetKind(), 3, offset);
   }
 
-  /// @brief Adds a 4-component float vector field to the schema.
   CBufferSchemaBuilder &Float4(const std::string &name, unsigned offset) {
     return AddField(name, hlsl::CompType::getF32().GetKind(), 4, offset);
   }
 
-  /// @brief Adds a 32-bit unsigned integer field to the schema.
   CBufferSchemaBuilder &UInt(const std::string &name, unsigned offset) {
     return AddField(name, hlsl::CompType::getU32().GetKind(), 1, offset);
   }
 
-  /// @brief Adds a 2-component unsigned int vector field to the schema.
   CBufferSchemaBuilder &UInt2(const std::string &name, unsigned offset) {
     return AddField(name, hlsl::CompType::getU32().GetKind(), 2, offset);
   }
 
-  /// @brief Adds a 3-component unsigned int vector field to the schema.
   CBufferSchemaBuilder &UInt3(const std::string &name, unsigned offset) {
     return AddField(name, hlsl::CompType::getU32().GetKind(), 3, offset);
   }
 
-  /// @brief Adds a 4-component unsigned int vector field to the schema.
   CBufferSchemaBuilder &UInt4(const std::string &name, unsigned offset) {
     return AddField(name, hlsl::CompType::getU32().GetKind(), 4, offset);
   }
 
-  /// @brief Adds a 32-bit signed integer field to the schema.
   CBufferSchemaBuilder &Int(const std::string &name, unsigned offset) {
     return AddField(name, hlsl::CompType::getI32().GetKind(), 1, offset);
   }
 
-  /// @brief Adds a 2-component signed int vector field to the schema.
   CBufferSchemaBuilder &Int2(const std::string &name, unsigned offset) {
     return AddField(name, hlsl::CompType::getI32().GetKind(), 2, offset);
   }
 
-  /// @brief Adds a 3-component signed int vector field to the schema.
   CBufferSchemaBuilder &Int3(const std::string &name, unsigned offset) {
     return AddField(name, hlsl::CompType::getI32().GetKind(), 3, offset);
   }
 
-  /// @brief Adds a 4-component signed int vector field to the schema.
   CBufferSchemaBuilder &Int4(const std::string &name, unsigned offset) {
     return AddField(name, hlsl::CompType::getI32().GetKind(), 4, offset);
   }
@@ -258,19 +246,16 @@ public:
     desc_.name = std::move(name);
   }
 
-  /// @brief Sets the resource binding for this constant buffer.
   CBufferDescBuilder &Binding(const ResourceBindingDesc &binding) {
     desc_.binding = binding;
     return *this;
   }
 
-  /// @brief Sets the constant buffer size in bytes.
   CBufferDescBuilder &SizeInBytes(unsigned size) {
     desc_.sizeInBytes = size;
     return *this;
   }
 
-  /// @brief Sets the schema pointer for this constant buffer.
   CBufferDescBuilder &Schema(const CBufferSchema *schema) {
     desc_.schema = schema;
     return *this;
@@ -289,93 +274,71 @@ public:
     desc_.name = std::move(name);
   }
 
-  /// @brief Configures this texture as a shader resource view (read-only).
   TextureResourceBuilder &SRV() {
     desc_.binding.AsSRV();
     desc_.isReadWrite = false;
     return *this;
   }
 
-  /// @brief Configures this texture as an unordered access view (read-write).
   TextureResourceBuilder &UAV() {
     desc_.binding.AsUAV();
     desc_.isReadWrite = true;
     return *this;
   }
 
-  /// @brief Sets the texture dimension to Texture2D.
   TextureResourceBuilder &Texture2D() {
     desc_.kind = hlsl::DXIL::ResourceKind::Texture2D;
     return *this;
   }
 
-  /// @brief Sets the texture dimension to Texture2DArray.
   TextureResourceBuilder &Texture2DArray() {
     desc_.kind = hlsl::DXIL::ResourceKind::Texture2DArray;
     return *this;
   }
 
-  /// @brief Configures as a read-write Texture2D UAV.
   TextureResourceBuilder &RWTexture2D() { return UAV().Texture2D(); }
 
-  /// @brief Configures as a read-write Texture2DArray UAV.
   TextureResourceBuilder &RWTexture2DArray() { return UAV().Texture2DArray(); }
 
-  /// @brief Sets the element component type to 32-bit float.
   TextureResourceBuilder &Float(unsigned vectorWidth = 1) {
     return Element(hlsl::DXIL::ComponentType::F32, vectorWidth);
   }
 
-  /// @brief Sets the element to a 2-component float vector.
   TextureResourceBuilder &Float2() { return Float(2); }
-  /// @brief Sets the element to a 3-component float vector.
   TextureResourceBuilder &Float3() { return Float(3); }
-  /// @brief Sets the element to a 4-component float vector.
   TextureResourceBuilder &Float4() { return Float(4); }
 
-  /// @brief Sets the element component type to 32-bit unsigned int.
   TextureResourceBuilder &UInt(unsigned vectorWidth = 1) {
     return Element(hlsl::DXIL::ComponentType::U32, vectorWidth);
   }
 
-  /// @brief Sets the element to a 2-component unsigned int vector.
   TextureResourceBuilder &UInt2() { return UInt(2); }
-  /// @brief Sets the element to a 3-component unsigned int vector.
   TextureResourceBuilder &UInt3() { return UInt(3); }
-  /// @brief Sets the element to a 4-component unsigned int vector.
   TextureResourceBuilder &UInt4() { return UInt(4); }
 
-  /// @brief Sets the element component type to 32-bit signed int.
   TextureResourceBuilder &Int(unsigned vectorWidth = 1) {
     return Element(hlsl::DXIL::ComponentType::I32, vectorWidth);
   }
 
-  /// @brief Sets the element to a 2-component signed int vector.
   TextureResourceBuilder &Int2() { return Int(2); }
-  /// @brief Sets the element to a 3-component signed int vector.
   TextureResourceBuilder &Int3() { return Int(3); }
-  /// @brief Sets the element to a 4-component signed int vector.
   TextureResourceBuilder &Int4() { return Int(4); }
 
-  /// @brief Sets the register bind point and space for this resource.
   TextureResourceBuilder &Register(unsigned bindPoint, unsigned space = 0) {
     desc_.binding.Register(bindPoint, space);
     return *this;
   }
 
-  /// @brief Sets the register space for this resource.
   TextureResourceBuilder &Space(unsigned space) {
     desc_.binding.SetSpace(space);
     return *this;
   }
 
-  /// @brief Requests automatic bind-point assignment to the next available slot.
   TextureResourceBuilder &AutoBinding(unsigned space = 0) {
     desc_.binding.Auto(space);
     return *this;
   }
 
-  /// @brief Sets the element component type and vector width.
   TextureResourceBuilder &Element(hlsl::DXIL::ComponentType elementKind,
                                   unsigned vectorWidth) {
     desc_.elementKind = elementKind;

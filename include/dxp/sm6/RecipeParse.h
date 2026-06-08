@@ -39,10 +39,6 @@ struct DxilRecipeParseResult {
 
 /// @brief Parses a DXIL recipe from YAML text.
 ///
-/// On failure, `result.error` contains glaze YAML parse diagnostics with
-/// line/column information (e.g. "recipe:5:22: unknown_key") or
-/// post-parse validation messages.
-///
 /// @param recipeText YAML recipe contents.
 /// @param result Receives the parsed recipe or parse error.
 /// @param sourceName Logical source name used in diagnostics.
@@ -53,12 +49,7 @@ bool ParseDxilRecipeText(const std::string &recipeText,
 
 /// @brief Parses a DXIL recipe from a file path.
 ///
-/// This is equivalent to loading the file contents and calling
-/// `ParseDxilRecipeText`.
-///
-/// On failure, `result.error` contains glaze YAML parse diagnostics with
-/// line/column information (e.g. "recipe:5:22: unknown_key") or
-/// post-parse validation messages.
+/// Equivalent to loading the file contents and calling `ParseDxilRecipeText`.
 ///
 /// @param recipePath Path to the YAML recipe file.
 /// @param result Receives the parsed recipe or parse error.

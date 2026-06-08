@@ -42,9 +42,7 @@ bool ReloadDxilContainerFromMemory(const std::vector<uint8_t> &containerBytes,
                                    hlsl::DxilModule *&dxilModule);
 
 /// @brief Applies a DXIL recipe to an in-memory container buffer.
-/// @param outReport Optional caller-facing patch report. Read
-/// `outReport->NewBindings` for final runtime binding requirements and
-/// `outReport->OutputContainer` for the emitted DXIL envelope.
+/// @param outReport Optional patch report with final bindings and output container.
 bool PatchDxilContainer(const DxilRecipe &recipe, const void *inputData,
                         size_t inputSize, std::vector<uint8_t> &outputContainer,
                         const DxilContainerPatchOptions &options = {},
@@ -52,9 +50,7 @@ bool PatchDxilContainer(const DxilRecipe &recipe, const void *inputData,
                         dxp::PatchReport *outReport = nullptr);
 
 /// @brief Applies a DXIL recipe to a container byte vector.
-/// @param outReport Optional caller-facing patch report. Read
-/// `outReport->NewBindings` for final runtime binding requirements and
-/// `outReport->OutputContainer` for the emitted DXIL envelope.
+/// @param outReport Optional patch report with final bindings and output container.
 bool PatchDxilContainer(const DxilRecipe &recipe,
                         const std::vector<uint8_t> &inputContainer,
                         std::vector<uint8_t> &outputContainer,

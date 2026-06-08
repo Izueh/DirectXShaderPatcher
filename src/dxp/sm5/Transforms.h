@@ -10,18 +10,6 @@
 
 namespace dxp::sm5 {
 
-/// @brief Describes how one ordered index slot of an operand must match.
-///
-/// A rule operand can carry a list of these patterns, one per expected index
-/// slot, checked in order. Fields that are not set are not checked.
-///
-/// Capture workflow:
-///  - `CaptureName` — when set and the slot matches, the immediate value of
-///    this slot is stored in `MatchResult::CapturedOperandIndexValues` under
-///    this name for later reuse.
-///  - `MatchCapture` — when set, the slot's immediate value must equal the
-///    previously captured index value with this name. Used to enforce that two
-///    independently-matched slots carry the same register number.
 struct OperandIndexMatchPattern {
   bool Any = false;
   bool HasRepresentation = false;
@@ -35,15 +23,12 @@ struct OperandIndexMatchPattern {
   std::string MatchCapture;
 };
 
-/// @brief Describes how a declarative rule matches one operand.
 struct OperandMatch {
   bool Any;
 
   OperandType MatchType;
   bool HasTypeMatch;
 
-  /// Ordered set of per-slot match patterns, evaluated in order against the
-  /// candidate operand's index slots.
   std::vector<OperandIndexMatchPattern> MatchIndexPatterns;
 
   uint32_t MatchComponentMode;
@@ -78,7 +63,6 @@ struct OperandMatch {
   OperandMatch();
 };
 
-/// @brief Describes how a declarative rule matches one instruction.
 struct InstructionMatch {
   dxp::sm5::Opcode Opcode;
   bool HasOpcode;
@@ -100,17 +84,11 @@ struct InstructionMatch {
   InstructionMatch();
 };
 
-/// @brief Stores one successful pattern match.
-///
-/// Per-match captures are copies (not pointers) needed for MatchAll mode.
-/// Each match has independent captures; moved to context.captures
-/// before BuildRewriteInstructions reads them.
 struct MatchResult {
   uint32_t InstructionIndex;
   const dxp::sm5::Instruction *Instruction;
   uint32_t RangeStartIndex;
   uint32_t RangeEndIndex;
-  /// Per-match captures (copies) — needed for MatchAll mode.
   std::unordered_map<std::string, Operand> operands;
   std::unordered_map<std::string, dxp::sm5::Instruction> instructions;
   std::unordered_map<std::string, uint32_t> indexValues;
@@ -135,7 +113,6 @@ CollectSequenceMatches(const Program &program,
                        const std::vector<InstructionMatch> &patterns,
                        CaptureStore &captures);
 
-/// @brief Enumerates rewrite operations for instruction stream mutation.
 enum class RewriteActionType {
   ReplaceOne,
   ReplaceRange,
@@ -144,7 +121,6 @@ enum class RewriteActionType {
   RemoveRange,
 };
 
-/// @brief Describes one rewrite operation to apply to a program.
 struct RewriteAction {
   RewriteActionType Type;
 

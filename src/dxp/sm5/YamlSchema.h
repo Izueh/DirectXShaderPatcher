@@ -100,7 +100,6 @@ struct YamlRule {
   std::vector<YamlEmitInstruction> emit;
   RecipeRuleApplicationMode mode = RecipeRuleApplicationMode::First;
   bool required_match = false;
-  /// @brief When true, declarations are refreshed after this rule applies.
   bool refresh_declarations = false;
 };
 

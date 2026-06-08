@@ -338,7 +338,6 @@ static MatchResult ToRuntimeMatchResult(const RecipeRuleMatch &match) {
   runtimeMatch.Instruction = match.InstructionHandle;
   runtimeMatch.RangeStartIndex = match.RangeStartIndex;
   runtimeMatch.RangeEndIndex = match.RangeEndIndex;
-  // Copy callback captures into per-match captures for uniform handling.
   for (const auto &entry : match.CapturedOperands) {
     runtimeMatch.operands[entry.first] = *entry.second;
   }
@@ -1159,8 +1158,6 @@ static bool CompileRule(const RecipeRule &ruleModel,
     rule.Emit.push_back(std::move(instruction));
   }
 
-  // Capture references were validated during recipe parsing
-  // (RecipeParse.cpp), so no need to re-validate here.
   rule.Predicate = ruleModel.Predicate;
 
   return true;
@@ -1221,8 +1218,6 @@ static bool EvaluateRuleMatchCallback(const RuntimeRule &rule,
     const auto callbackMatches = rule.MatchCallback(program, context);
     matches.reserve(callbackMatches.size());
     for (const RecipeRuleMatch &match : callbackMatches) {
-      // Captures are copied into MatchResult via ToRuntimeMatchResult,
-      // then moved into context.captures before BuildRewriteInstructions.
       matches.push_back(ToRuntimeMatchResult(match));
     }
     return true;
@@ -1281,7 +1276,6 @@ static bool EvaluateRuleRewriteCallback(const RuntimeRule &rule,
     publicMatch.InstructionHandle = match.Instruction;
     publicMatch.RangeStartIndex = match.RangeStartIndex;
     publicMatch.RangeEndIndex = match.RangeEndIndex;
-    // Populate from context.captures (MatchResult no longer has capture maps).
     for (const auto &entry : context.captures.operands) {
       publicMatch.CapturedOperands[entry.first] = &entry.second;
     }
@@ -1879,15 +1873,6 @@ static bool ResolveImmediateFromVariable(const std::string &path,
   }
 }
 
-/// @brief Extracts unique component bits from a swizzle-mode operand.
-///
-/// Iterates over the 4 swizzle source components and sets bit N for each
-/// unique component found (X=bit 0, Y=bit 1, Z=bit 2, W=bit 3).
-/// Handles NOSWIZZLE identically to any other swizzle — it yields all 4 bits.
-/// Only processes operands with 4 components and SWIZZLE selection mode.
-///
-/// @param op Operand to analyze.
-/// @return Bitmask of unique components (0 if not a 4-component swizzle).
 static uint32_t ExtractSwizzleUniqueComponents(const Operand &op) {
   if (op.NumComponents != D3D10_SB_OPERAND_4_COMPONENT) {
     return 0;
@@ -1907,16 +1892,6 @@ static uint32_t ExtractSwizzleUniqueComponents(const Operand &op) {
   return mask;
 }
 
-/// @brief Decodes the write mask from a destination operand.
-///
-/// Converts any 4-component destination operand to a bitmask:
-///   - MASK mode → mask bits directly
-///   - SWIZZLE/NOSWIZZLE → unique component bits
-///   - SELECT_1 → single bit for selected component
-///   - Non-4-component → 0 (no component selection)
-///
-/// @param op Destination operand to decode.
-/// @return Bitmask of written components (0 if no component selection).
 static uint32_t DecodeDstMaskFromOperand(const Operand &op) {
   if (op.NumComponents != D3D10_SB_OPERAND_4_COMPONENT) {
     return 0;
@@ -1940,13 +1915,6 @@ static uint32_t DecodeDstMaskFromOperand(const Operand &op) {
   }
 }
 
-/// @brief Checks whether an operand has an explicit component specification.
-///
-/// Returns true if the operand has a non-default mask, swizzle, select, or
-/// explicit NumComponents value set.
-///
-/// @param op Operand to check.
-/// @return True if the operand has an explicit component spec.
 static bool HasLiteralComponentSpec(const Operand &op) {
   if (op.NumComponents >= 0 && op.NumComponents != 4) {
     return true;
@@ -1956,20 +1924,6 @@ static bool HasLiteralComponentSpec(const Operand &op) {
   return (selMode != 0) || (op.ComponentMode != 0);
 }
 
-/// @brief Converts a component mode when the operand role changes.
-///
-/// When a captured operand is used in a different role (source→destination
-/// or destination→source), the component mode may need adjustment because
-/// destinations only support masks and sources support masks/swizzles/selects.
-///
-/// @param fromRole The captured operand's role.
-/// @param toRole The emit operand's role.
-/// @param fromNumComponents The captured operand's component count.
-/// @param fromComponentMode The captured operand's component mode.
-/// @param contextMask Effective context mask from priority: emit dst mask >
-///   match dst mask > source swizzle unique components. Provided by caller.
-/// @param toNumComponents Output: resulting component count.
-/// @param toComponentMode Output: resulting component mode.
 static void ConvertComponentModeForRoleChange(
     OperandRole fromRole, OperandRole toRole,
     uint32_t fromNumComponents, uint32_t fromComponentMode,

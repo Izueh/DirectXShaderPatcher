@@ -367,7 +367,6 @@ std::vector<MatchResult> CollectMatches(const Program &program,
   matches.reserve(program.Instructions.size());
 
   for (uint32_t index = 0; index < program.Instructions.size(); ++index) {
-    // Local maps for this match — independent per-instruction.
     std::unordered_map<std::string, Operand> localOperands;
     std::unordered_map<std::string, Instruction> localInstructions;
     std::unordered_map<std::string, uint32_t> localIndexValues;
@@ -402,7 +401,6 @@ CollectSequenceMatches(const Program &program,
   const uint32_t limit =
       static_cast<uint32_t>(program.Instructions.size() - patterns.size() + 1);
   for (uint32_t startIndex = 0; startIndex < limit; ++startIndex) {
-    // Local maps for this sequence match — independent per-sequence.
     std::unordered_map<std::string, Operand> localOperands;
     std::unordered_map<std::string, Instruction> localInstructions;
     std::unordered_map<std::string, uint32_t> localIndexValues;

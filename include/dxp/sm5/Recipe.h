@@ -1846,96 +1846,78 @@ struct RecipeRule {
   RecipeRuleRewriteMode RewriteMode = RecipeRuleRewriteMode::Replace;
   RecipeRulePredicate Predicate;
   RecipeRewriteCallback RewriteCallback;
-  /// @brief When true, declarations are refreshed after this rule applies.
-  ///
-  /// Set this on rules that modify DCL instructions so that `RefreshDeclarations`
-  /// updates derived metadata (resource bindings, temp counts, etc.) from the
-  /// instruction stream after the rewrite.
   bool RefreshDeclarations = false;
 
-  /// @brief Sets the rule name used for state publication and diagnostics.
   RecipeRule &Named(std::string name) & {
     Name = std::move(name);
     return *this;
   }
 
-  /// @brief Sets the rule name used for state publication and diagnostics.
   RecipeRule &&Named(std::string name) && {
     Name = std::move(name);
     return std::move(*this);
   }
 
-  /// @brief Uses declarative pattern matching for this rule.
   RecipeRule &WithMatch(RecipeMatchPattern match) & {
     Match = std::move(match);
     MatchCallback = {};
     return *this;
   }
 
-  /// @brief Uses declarative pattern matching for this rule.
   RecipeRule &&WithMatch(RecipeMatchPattern match) && {
     Match = std::move(match);
     MatchCallback = {};
     return std::move(*this);
   }
 
-  /// @brief Uses callback-driven matching for this rule.
   RecipeRule &WithMatch(RecipeMatchCallback callback) & {
     Match = RecipeMatchPattern{};
     MatchCallback = std::move(callback);
     return *this;
   }
 
-  /// @brief Uses callback-driven matching for this rule.
   RecipeRule &&WithMatch(RecipeMatchCallback callback) && {
     Match = RecipeMatchPattern{};
     MatchCallback = std::move(callback);
     return std::move(*this);
   }
 
-  /// @brief Appends declarative emit output and clears callback rewriting.
   RecipeRule &AddEmit(RecipeInstructionTemplate instruction) & {
     RewriteCallback = {};
     Emit.push_back(std::move(instruction));
     return *this;
   }
 
-  /// @brief Appends declarative emit output and clears callback rewriting.
   RecipeRule &&AddEmit(RecipeInstructionTemplate instruction) && {
     RewriteCallback = {};
     Emit.push_back(std::move(instruction));
     return std::move(*this);
   }
 
-  /// @brief Sets start offset for ReplaceRange relative to the match window.
   RecipeRule &RangeStart(int32_t offset) & {
     RewriteCallback = {};
     RangeStartOffset = offset;
     return *this;
   }
 
-  /// @brief Sets start offset for ReplaceRange relative to the match window.
   RecipeRule &&RangeStart(int32_t offset) && {
     RewriteCallback = {};
     RangeStartOffset = offset;
     return std::move(*this);
   }
 
-  /// @brief Sets end offset for ReplaceRange relative to the match window.
   RecipeRule &RangeEnd(int32_t offset) & {
     RewriteCallback = {};
     RangeEndOffset = offset;
     return *this;
   }
 
-  /// @brief Sets end offset for ReplaceRange relative to the match window.
   RecipeRule &&RangeEnd(int32_t offset) && {
     RewriteCallback = {};
     RangeEndOffset = offset;
     return std::move(*this);
   }
 
-  /// @brief Sets ReplaceRange offsets relative to the match window.
   RecipeRule &RangeOffsets(int32_t startOffset, int32_t endOffset) & {
     RewriteCallback = {};
     RangeStartOffset = startOffset;
@@ -1943,7 +1925,6 @@ struct RecipeRule {
     return *this;
   }
 
-  /// @brief Sets ReplaceRange offsets relative to the match window.
   RecipeRule &&RangeOffsets(int32_t startOffset, int32_t endOffset) && {
     RewriteCallback = {};
     RangeStartOffset = startOffset;
@@ -1951,59 +1932,50 @@ struct RecipeRule {
     return std::move(*this);
   }
 
-  /// @brief Sets a sequence-window-relative anchor index for Before/After rewriting.
   RecipeRule &InsertAfterRelativeIndex(int32_t index) & {
     RewriteCallback = {};
     InsertRelativeIndex = index;
     return *this;
   }
 
-  /// @brief Sets a sequence-window-relative anchor index for Before/After rewriting.
   RecipeRule &&InsertAfterRelativeIndex(int32_t index) && {
     RewriteCallback = {};
     InsertRelativeIndex = index;
     return std::move(*this);
   }
 
-  /// @brief Sets the rule application mode (First, Last, or MatchAll).
   RecipeRule &ApplyMode(RecipeRuleApplicationMode applicationMode) & {
     ApplicationMode = applicationMode;
     return *this;
   }
 
-  /// @brief Sets the rule application mode (First, Last, or MatchAll).
   RecipeRule &&ApplyMode(RecipeRuleApplicationMode applicationMode) && {
     ApplicationMode = applicationMode;
     return std::move(*this);
   }
 
-  /// @brief When enabled, the rule fails the step if no match is applied.
   RecipeRule &RequireMatch(bool requiredMatch = true) & {
     RequiredMatch = requiredMatch;
     return *this;
   }
 
-  /// @brief When enabled, the rule fails the step if no match is applied.
   RecipeRule &&RequireMatch(bool requiredMatch = true) && {
     RequiredMatch = requiredMatch;
     return std::move(*this);
   }
 
-  /// @brief Selects the declarative rewrite mode and clears callback rewriting.
   RecipeRule &RewriteAs(RecipeRuleRewriteMode rewriteMode) & {
     RewriteCallback = {};
     RewriteMode = rewriteMode;
     return *this;
   }
 
-  /// @brief Selects the declarative rewrite mode and clears callback rewriting.
   RecipeRule &&RewriteAs(RecipeRuleRewriteMode rewriteMode) && {
     RewriteCallback = {};
     RewriteMode = rewriteMode;
     return std::move(*this);
   }
 
-  /// @brief Uses callback-driven rewriting and clears declarative rewrite data.
   RecipeRule &Rewrite(RecipeRewriteCallback callback) & {
     Emit.clear();
     RangeStartOffset = 0;
@@ -2014,7 +1986,6 @@ struct RecipeRule {
     return *this;
   }
 
-  /// @brief Uses callback-driven rewriting and clears declarative rewrite data.
   RecipeRule &&Rewrite(RecipeRewriteCallback callback) && {
     Emit.clear();
     RangeStartOffset = 0;
@@ -2025,13 +1996,11 @@ struct RecipeRule {
     return std::move(*this);
   }
 
-  /// @brief Sets a predicate that gates whether this rule is evaluated.
   RecipeRule &When(RecipeRulePredicate predicate) & {
     Predicate = std::move(predicate);
     return *this;
   }
 
-  /// @brief Sets a predicate that gates whether this rule is evaluated.
   RecipeRule &&When(RecipeRulePredicate predicate) && {
     Predicate = std::move(predicate);
     return std::move(*this);
@@ -2067,41 +2036,35 @@ struct RecipeStepComparison {
   std::string Input;
   std::string Value;
 
-  /// @brief Sets the state key to compare against.
   RecipeStepComparison &FromState(std::string state) & {
     State = std::move(state);
     Input.clear();
     return *this;
   }
 
-  /// @brief Sets the state key to compare against.
   RecipeStepComparison &&FromState(std::string state) && {
     State = std::move(state);
     Input.clear();
     return std::move(*this);
   }
 
-  /// @brief Sets the input key to compare against.
   RecipeStepComparison &FromInput(std::string input) & {
     Input = std::move(input);
     State.clear();
     return *this;
   }
 
-  /// @brief Sets the input key to compare against.
   RecipeStepComparison &&FromInput(std::string input) && {
     Input = std::move(input);
     State.clear();
     return std::move(*this);
   }
 
-  /// @brief Sets the value to compare against.
   RecipeStepComparison &WithValue(std::string value) & {
     Value = std::move(value);
     return *this;
   }
 
-  /// @brief Sets the value to compare against.
   RecipeStepComparison &&WithValue(std::string value) && {
     Value = std::move(value);
     return std::move(*this);
@@ -2191,37 +2154,31 @@ struct RecipeStep {
   RecipeStepExecutor Execute;
   RecipeStepPredicate Predicate;
 
-  /// @brief Controls whether a failed step stops recipe execution.
   RecipeStep &AbortOnFailureFlag(bool abortOnFailure) & {
     AbortOnFailure = abortOnFailure;
     return *this;
   }
 
-  /// @brief Controls whether a failed step stops recipe execution.
   RecipeStep &&AbortOnFailureFlag(bool abortOnFailure) && {
     AbortOnFailure = abortOnFailure;
     return std::move(*this);
   }
 
-  /// @brief Sets a declarative condition that gates whether this step runs.
   RecipeStep &When(RecipeStepCondition condition) & {
     If = std::move(condition);
     return *this;
   }
 
-  /// @brief Sets a declarative condition that gates whether this step runs.
   RecipeStep &&When(RecipeStepCondition condition) && {
     If = std::move(condition);
     return std::move(*this);
   }
 
-  /// @brief Sets a programmatic predicate that gates whether this step runs.
   RecipeStep &When(RecipeStepPredicate predicate) & {
     Predicate = std::move(predicate);
     return *this;
   }
 
-  /// @brief Sets a programmatic predicate that gates whether this step runs.
   RecipeStep &&When(RecipeStepPredicate predicate) && {
     Predicate = std::move(predicate);
     return std::move(*this);
@@ -2232,93 +2189,49 @@ struct RecipeStep {
   bool IsCustom() const { return static_cast<bool>(Execute); }
 };
 
-/// @brief Creates a successful step result.
-/// @param changed Whether the step changed program state.
-/// @param matchCount Number of matches processed by the step.
-/// @param stopRecipe Whether recipe execution should stop after this step.
-/// @return Initialized step result.
 RecipeStepResult MakeRecipeStepSuccess(bool changed = false,
                                        uint32_t matchCount = 0,
                                        bool stopRecipe = false);
 
-/// @brief Creates a failed step result and records the message in context.
-/// @param context Recipe execution context to update.
-/// @param message Error message to store.
-/// @return Initialized failed step result.
 RecipeStepResult MakeRecipeStepFailure(RecipeContext &context,
                                        std::string message);
 
-/// @brief Wraps a custom executor as a named recipe step.
-///
-/// The returned step uses `name` as both its public identifier and the state
-/// publication key for the step result.
 RecipeStep MakeCustomRecipeStep(std::string name, RecipeStepExecutor execute);
 
-/// @brief Creates a step that applies declarative rewrite rules.
-/// @param name Unique step/state name.
-/// @param rules Declarative or callback-backed rules to execute.
-/// @param mode Default application mode inherited by rules that do not
-/// override it.
-/// @param abortOnFailure When `true`, a step failure stops recipe execution.
 RecipeStep MakeRewriteRulesStep(
     std::string name, std::vector<RecipeRule> rules,
     RecipeRuleApplicationMode mode = RecipeRuleApplicationMode::First,
   bool abortOnFailure = true);
 
-/// @brief Creates a step that checks the active shader model version.
-///
-/// The step publishes `true` under `name` on a version match. On mismatch it
-/// publishes `false` and returns a failed step result.
 RecipeStep MakeCheckShaderVersionStep(std::string name, uint32_t majorVersion,
                                       uint32_t minorVersion,
                                       bool abortOnFailure = true);
 
-/// @brief Creates a step that checks the number of matching opcodes.
-///
-/// Positive `expectedCount` means at least that many occurrences; `0` means no
-/// occurrences; negative values mean at most `-expectedCount` occurrences.
 RecipeStep MakeCheckOpcodeCountStep(std::string name, std::string opcode,
                                     int32_t expectedCount,
                                     bool abortOnFailure = true);
 
-/// @brief Creates a step that checks the number of declared resources.
-///
-/// The step publishes `true` under `name` when the program contains at least
-/// `expectedResourceCount` resources. Otherwise it publishes `false` and
-/// returns a failed step result.
 RecipeStep MakeCheckResourceCountStep(std::string name,
                                       int32_t expectedResourceCount,
                                       bool abortOnFailure = true);
 
-/// @brief Creates a step that adds a temp declaration.
-///
-/// YAML `add_temp` accepts a `handles` list, but the public API creates one
-/// temp step per declaration handle.
 RecipeStep MakeAddTempStep(std::string id, RecipeTempDecl decl);
 
-/// @brief Creates a step that adds an input declaration.
 RecipeStep MakeAddInputStep(std::string id, RecipeInputDecl decl);
 
-/// @brief Creates a step that adds an output declaration.
 RecipeStep MakeAddOutputStep(std::string id, RecipeOutputDecl decl);
 
-/// @brief Creates a step that adds a texture declaration.
 RecipeStep MakeAddTextureStep(std::string id, RecipeTextureDecl decl);
 
-/// @brief Creates a step that adds a raw resource declaration.
 RecipeStep MakeAddRawResourceStep(std::string id, RecipeRawResourceDecl decl);
 
-/// @brief Creates a step that adds a structured resource declaration.
 RecipeStep MakeAddStructuredResourceStep(std::string id,
                                          RecipeStructuredResourceDecl decl);
 
-/// @brief Creates a step that adds a constant buffer declaration.
 RecipeStep MakeAddCBufferStep(std::string id, RecipeCBufferDecl decl);
 
-/// @brief Creates a step that adds a sampler declaration.
 RecipeStep MakeAddSamplerStep(std::string id, RecipeSamplerDecl decl);
 
-/// @brief Creates a step that adds a UAV declaration.
 RecipeStep MakeAddUavStep(std::string id, RecipeUavDecl decl);
 
 /// @brief Owns the declarative SM5 recipe definition.
