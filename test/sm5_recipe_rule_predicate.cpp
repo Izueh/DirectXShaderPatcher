@@ -177,8 +177,6 @@ int main(int argc, char **argv) {
           match.InstructionHandle = &instruction;
           match.RangeStartIndex = index;
           match.RangeEndIndex = index;
-          match.CapturedInstructions["mul"] = &instruction;
-          match.CapturedInstructionIndices["mul"] = index;
           match.CapturedOperands["dst"] = &instruction.Operands[0];
           match.CapturedOperands["src"] = &instruction.Operands[1];
           matches.push_back(std::move(match));
@@ -190,14 +188,9 @@ int main(int argc, char **argv) {
                   dxp::sm5::RecipeContext &) {
         std::vector<dxp::sm5::RecipeRewriteAction> actions;
 
-        const uint32_t *replaceIndex = match.GetCapturedInstructionIndex("mul");
-        if (replaceIndex == nullptr) {
-          return actions;
-        }
-
         dxp::sm5::RecipeRewriteAction action;
         action.Kind = dxp::sm5::RecipeRewriteActionKind::ReplaceOne;
-        action.ReplaceIndex = *replaceIndex;
+        action.ReplaceIndex = match.InstructionIndex;
         action.AddEmit(dxp::sm5::RecipeInstructionTemplate{}
                            .WithOpcode("mov")
                            .AddOperand(

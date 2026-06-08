@@ -38,8 +38,10 @@ static void BM_CollectMatches(benchmark::State& state) {
       D3D10_SB_OPCODE_MOV)};
   pattern.HasOpcode = true;
 
+  dxp::sm5::RecipeContext ctx;
+
   for (auto _ : state) {
-    auto matches = dxp::sm5::CollectMatches(program, pattern);
+    auto matches = dxp::sm5::CollectMatches(program, pattern, ctx.captures);
     benchmark::DoNotOptimize(matches);
   }
 }
@@ -73,8 +75,10 @@ static void BM_CollectSequenceMatches(benchmark::State& state) {
     patterns.push_back(std::move(p));
   }
 
+  dxp::sm5::RecipeContext ctx;
+
   for (auto _ : state) {
-    auto matches = dxp::sm5::CollectSequenceMatches(program, patterns);
+    auto matches = dxp::sm5::CollectSequenceMatches(program, patterns, ctx.captures);
     benchmark::DoNotOptimize(matches);
   }
 }
@@ -129,7 +133,8 @@ static void BM_RewriteAndRebuild(benchmark::State& state) {
       D3D10_SB_OPCODE_MOV)};
   pattern.HasOpcode = true;
 
-  auto matches = dxp::sm5::CollectMatches(program, pattern);
+  dxp::sm5::RecipeContext ctx;
+  auto matches = dxp::sm5::CollectMatches(program, pattern, ctx.captures);
   if (matches.empty()) {
     state.SkipWithError("No MOV instructions found in test shader");
     return;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "dxp/PatchReport.h"
+#include "../src/dxp/sm5/Model.h"  // Operand, Instruction, OperandRole
 
 #include <any>
 #include <cstdint>
@@ -8,14 +9,34 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 namespace dxp::sm5 {
 
 struct Program;
-struct Operand;
-struct Instruction;
+
+/// @brief Global capture store — reused across all matching, persists across steps.
+///
+/// Captured operands, instructions, and index immediates are stored as copies
+/// (not pointers) so they survive rewrites. All capture names must be unique
+/// across the entire recipe.
+struct CaptureStore {
+  /// Captured operands, keyed by their `capture` name.
+  std::unordered_map<std::string, Operand> operands;
+  /// Captured instructions (sequence matches), keyed by name.
+  std::unordered_map<std::string, Instruction> instructions;
+  /// Captured index immediates and instruction indices, keyed by name.
+  std::unordered_map<std::string, uint32_t> indexValues;
+
+  /// Clears all capture data. Called at the start of each recipe execution.
+  void clear() {
+    operands.clear();
+    instructions.clear();
+    indexValues.clear();
+  }
+};
 
 /// @brief Carries mutable state across SM5 recipe execution.
 struct RecipeContext {
@@ -44,6 +65,10 @@ struct RecipeContext {
   std::unordered_map<std::string, std::any> InitialVariables;
   bool HasInitialVariablesSnapshot = false;
   std::unordered_map<std::string, std::any> State;
+
+  /// Global capture store — reused across all matching, persists across steps.
+  /// Cleared at the start of each recipe execution.
+  CaptureStore captures;
 
   void AddDiagnostic(std::string message) {
     Diagnostics.push_back(std::move(message));
@@ -846,16 +871,15 @@ private:
 ///  - `Any = true`            — wildcard; the slot is accepted without checks.
 ///  - `Representation`        — when present, the encoded index type must match.
 ///  - `ImmediateLo/Hi`        — when set, the immediate value must equal.
-///  - `Capture`               — on a successful match, the slot's immediate is
-///                             stored in `CapturedOperandIndexValues` under this
-///                             name for use in later operands or emit templates.
-///  - `MatchCapture`          — the slot's immediate must equal the value
-///                             previously stored under this capture name.
+///  - `Capture`               — on match, stores the slot's immediate in
+///                             `context.captures.indexValues` for later use.
+///  - `MatchCapture`          — the slot's immediate must equal a previously
+///                             captured value (may reference any step).
 ///
 /// **Emit semantics** (used in `RecipeInstructionTemplate::Operands[].IndexPatterns`):
 ///  - `ImmediateLo/Hi`        — constant immediate value to write.
-///  - `MatchCapture`          — resolves the immediate from a captured index
-///                             value.
+///  - `MatchCapture`          — resolves the immediate from `context.captures.indexValues`.
+///                             May reference captures from any rule in any step.
 ///  - `Any` and `Capture`     — invalid on emit entries; rejected at compile time.
 struct RecipeOperandIndexPattern {
   /// When `true`, this slot is a wildcard (match only). All value fields are
@@ -974,6 +998,9 @@ private:
 ///
 /// `IndexPatterns` carries an ordered list of `RecipeOperandIndexPattern`
 /// objects, one per expected index slot.
+///
+/// All named identifiers (captures, match-captures, from-handles, variables,
+/// step names, rule names) share a single global namespace and must be unique.
 ///
 /// YAML selector note: `components.kind`/`components.value` are normalized to
 /// `Mask`, `Swizzle`, or `Select` during parsing.
@@ -1611,6 +1638,8 @@ struct RecipeInstructionTemplate {
 };
 
 /// @brief Describes the top-level match criteria for a recipe rule.
+///
+/// Captures are stored in `context.captures` and persist across steps.
 struct RecipeMatchPattern {
   std::string Opcode;
   std::string Capture;
@@ -1708,22 +1737,20 @@ struct RecipeMatchPattern {
 /// @brief Stores one callback-supplied SM5 rule match and its captures.
 ///
 /// Callback matches are normalized into the same runtime rewrite flow used by
-/// declarative rules. RangeStartIndex and RangeEndIndex describe the matched
-/// instruction window when a callback wants ReplaceRange-style behavior.
+/// declarative rules. Captures are stored in `context.captures` for declarative
+/// matching; this struct's capture maps are populated only by code callbacks.
 struct RecipeRuleMatch {
   uint32_t InstructionIndex = 0;
   const Instruction *InstructionHandle = nullptr;
   uint32_t RangeStartIndex = 0;
   uint32_t RangeEndIndex = 0;
-  /// Operands captured by name during matching or supplied by the callback.
+  /// Operands captured by name. Only populated by code callbacks.
   std::unordered_map<std::string, const Operand *> CapturedOperands;
-  /// Instructions captured by name (used with sequence matches).
+  /// Instructions captured by name. Only populated by code callbacks.
   std::unordered_map<std::string, const Instruction *> CapturedInstructions;
-  /// Program-relative indices for captured instructions.
-  std::unordered_map<std::string, uint32_t> CapturedInstructionIndices;
-  /// Per-slot index immediate values captured via
-  /// `RecipeOperandIndexPattern::Capture` during declarative matching.
-  /// Keys are capture names; values are 32-bit immediates from the matched slot.
+
+  /// Per-slot index immediates captured via `RecipeOperandIndexPattern::Capture`.
+  /// Only populated by code callbacks.
   std::unordered_map<std::string, uint32_t> CapturedOperandIndexValues;
 
   const Operand *GetCapturedOperand(const std::string &name) const {
@@ -1734,11 +1761,6 @@ struct RecipeRuleMatch {
   const Instruction *GetCapturedInstruction(const std::string &name) const {
     const auto it = CapturedInstructions.find(name);
     return it == CapturedInstructions.end() ? nullptr : it->second;
-  }
-
-  const uint32_t *GetCapturedInstructionIndex(const std::string &name) const {
-    const auto it = CapturedInstructionIndices.find(name);
-    return it == CapturedInstructionIndices.end() ? nullptr : &it->second;
   }
 
   /// @brief Looks up a per-slot index immediate captured during matching.
@@ -1825,6 +1847,10 @@ struct RecipeRule {
   RecipeRulePredicate Predicate;
   RecipeRewriteCallback RewriteCallback;
   /// @brief When true, declarations are refreshed after this rule applies.
+  ///
+  /// Set this on rules that modify DCL instructions so that `RefreshDeclarations`
+  /// updates derived metadata (resource bindings, temp counts, etc.) from the
+  /// instruction stream after the rewrite.
   bool RefreshDeclarations = false;
 
   /// @brief Sets the rule name used for state publication and diagnostics.

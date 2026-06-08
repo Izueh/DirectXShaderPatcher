@@ -1,6 +1,7 @@
 #pragma once
 
-#include "Model.h"
+#include "dxp/sm5/Model.h"  // Operand, Instruction
+#include "dxp/sm5/Recipe.h"  // CaptureStore
 
 #include <cstdint>
 #include <string>
@@ -99,56 +100,40 @@ struct InstructionMatch {
   InstructionMatch();
 };
 
-/// @brief Stores one successful pattern match and its captures.
+/// @brief Stores one successful pattern match.
+///
+/// Per-match captures are copies (not pointers) needed for MatchAll mode.
+/// Each match has independent captures; moved to context.captures
+/// before BuildRewriteInstructions reads them.
 struct MatchResult {
   uint32_t InstructionIndex;
   const dxp::sm5::Instruction *Instruction;
   uint32_t RangeStartIndex;
   uint32_t RangeEndIndex;
-  std::unordered_map<std::string, const dxp::sm5::Operand *> CapturedOperands;
-  std::unordered_map<std::string, const dxp::sm5::Instruction *>
-      CapturedInstructions;
-  std::unordered_map<std::string, uint32_t> CapturedInstructionIndices;
-  std::unordered_map<std::string, uint32_t> CapturedOperandIndexValues;
-  std::unordered_map<std::string, size_t> CapturedOperandPositions;
-
-  /// @brief Looks up a captured operand by name.
-  /// @param name Capture name to resolve.
-  /// @return The captured operand, or `nullptr` when absent.
-  const dxp::sm5::Operand *GetCapturedOperand(const std::string &name) const;
-
-  /// @brief Looks up a captured instruction by name.
-  /// @param name Capture name to resolve.
-  /// @return The captured instruction, or `nullptr` when absent.
-  const dxp::sm5::Instruction *
-  GetCapturedInstruction(const std::string &name) const;
-
-  /// @brief Looks up a captured instruction index by name.
-  /// @param name Capture name to resolve.
-  /// @return Pointer to the captured index, or `nullptr` when absent.
-  const uint32_t *GetCapturedInstructionIndex(const std::string &name) const;
-
-  /// @brief Looks up a captured operand index immediate value by name.
-  /// @param name Capture name set on an `OperandIndexMatchPattern`.
-  /// @return Pointer to the 32-bit immediate, or `nullptr` when absent.
-  const uint32_t *
-  GetCapturedOperandIndexValue(const std::string &name) const;
+  /// Per-match captures (copies) — needed for MatchAll mode.
+  std::unordered_map<std::string, Operand> operands;
+  std::unordered_map<std::string, dxp::sm5::Instruction> instructions;
+  std::unordered_map<std::string, uint32_t> indexValues;
 };
 
 /// @brief Collects all instructions that match a pattern.
 /// @param program Program to scan.
 /// @param pattern Pattern to match.
-/// @return All match results, including captures.
+/// @param captures Global capture store for storing matched operand data.
+/// @return All match results.
 std::vector<MatchResult> CollectMatches(const Program &program,
-                                        const InstructionMatch &pattern);
+                                        const InstructionMatch &pattern,
+                                        CaptureStore &captures);
 
 /// @brief Collects contiguous instruction ranges matching a sequence.
 /// @param program Program to scan.
 /// @param patterns Sequence of patterns to match.
-/// @return All sequence matches, including captures.
+/// @param captures Global capture store for storing matched operand data.
+/// @return All sequence matches.
 std::vector<MatchResult>
 CollectSequenceMatches(const Program &program,
-                       const std::vector<InstructionMatch> &patterns);
+                       const std::vector<InstructionMatch> &patterns,
+                       CaptureStore &captures);
 
 /// @brief Enumerates rewrite operations for instruction stream mutation.
 enum class RewriteActionType {

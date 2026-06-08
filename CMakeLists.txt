@@ -510,6 +510,7 @@ dxp_add_test(dxil_patch_sm5_recipe_objective_ign_texture_patch_test "test/sm5_re
 dxp_add_test(dxil_patch_sm5_recipe_state_temp_emit_test             "test/sm5_recipe_state_temp_emit.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso")
 dxp_add_test(dxil_patch_sm5_recipe_context_variables_test           "test/sm5_recipe_context_variables.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso")
 dxp_add_test(dxil_patch_sm5_recipe_operand_index_capture_test       "test/sm5_recipe_operand_index_capture.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso"  "${CMAKE_CURRENT_BINARY_DIR}/test-output/0x7AFF256C.ps_5_0.operand_index_capture.patched.cso")
+dxp_add_test(dxil_patch_sm5_recipe_cross_step_capture_test          "test/sm5_recipe_cross_step_capture.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso")
 dxp_add_test(dxil_patch_sm5_recipe_rule_probe_test                  "test/sm5_recipe_rule_probe.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso")
 dxp_add_test(dxil_patch_sm5_recipe_rule_predicate_test              "test/sm5_recipe_rule_predicate.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/test/shaders/0x7AFF256C.ps_5_0.cso")
 dxp_add_test(dxil_patch_sm5_recipe_parse_validation_test            "test/sm5_recipe_parse_validation.cpp")

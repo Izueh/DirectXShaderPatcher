@@ -127,6 +127,21 @@ steps:
 
   if (!OperandsEqual(patchedInstruction.Operands[0],
                      originalInstruction.Operands[0])) {
+    auto &p = patchedInstruction.Operands[0];
+    auto &o = originalInstruction.Operands[0];
+    std::cerr << "DEBUG dst: Type=" << p.Type << " o.Type=" << o.Type
+              << " NumComp=" << p.NumComponents << " o.NumComp=" << o.NumComponents
+              << " CompMode=" << p.ComponentMode << " o.CompMode=" << o.ComponentMode
+              << " Mod=" << (int)p.Modifier << " o.Mod=" << (int)o.Modifier
+              << " Indices=";
+    for (auto v : p.Indices) std::cerr << v << " ";
+    std::cerr << " vs o.Indices=";
+    for (auto v : o.Indices) std::cerr << v << " ";
+    std::cerr << " Imm=";
+    for (auto v : p.ImmediateValues) std::cerr << v << " ";
+    std::cerr << " vs o.Imm=";
+    for (auto v : o.ImmediateValues) std::cerr << v << " ";
+    std::cerr << "\n";
     std::cerr << "Expected emitted MOV destination operand to preserve the "
                  "captured destination.\n";
     return 1;

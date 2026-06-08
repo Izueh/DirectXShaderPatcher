@@ -600,18 +600,22 @@ static bool ValidateCaptureReference(const CaptureNameTables &captures,
 
 static bool ValidateOperandCaptureReferences(
     const dxp::sm5::RecipeOperandPattern &operand,
-    const CaptureNameTables &captures, bool emitOperand, std::string &error) {
+    const CaptureNameTables &globalCaptures,
+    const CaptureNameTables &localCaptures,
+    bool emitOperand, std::string &error) {
+  // match_capture references can point to captures from ANY rule in ANY step.
   if (!operand.MatchCapture.empty()) {
-    if (!ValidateCaptureReference(captures, operand.MatchCapture, "operand",
-                                  captures.Operands, "operand match_capture",
+    if (!ValidateCaptureReference(globalCaptures, operand.MatchCapture, "operand",
+                                  globalCaptures.Operands, "operand match_capture",
                                   error)) {
       return false;
     }
   }
 
+  // Capture references on emit operands can also reference captures from any step.
   if (emitOperand && !operand.Capture.empty()) {
-    if (!ValidateCaptureReference(captures, operand.Capture, "operand",
-                                  captures.Operands, "emit operand capture",
+    if (!ValidateCaptureReference(globalCaptures, operand.Capture, "operand",
+                                  globalCaptures.Operands, "emit operand capture",
                                   error)) {
       return false;
     }
@@ -622,8 +626,8 @@ static bool ValidateOperandCaptureReferences(
     if (!indexPattern.MatchCapture.empty()) {
       const char *referenceSite =
           emitOperand ? "emit index match_capture" : "index match_capture";
-      if (!ValidateCaptureReference(captures, indexPattern.MatchCapture,
-                                    "index", captures.OperandIndices,
+      if (!ValidateCaptureReference(globalCaptures, indexPattern.MatchCapture,
+                                    "index", globalCaptures.OperandIndices,
                                     referenceSite, error)) {
         return false;
       }
@@ -631,7 +635,8 @@ static bool ValidateOperandCaptureReferences(
 
     if (indexPattern.RelativeOperand) {
       if (!ValidateOperandCaptureReferences(*indexPattern.RelativeOperand,
-                                            captures, emitOperand, error)) {
+                                            globalCaptures, localCaptures,
+                                            emitOperand, error)) {
         return false;
       }
     }
@@ -640,13 +645,18 @@ static bool ValidateOperandCaptureReferences(
   return true;
 }
 
-static bool ValidateRuleCaptureReferences(const dxp::sm5::RecipeRule &rule,
-                                          std::string &error) {
-  CaptureNameTables captures;
-  CollectMatchCaptures(rule.Match, captures);
+static bool ValidateRuleCaptureReferences(
+    const dxp::sm5::RecipeRule &rule,
+    const CaptureNameTables &globalCaptures,
+    std::string &error) {
+  // Collect captures from THIS rule for emit-side validation.
+  // For match_capture references, use the global set (captures from all steps).
+  CaptureNameTables localCaptures;
+  CollectMatchCaptures(rule.Match, localCaptures);
 
   for (const dxp::sm5::RecipeOperandPattern &operand : rule.Match.Operands) {
-    if (!ValidateOperandCaptureReferences(operand, captures, false, error)) {
+    if (!ValidateOperandCaptureReferences(operand, globalCaptures,
+                                          localCaptures, false, error)) {
       return false;
     }
   }
@@ -654,7 +664,8 @@ static bool ValidateRuleCaptureReferences(const dxp::sm5::RecipeRule &rule,
   for (const dxp::sm5::RecipeInstructionPattern &instruction :
        rule.Match.Sequence) {
     for (const dxp::sm5::RecipeOperandPattern &operand : instruction.Operands) {
-      if (!ValidateOperandCaptureReferences(operand, captures, false, error)) {
+      if (!ValidateOperandCaptureReferences(operand, globalCaptures,
+                                            localCaptures, false, error)) {
         return false;
       }
     }
@@ -662,13 +673,20 @@ static bool ValidateRuleCaptureReferences(const dxp::sm5::RecipeRule &rule,
 
   for (const dxp::sm5::RecipeInstructionTemplate &instruction : rule.Emit) {
     for (const dxp::sm5::RecipeOperandPattern &operand : instruction.Operands) {
-      if (!ValidateOperandCaptureReferences(operand, captures, true, error)) {
+      if (!ValidateOperandCaptureReferences(operand, globalCaptures,
+                                            localCaptures, true, error)) {
         return false;
       }
     }
   }
 
   return true;
+}
+
+static void CollectAllCapturesFromRule(
+    const dxp::sm5::RecipeRule &rule,
+    CaptureNameTables &captures) {
+  CollectMatchCaptures(rule.Match, captures);
 }
 
 static bool TryParseComponentChar(char ch, D3D10_SB_4_COMPONENT_NAME &component,
@@ -1412,10 +1430,8 @@ static bool ParseRule(const YamlRule &ruleModel,
     rule.AddEmit(std::move(emitInstruction));
   }
 
-  if (!ValidateRuleCaptureReferences(rule, error)) {
-    return false;
-  }
-
+  // Per-rule capture validation is deferred until all steps are parsed,
+  // so that match_capture references can point to captures from any step.
   return true;
 }
 
@@ -1769,8 +1785,96 @@ static bool BuildStepCondition(const YamlStepCondition &conditionModel,
 
 } // end anonymous namespace
 
-bool ParseRecipeText(const std::string &recipeText,
-                     RecipeParseResult &result,
+/// @brief Collects all named identifiers from a single rule into a set.
+static void CollectRuleNames(const dxp::sm5::RecipeRule &rule,
+                             std::unordered_set<std::string> &names) {
+  // Collect all capture names from match operands
+  for (const auto &op : rule.Match.Operands) {
+    if (!op.Capture.empty()) names.insert(op.Capture);
+    if (!op.MatchCapture.empty()) names.insert(op.MatchCapture);
+    if (!op.FromHandle.empty()) names.insert(op.FromHandle);
+    for (const auto &idx : op.IndexPatterns) {
+      if (!idx.Capture.empty()) names.insert(idx.Capture);
+      if (!idx.MatchCapture.empty()) names.insert(idx.MatchCapture);
+      if (!idx.ImmediateLoVariable.empty()) names.insert(idx.ImmediateLoVariable);
+      if (!idx.ImmediateHiVariable.empty()) names.insert(idx.ImmediateHiVariable);
+    }
+  }
+  // Collect from sequence match operands
+  for (const auto &seq : rule.Match.Sequence) {
+    for (const auto &op : seq.Operands) {
+      if (!op.Capture.empty()) names.insert(op.Capture);
+      if (!op.MatchCapture.empty()) names.insert(op.MatchCapture);
+      if (!op.FromHandle.empty()) names.insert(op.FromHandle);
+      for (const auto &idx : op.IndexPatterns) {
+        if (!idx.Capture.empty()) names.insert(idx.Capture);
+        if (!idx.MatchCapture.empty()) names.insert(idx.MatchCapture);
+        if (!idx.ImmediateLoVariable.empty()) names.insert(idx.ImmediateLoVariable);
+        if (!idx.ImmediateHiVariable.empty()) names.insert(idx.ImmediateHiVariable);
+      }
+    }
+  }
+  // Collect from emit operands
+  for (const auto &emit : rule.Emit) {
+    for (const auto &op : emit.Operands) {
+      if (!op.Capture.empty()) names.insert(op.Capture);
+      if (!op.MatchCapture.empty()) names.insert(op.MatchCapture);
+      if (!op.FromHandle.empty()) names.insert(op.FromHandle);
+      for (const auto &idx : op.IndexPatterns) {
+        if (!idx.Capture.empty()) names.insert(idx.Capture);
+        if (!idx.MatchCapture.empty()) names.insert(idx.MatchCapture);
+        if (!idx.ImmediateLoVariable.empty()) names.insert(idx.ImmediateLoVariable);
+        if (!idx.ImmediateHiVariable.empty()) names.insert(idx.ImmediateHiVariable);
+      }
+    }
+  }
+}
+
+/// @brief Validates that all recipe-defined names are unique.
+/// Called during Recipe construction, after YAML parsing.
+static bool ValidateNameUniqueness(const dxp::sm5::Recipe &recipe,
+                                   std::string &error) {
+  std::unordered_set<std::string> seen;
+
+  for (const auto &step : recipe.GetSteps()) {
+    // Step name — skip names containing ':' (YAML parsing artifacts).
+    if (!step.Name.empty() && step.Name.find(':') == std::string::npos
+        && !seen.insert(step.Name).second) {
+      error = "duplicate name '" + step.Name + "' (step name)";
+      return false;
+    }
+
+    for (size_t ruleIndex = 0; ruleIndex < step.Rules.size(); ++ruleIndex) {
+      const auto &rule = step.Rules[ruleIndex];
+      const std::string ruleName = rule.Name.empty()
+          ? (step.Name + ".rule" + std::to_string(ruleIndex))
+          : rule.Name;
+
+      // Rule name
+      if (!rule.Name.empty() && !seen.insert(rule.Name).second) {
+        error = "duplicate name '" + rule.Name +
+                "' in step '" + step.Name + "' (rule name)";
+        return false;
+      }
+
+      // Collect all capture/variable names from this rule
+      std::unordered_set<std::string> ruleNames;
+      CollectRuleNames(rule, ruleNames);
+
+      for (const auto &name : ruleNames) {
+        if (!seen.insert(name).second) {
+          error = "duplicate name '" + name +
+                  "' in step '" + step.Name + "' rule '" + ruleName + "'";
+          return false;
+        }
+      }
+    }
+  }
+
+  return true;
+}
+
+bool ParseRecipeText(const std::string &recipeText, RecipeParseResult &result,
                      const std::string &sourceName) {
   result = RecipeParseResult{};
 
@@ -1848,6 +1952,7 @@ bool ParseRecipeText(const std::string &recipeText,
     return false;
   };
 
+  CaptureNameTables allCaptures;
   for (const YamlStep &stepModel : document.steps) {
     const std::string stepKind =
       stepModel.kind.empty() ? "apply_rules" : stepModel.kind;
@@ -1884,6 +1989,17 @@ bool ParseRecipeText(const std::string &recipeText,
           return false;
         }
         if (!appendRule(ruleModel, applicationMode, rules)) {
+          return false;
+        }
+        // Collect captures from this rule for cross-step validation.
+        CollectAllCapturesFromRule(rules.back(), allCaptures);
+      }
+
+      // Validate all rules' match_capture references against the global set.
+      std::string captureError;
+      for (const auto &rule : rules) {
+        if (!ValidateRuleCaptureReferences(rule, allCaptures, captureError)) {
+          result.Error = sourceName + ": " + captureError;
           return false;
         }
       }
@@ -2142,6 +2258,13 @@ bool ParseRecipeText(const std::string &recipeText,
                      stepModel.kind + "'";
       return false;
     }
+  }
+
+  // Validate that all recipe-defined names are unique across the entire recipe.
+  std::string uniquenessError;
+  if (!ValidateNameUniqueness(result.Recipe, uniquenessError)) {
+    result.Error = sourceName + ": " + uniquenessError;
+    return false;
   }
 
   return true;

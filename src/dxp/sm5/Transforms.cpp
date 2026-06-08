@@ -22,29 +22,6 @@ InstructionMatch::InstructionMatch()
       MatchInputInterpolationMode(D3D10_SB_INTERPOLATION_UNDEFINED),
       HasInputInterpolationModeMatch(false) {}
 
-const Operand *MatchResult::GetCapturedOperand(const std::string &name) const {
-  const auto it = CapturedOperands.find(name);
-  return it == CapturedOperands.end() ? nullptr : it->second;
-}
-
-const Instruction *
-MatchResult::GetCapturedInstruction(const std::string &name) const {
-  const auto it = CapturedInstructions.find(name);
-  return it == CapturedInstructions.end() ? nullptr : it->second;
-}
-
-const uint32_t *
-MatchResult::GetCapturedInstructionIndex(const std::string &name) const {
-  const auto it = CapturedInstructionIndices.find(name);
-  return it == CapturedInstructionIndices.end() ? nullptr : &it->second;
-}
-
-const uint32_t *
-MatchResult::GetCapturedOperandIndexValue(const std::string &name) const {
-  const auto it = CapturedOperandIndexValues.find(name);
-  return it == CapturedOperandIndexValues.end() ? nullptr : &it->second;
-}
-
 namespace {
 
 static std::vector<Operand::Index>
@@ -63,23 +40,6 @@ BuildComparableIndexEntries(const Operand &operand) {
     indexEntries.push_back(std::move(index));
   }
   return indexEntries;
-}
-
-static const uint32_t *FindCapturedOperandIndexValue(
-    const std::unordered_map<std::string, uint32_t> &capturedInInstruction,
-    const std::unordered_map<std::string, uint32_t> &capturedInSequence,
-    const std::string &name) {
-  const auto inInstruction = capturedInInstruction.find(name);
-  if (inInstruction != capturedInInstruction.end()) {
-    return &inInstruction->second;
-  }
-
-  const auto inSequence = capturedInSequence.find(name);
-  if (inSequence != capturedInSequence.end()) {
-    return &inSequence->second;
-  }
-
-  return nullptr;
 }
 
 static const uint32_t *IndexValueForCapture(const Operand::Index &index) {
@@ -282,9 +242,9 @@ bool MatchesOperand(const Operand &operand, const OperandMatch &pattern) {
 
 static bool MatchOperand(
     const Operand &operand, const OperandMatch &pattern,
-    std::unordered_map<std::string, uint32_t> &capturedOperandIndexValues,
-    const std::unordered_map<std::string, uint32_t>
-        &existingCapturedOperandIndexValues) {
+    std::unordered_map<std::string, Operand> &localOperands,
+    std::unordered_map<std::string, uint32_t> &localIndexValues,
+    const std::unordered_map<std::string, uint32_t> &existingCapturedIndexValues) {
   if (!MatchesOperand(operand, pattern)) {
     return false;
   }
@@ -301,9 +261,16 @@ static bool MatchOperand(
     const Operand::Index &operandIndex = indexEntries[index];
 
     if (!matchIndex.MatchCapture.empty()) {
-      const uint32_t *capturedIndexValue = FindCapturedOperandIndexValue(
-          capturedOperandIndexValues, existingCapturedOperandIndexValues,
-          matchIndex.MatchCapture);
+      const uint32_t *capturedIndexValue = nullptr;
+      const auto it = localIndexValues.find(matchIndex.MatchCapture);
+      if (it != localIndexValues.end()) {
+        capturedIndexValue = &it->second;
+      } else {
+        const auto priorIt = existingCapturedIndexValues.find(matchIndex.MatchCapture);
+        if (priorIt != existingCapturedIndexValues.end()) {
+          capturedIndexValue = &priorIt->second;
+        }
+      }
       const uint32_t *currentValue = IndexValueForCapture(operandIndex);
       if (capturedIndexValue == nullptr || currentValue == nullptr ||
           *capturedIndexValue != *currentValue) {
@@ -316,7 +283,7 @@ static bool MatchOperand(
       if (currentValue == nullptr) {
         return false;
       }
-      capturedOperandIndexValues[matchIndex.CaptureName] = *currentValue;
+      localIndexValues[matchIndex.CaptureName] = *currentValue;
     }
   }
 
@@ -325,12 +292,11 @@ static bool MatchOperand(
 
 static bool MatchInstruction(
     const Instruction &instruction, const InstructionMatch &pattern,
-    std::unordered_map<std::string, const Operand *> &capturedOperands,
-    std::unordered_map<std::string, uint32_t> &capturedOperandIndexValues,
-    std::unordered_map<std::string, size_t> &capturedOperandPositions,
-    const std::unordered_map<std::string, const Operand *> &existingCaptures,
-    const std::unordered_map<std::string, uint32_t>
-        &existingCapturedOperandIndexValues) {
+    std::unordered_map<std::string, Operand> &localOperands,
+    std::unordered_map<std::string, Instruction> &localInstructions,
+    std::unordered_map<std::string, uint32_t> &localIndexValues,
+    const CaptureStore &globalCaptures,
+    const std::unordered_map<std::string, uint32_t> &existingCapturedIndexValues) {
   if (pattern.HasOpcode && instruction.Opcode != pattern.Opcode)
     return false;
 
@@ -358,21 +324,23 @@ static bool MatchInstruction(
     const auto &operandPattern = pattern.OperandPatterns[index];
     const auto &operand = instruction.Operands[index];
 
-    if (!MatchOperand(operand, operandPattern, capturedOperandIndexValues,
-                      existingCapturedOperandIndexValues))
+    if (!MatchOperand(operand, operandPattern,
+                      localOperands, localIndexValues,
+                      existingCapturedIndexValues))
       return false;
 
     if (!operandPattern.MatchAgainstCapture.empty()) {
       const Operand *captured = nullptr;
-      const auto existingIt =
-          capturedOperands.find(operandPattern.MatchAgainstCapture);
-      if (existingIt != capturedOperands.end()) {
-        captured = existingIt->second;
-      } else {
-        const auto priorIt =
-            existingCaptures.find(operandPattern.MatchAgainstCapture);
-        if (priorIt != existingCaptures.end()) {
-          captured = priorIt->second;
+      // Check local captures first (from this instruction's earlier operands)
+      const auto localIt = localOperands.find(operandPattern.MatchAgainstCapture);
+      if (localIt != localOperands.end()) {
+        captured = &localIt->second;
+      }
+      // Fall back to global captures for cross-step persistence
+      if (captured == nullptr) {
+        const auto globalIt = globalCaptures.operands.find(operandPattern.MatchAgainstCapture);
+        if (globalIt != globalCaptures.operands.end()) {
+          captured = &globalIt->second;
         }
       }
 
@@ -383,10 +351,9 @@ static bool MatchInstruction(
     }
 
     if (!operandPattern.CaptureName.empty()) {
-      capturedOperands[operandPattern.CaptureName] = &operand;
-      capturedOperandPositions[operandPattern.CaptureName] = index;
-      const_cast<Operand *>(&operand)->Role =
-          GetOperandRole(instruction.Opcode.Value, index);
+      Operand capturedOperand = operand;
+      capturedOperand.Role = GetOperandRole(instruction.Opcode.Value, index);
+      localOperands[operandPattern.CaptureName] = std::move(capturedOperand);
     }
   }
 
@@ -394,15 +361,20 @@ static bool MatchInstruction(
 }
 
 std::vector<MatchResult> CollectMatches(const Program &program,
-                                        const InstructionMatch &pattern) {
+                                        const InstructionMatch &pattern,
+                                        CaptureStore &captures) {
   std::vector<MatchResult> matches;
+  matches.reserve(program.Instructions.size());
+
   for (uint32_t index = 0; index < program.Instructions.size(); ++index) {
-    std::unordered_map<std::string, const Operand *> capturedOperands;
-    std::unordered_map<std::string, uint32_t> capturedOperandIndexValues;
-    std::unordered_map<std::string, size_t> capturedOperandPositions;
+    // Local maps for this match — independent per-instruction.
+    std::unordered_map<std::string, Operand> localOperands;
+    std::unordered_map<std::string, Instruction> localInstructions;
+    std::unordered_map<std::string, uint32_t> localIndexValues;
+
     if (!MatchInstruction(program.Instructions[index], pattern,
-                          capturedOperands, capturedOperandIndexValues,
-                          capturedOperandPositions, {}, {}))
+                          localOperands, localInstructions, localIndexValues,
+                          captures, {}))
       continue;
 
     MatchResult result;
@@ -410,15 +382,9 @@ std::vector<MatchResult> CollectMatches(const Program &program,
     result.Instruction = &program.Instructions[index];
     result.RangeStartIndex = index;
     result.RangeEndIndex = index;
-    result.CapturedOperands = std::move(capturedOperands);
-    result.CapturedOperandIndexValues =
-      std::move(capturedOperandIndexValues);
-    result.CapturedOperandPositions = std::move(capturedOperandPositions);
-    if (!pattern.CaptureName.empty()) {
-      result.CapturedInstructions[pattern.CaptureName] =
-          &program.Instructions[index];
-      result.CapturedInstructionIndices[pattern.CaptureName] = index;
-    }
+    result.operands = std::move(localOperands);
+    result.instructions = std::move(localInstructions);
+    result.indexValues = std::move(localIndexValues);
     matches.push_back(std::move(result));
   }
   return matches;
@@ -426,7 +392,8 @@ std::vector<MatchResult> CollectMatches(const Program &program,
 
 std::vector<MatchResult>
 CollectSequenceMatches(const Program &program,
-                       const std::vector<InstructionMatch> &patterns) {
+                       const std::vector<InstructionMatch> &patterns,
+                       CaptureStore &captures) {
   std::vector<MatchResult> matches;
   if (patterns.empty() || patterns.size() > program.Instructions.size()) {
     return matches;
@@ -435,11 +402,11 @@ CollectSequenceMatches(const Program &program,
   const uint32_t limit =
       static_cast<uint32_t>(program.Instructions.size() - patterns.size() + 1);
   for (uint32_t startIndex = 0; startIndex < limit; ++startIndex) {
-    std::unordered_map<std::string, const Operand *> capturedOperands;
-    std::unordered_map<std::string, uint32_t> capturedOperandIndexValues;
-    std::unordered_map<std::string, size_t> capturedOperandPositions;
-    std::unordered_map<std::string, const Instruction *> capturedInstructions;
-    std::unordered_map<std::string, uint32_t> capturedInstructionIndices;
+    // Local maps for this sequence match — independent per-sequence.
+    std::unordered_map<std::string, Operand> localOperands;
+    std::unordered_map<std::string, Instruction> localInstructions;
+    std::unordered_map<std::string, uint32_t> localIndexValues;
+
     bool matched = true;
 
     for (uint32_t patternIndex = 0; patternIndex < patterns.size();
@@ -448,32 +415,16 @@ CollectSequenceMatches(const Program &program,
       const Instruction &instruction = program.Instructions[instructionIndex];
       const InstructionMatch &pattern = patterns[patternIndex];
 
-      std::unordered_map<std::string, const Operand *> stepCapturedOperands;
-      std::unordered_map<std::string, uint32_t> stepCapturedOperandIndexValues;
-      std::unordered_map<std::string, size_t> stepCapturedOperandPositions;
-      if (!MatchInstruction(instruction, pattern, stepCapturedOperands,
-                            stepCapturedOperandIndexValues,
-                            stepCapturedOperandPositions,
-                            capturedOperands, capturedOperandIndexValues)) {
+      if (!MatchInstruction(instruction, pattern,
+                            localOperands, localInstructions, localIndexValues,
+                            captures, {})) {
         matched = false;
         break;
       }
 
-      for (const auto &entry : stepCapturedOperands) {
-        capturedOperands[entry.first] = entry.second;
-      }
-
-      for (const auto &entry : stepCapturedOperandIndexValues) {
-        capturedOperandIndexValues[entry.first] = entry.second;
-      }
-
-      for (const auto &entry : stepCapturedOperandPositions) {
-        capturedOperandPositions[entry.first] = entry.second;
-      }
-
       if (!pattern.CaptureName.empty()) {
-        capturedInstructions[pattern.CaptureName] = &instruction;
-        capturedInstructionIndices[pattern.CaptureName] = instructionIndex;
+        localInstructions[pattern.CaptureName] = instruction;
+        localIndexValues[pattern.CaptureName + "_index"] = instructionIndex;
       }
     }
 
@@ -487,12 +438,9 @@ CollectSequenceMatches(const Program &program,
     result.RangeStartIndex = startIndex;
     result.RangeEndIndex =
         startIndex + static_cast<uint32_t>(patterns.size() - 1);
-    result.CapturedOperands = std::move(capturedOperands);
-    result.CapturedOperandIndexValues =
-      std::move(capturedOperandIndexValues);
-    result.CapturedOperandPositions = std::move(capturedOperandPositions);
-    result.CapturedInstructions = std::move(capturedInstructions);
-    result.CapturedInstructionIndices = std::move(capturedInstructionIndices);
+    result.operands = std::move(localOperands);
+    result.instructions = std::move(localInstructions);
+    result.indexValues = std::move(localIndexValues);
     matches.push_back(std::move(result));
   }
 

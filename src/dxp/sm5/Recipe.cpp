@@ -338,10 +338,14 @@ static MatchResult ToRuntimeMatchResult(const RecipeRuleMatch &match) {
   runtimeMatch.Instruction = match.InstructionHandle;
   runtimeMatch.RangeStartIndex = match.RangeStartIndex;
   runtimeMatch.RangeEndIndex = match.RangeEndIndex;
-  runtimeMatch.CapturedOperands = match.CapturedOperands;
-  runtimeMatch.CapturedInstructions = match.CapturedInstructions;
-  runtimeMatch.CapturedInstructionIndices = match.CapturedInstructionIndices;
-  runtimeMatch.CapturedOperandIndexValues = match.CapturedOperandIndexValues;
+  // Copy callback captures into per-match captures for uniform handling.
+  for (const auto &entry : match.CapturedOperands) {
+    runtimeMatch.operands[entry.first] = *entry.second;
+  }
+  for (const auto &entry : match.CapturedInstructions) {
+    runtimeMatch.instructions[entry.first] = *entry.second;
+  }
+  runtimeMatch.indexValues = match.CapturedOperandIndexValues;
   return runtimeMatch;
 }
 
@@ -1155,10 +1159,8 @@ static bool CompileRule(const RecipeRule &ruleModel,
     rule.Emit.push_back(std::move(instruction));
   }
 
-  if (!ValidateRuleCaptureReferences(ruleModel, error)) {
-    return false;
-  }
-
+  // Capture references were validated during recipe parsing
+  // (RecipeParse.cpp), so no need to re-validate here.
   rule.Predicate = ruleModel.Predicate;
 
   return true;
@@ -1210,8 +1212,8 @@ static bool EvaluateRuleMatchCallback(const RuntimeRule &rule,
   error.clear();
   matches.clear();
   if (!rule.MatchCallback) {
-    matches = rule.HasMatchSequence ? CollectSequenceMatches(program, rule.MatchSequence)
-                                    : CollectMatches(program, rule.Match);
+    matches = rule.HasMatchSequence ? CollectSequenceMatches(program, rule.MatchSequence, context.captures)
+                                    : CollectMatches(program, rule.Match, context.captures);
     return true;
   }
 
@@ -1219,6 +1221,8 @@ static bool EvaluateRuleMatchCallback(const RuntimeRule &rule,
     const auto callbackMatches = rule.MatchCallback(program, context);
     matches.reserve(callbackMatches.size());
     for (const RecipeRuleMatch &match : callbackMatches) {
+      // Captures are copied into MatchResult via ToRuntimeMatchResult,
+      // then moved into context.captures before BuildRewriteInstructions.
       matches.push_back(ToRuntimeMatchResult(match));
     }
     return true;
@@ -1277,10 +1281,14 @@ static bool EvaluateRuleRewriteCallback(const RuntimeRule &rule,
     publicMatch.InstructionHandle = match.Instruction;
     publicMatch.RangeStartIndex = match.RangeStartIndex;
     publicMatch.RangeEndIndex = match.RangeEndIndex;
-    publicMatch.CapturedOperands = match.CapturedOperands;
-    publicMatch.CapturedInstructions = match.CapturedInstructions;
-    publicMatch.CapturedInstructionIndices = match.CapturedInstructionIndices;
-    publicMatch.CapturedOperandIndexValues = match.CapturedOperandIndexValues;
+    // Populate from context.captures (MatchResult no longer has capture maps).
+    for (const auto &entry : context.captures.operands) {
+      publicMatch.CapturedOperands[entry.first] = &entry.second;
+    }
+    for (const auto &entry : context.captures.instructions) {
+      publicMatch.CapturedInstructions[entry.first] = &entry.second;
+    }
+    publicMatch.CapturedOperandIndexValues = context.captures.indexValues;
 
     const auto callbackActions = rule.RewriteCallback(program, publicMatch, context);
     actions.reserve(callbackActions.size());
@@ -2112,13 +2120,14 @@ static bool InstantiateOperand(const Operand &operandTemplate,
                                std::string &error,
                                size_t emitOperandIndex = 0) {
   if (!operandTemplate.CaptureName.empty()) {
-    const Operand *capturedOperand =
-        match.GetCapturedOperand(operandTemplate.CaptureName);
-    if (capturedOperand == nullptr) {
+    const auto capIt = context.captures.operands.find(operandTemplate.CaptureName);
+    if (capIt == context.captures.operands.end()) {
       error = path + ": missing captured operand '" +
               operandTemplate.CaptureName + "'";
       return false;
     }
+    const Operand &capturedOperand = capIt->second;
+    const OperandRole capturedRole = capturedOperand.Role;
 
     if (operandTemplate.HasCaptureFieldProjection()) {
       const std::vector<uint32_t> literalIndices = operandTemplate.Indices;
@@ -2127,20 +2136,16 @@ static bool InstantiateOperand(const Operand &operandTemplate,
 
       operand = operandTemplate;
       if (operandTemplate.CaptureType) {
-        operand.Type = capturedOperand->Type;
+        operand.Type = capturedOperand.Type;
       }
       if (operandTemplate.CaptureComponents) {
-        operand.NumComponents = capturedOperand->NumComponents;
-        operand.ComponentMode = capturedOperand->ComponentMode;
+        operand.NumComponents = capturedOperand.NumComponents;
+        operand.ComponentMode = capturedOperand.ComponentMode;
 
         // Apply role-based component mode conversion with context-aware
         // heuristics: emit dst mask > match dst mask > source swizzle.
-        const auto posIt =
-            match.CapturedOperandPositions.find(operandTemplate.CaptureName);
-        if (posIt != match.CapturedOperandPositions.end() &&
-            match.Instruction != nullptr) {
+        if (match.Instruction != nullptr) {
           // Use the stored role from capture time.
-          const OperandRole capturedRole = capturedOperand->GetOperandRole();
           // Emit operand 0 is destination; operands 1+ are sources.
           const OperandRole emitRole =
               (emitOperandIndex == 0) ? OperandRole::Destination
@@ -2164,31 +2169,31 @@ static bool InstantiateOperand(const Operand &operandTemplate,
           if (contextMask == 0) {
             const uint32_t selMode =
                 DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(
-                    capturedOperand->ComponentMode);
+                    capturedOperand.ComponentMode);
             if (selMode == static_cast<uint32_t>(
                 D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE)) {
-              contextMask = ExtractSwizzleUniqueComponents(*capturedOperand);
+              contextMask = ExtractSwizzleUniqueComponents(capturedOperand);
             }
           }
 
           ConvertComponentModeForRoleChange(
               capturedRole, emitRole,
-              capturedOperand->NumComponents,
-              capturedOperand->ComponentMode,
+              capturedOperand.NumComponents,
+              capturedOperand.ComponentMode,
               contextMask,
               operand.NumComponents, operand.ComponentMode);
         }
       }
       if (operandTemplate.CaptureModifier) {
-        operand.Modifier = capturedOperand->Modifier;
+        operand.Modifier = capturedOperand.Modifier;
       }
       if (operandTemplate.CaptureIndices) {
-        operand.IndexEntries = capturedOperand->IndexEntries;
-        operand.Indices = capturedOperand->Indices;
-        operand.RelativeOperand = capturedOperand->RelativeOperand;
+        operand.IndexEntries = capturedOperand.IndexEntries;
+        operand.Indices = capturedOperand.Indices;
+        operand.RelativeOperand = capturedOperand.RelativeOperand;
       }
       if (operandTemplate.CaptureImmediates) {
-        operand.ImmediateValues = capturedOperand->ImmediateValues;
+        operand.ImmediateValues = capturedOperand.ImmediateValues;
       }
 
       // Literal indices/immediates override replayed values when provided.
@@ -2199,7 +2204,7 @@ static bool InstantiateOperand(const Operand &operandTemplate,
         operand.ImmediateValues = literalImmediates;
       }
     } else {
-      operand = *capturedOperand;
+      operand = capturedOperand;
       return true;
     }
   }
@@ -2292,8 +2297,11 @@ static bool InstantiateOperand(const Operand &operandTemplate,
           &indexEntry - operand.IndexEntries.data();
 
       if (!indexEntry.MatchCaptureName.empty()) {
-        const uint32_t *capturedOperandIndex =
-            match.GetCapturedOperandIndexValue(indexEntry.MatchCaptureName);
+        const uint32_t *capturedOperandIndex = nullptr;
+        const auto idxIt = context.captures.indexValues.find(indexEntry.MatchCaptureName);
+        if (idxIt != context.captures.indexValues.end()) {
+          capturedOperandIndex = &idxIt->second;
+        }
         if (capturedOperandIndex == nullptr) {
           error = path + ".indices[" + std::to_string(indexPosition) +
                   "]: missing captured operand index '" +
@@ -2777,6 +2785,14 @@ ExecuteRewriteRules(Program &program, const std::string &stepName,
         SelectMatchIndices(matches, rule.ApplicationMode);
 
     if (!rule.RewriteCallback && !IsMutatingRewriteMode(rule.RewriteMode)) {
+      // Even for non-mutating rules, move captures into context for
+      // cross-step reuse by subsequent rules.
+      if (!selectedMatches.empty()) {
+        const auto &lastMatch = matches[selectedMatches.back()];
+        context.captures.operands.insert(lastMatch.operands.begin(), lastMatch.operands.end());
+        context.captures.instructions.insert(lastMatch.instructions.begin(), lastMatch.instructions.end());
+        context.captures.indexValues.insert(lastMatch.indexValues.begin(), lastMatch.indexValues.end());
+      }
       for (uint32_t selectedIndex : selectedMatches) {
         const auto &match = matches[selectedIndex];
         bool shouldApply = true;
@@ -2807,6 +2823,12 @@ ExecuteRewriteRules(Program &program, const std::string &stepName,
       if (!shouldApply) {
         continue;
       }
+
+      // Merge per-match captures into global context for BuildRewriteInstructions.
+      // Use insert (merge) to preserve captures from previous steps.
+      context.captures.operands.insert(match.operands.begin(), match.operands.end());
+      context.captures.instructions.insert(match.instructions.begin(), match.instructions.end());
+      context.captures.indexValues.insert(match.indexValues.begin(), match.indexValues.end());
 
       std::vector<RewriteAction> localActions;
       std::string error;
@@ -3354,6 +3376,7 @@ bool ExecuteRecipe(Program &program, const Recipe &recipe,
                       const RecipeStepResult &,
                       RecipeContext &)> *afterStep) {
   ScopedProgramBinding boundProgram(context, program);
+  context.captures.clear();
   context.ReservedTempBase = 0;
   context.ReservedTempCount = 0;
   context.TempBindings.clear();
