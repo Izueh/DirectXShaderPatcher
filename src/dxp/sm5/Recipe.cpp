@@ -2775,7 +2775,7 @@ ExecuteRewriteRules(Program &program, const std::string &stepName,
     }
     const bool matchedRule = !matches.empty();
     if (!ruleModel.Name.empty()) {
-      context.SetState<bool>(ruleModel.Name, matchedRule);
+      context.State[ruleModel.Name] = matchedRule;
     }
     result.MatchCount += static_cast<uint32_t>(matches.size());
     ruleReport.MatchCount = static_cast<uint32_t>(matches.size());
@@ -2963,7 +2963,7 @@ RecipeStep MakeCheckShaderVersionStep(std::string name, uint32_t majorVersion,
     const Program &program = *context.ProgramHandle;
     const bool matched = program.MajorVersion == majorVersion &&
                          program.MinorVersion == minorVersion;
-    context.SetState<bool>(stepName, matched);
+    context.State[stepName] = matched;
     if (matched) {
       return MakeRecipeStepSuccess(false, 1);
     }
@@ -2993,7 +2993,7 @@ RecipeStep MakeCheckOpcodeCountStep(std::string name, std::string opcode,
 
     Opcode parsedOpcode;
     if (!ParseOpcode(opcode, parsedOpcode)) {
-      context.SetState<bool>(stepName, false);
+      context.State[stepName] = false;
       return MakeRecipeStepFailure(context,
                                    "Unknown SM5 opcode in step '" + stepName +
                                        "': " + opcode);
@@ -3002,7 +3002,7 @@ RecipeStep MakeCheckOpcodeCountStep(std::string name, std::string opcode,
     const uint32_t count =
         CountOpcodeMatches(*context.ProgramHandle, parsedOpcode);
     const bool matched = MatchesOpcodeCount(count, expectedCount);
-    context.SetState<bool>(stepName, matched);
+    context.State[stepName] = matched;
     if (matched) {
       return MakeRecipeStepSuccess(false, count > 0 ? 1u : 0u);
     }
@@ -3032,7 +3032,7 @@ RecipeStep MakeCheckResourceCountStep(std::string name,
     const int32_t resourceCount =
         static_cast<int32_t>(context.ProgramHandle->Resources.size());
     const bool matched = resourceCount >= expectedResourceCount;
-    context.SetState<bool>(stepName, matched);
+    context.State[stepName] = matched;
     if (matched) {
       return MakeRecipeStepSuccess(false, resourceCount > 0 ? 1u : 0u);
     }
@@ -3371,11 +3371,6 @@ bool ExecuteRecipe(Program &program, const Recipe &recipe,
   context.SamplerBindings.clear();
   context.UavBindings.clear();
 
-  for (const auto &input : context.Inputs) {
-    if (!context.HasVariable(input.first)) {
-      context.Variables[input.first] = input.second;
-    }
-  }
   context.HasInitialVariablesSnapshot = false;
   context.SnapshotInitialVariables();
 
@@ -3402,7 +3397,7 @@ bool ExecuteRecipe(Program &program, const Recipe &recipe,
         stepReport.Required = step.AbortOnFailure;
         report->Steps.push_back(std::move(stepReport));
       }
-      context.SetState<bool>(step.Name, false);
+      context.State[step.Name] = false;
       if (afterStep != nullptr && *afterStep) {
         RecipeStepResult skipped;
         skipped.Success = true;
@@ -3413,7 +3408,7 @@ bool ExecuteRecipe(Program &program, const Recipe &recipe,
 
     auto result = ExecuteRecipeStep(program, step, context);
     if (context.State.find(step.Name) == context.State.end()) {
-      context.SetState<bool>(step.Name, result.Success);
+      context.State[step.Name] = result.Success;
     }
     if (afterStep != nullptr && *afterStep) {
       (*afterStep)(step.Name, result, context);
@@ -3471,11 +3466,6 @@ RecipeStepResult ExecuteRecipe(Program &program, const Recipe &recipe,
   context.SamplerBindings.clear();
   context.UavBindings.clear();
 
-  for (const auto &input : context.Inputs) {
-    if (!context.HasVariable(input.first)) {
-      context.Variables[input.first] = input.second;
-    }
-  }
   context.HasInitialVariablesSnapshot = false;
   context.SnapshotInitialVariables();
 
@@ -3487,13 +3477,13 @@ RecipeStepResult ExecuteRecipe(Program &program, const Recipe &recipe,
 
   for (const auto &step : recipe.GetSteps()) {
     if (!ShouldExecuteStep(step, context)) {
-      context.SetState<bool>(step.Name, false);
+      context.State[step.Name] = false;
       continue;
     }
 
     auto result = ExecuteRecipeStep(program, step, context);
     if (context.State.find(step.Name) == context.State.end()) {
-      context.SetState<bool>(step.Name, result.Success);
+      context.State[step.Name] = result.Success;
     }
     context.TotalRuleMatches += result.MatchCount;
     context.ProgramModified = context.ProgramModified || result.Changed;

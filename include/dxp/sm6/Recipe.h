@@ -20,6 +20,7 @@ enum class DxilRecipeRuleApplicationMode {
 
 /// @brief Supplies optional inputs and initial state for DXIL recipe
 /// execution.
+/// TODO: Rename `inputs` → `variables` to match SM5 redesign.
 struct DxilRecipeExecutionOptions {
   bool traceEnabled = false;
   std::unordered_map<std::string, std::any> inputs;
@@ -79,6 +80,8 @@ struct DxilRecipeStepCondition {
 };
 
 /// @brief Carries mutable state across DXIL recipe execution.
+/// TODO: Merge `inputs` → `variables`, remove `SetInput()`/`FindInput()`,
+///       make `SetState()` internal-only (same pattern as SM5 redesign).
 struct DxilRecipeContext {
   llvm::Module *module = nullptr;
   hlsl::DxilModule *dxilModule = nullptr;

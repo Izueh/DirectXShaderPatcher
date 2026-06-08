@@ -3,10 +3,12 @@
 #include "dxp/PatchReport.h"
 #include "Recipe.h"
 
+#include <any>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace dxp::sm5 {
@@ -18,6 +20,22 @@ struct PatchResult {
   std::string Error;
   RecipeContext RecipeContext;
   dxp::PatchReport Report;
+
+  /// Exported captured operands (keyed by capture name). Populated when the
+  /// recipe defines an export of kind `captured_operands`.
+  std::unordered_map<std::string, Operand> captured_operands;
+  /// Exported captured instructions (keyed by capture name). Populated when
+  /// the recipe defines an export of kind `captured_instructions`.
+  std::unordered_map<std::string, Instruction> captured_instructions;
+  /// Exported captured index values (keyed by capture name). Populated when
+  /// the recipe defines an export of kind `captured_index_values`.
+  std::unordered_map<std::string, uint32_t> captured_index_values;
+  /// Exported variables (keyed by variable name). Populated when the recipe
+  /// defines an export of kind `variables`.
+  std::unordered_map<std::string, std::any> variables;
+  /// Exported state (keyed by state name). Populated when the recipe defines
+  /// an export of kind `state`.
+  std::unordered_map<std::string, std::any> state;
 };
 
 /// @brief Optional callbacks for mutating/observing context during execution.

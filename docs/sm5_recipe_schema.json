@@ -15,6 +15,10 @@
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/$defs/step" }
+    },
+    "exports": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/recipeExport" }
     }
   },
   "$defs": {
@@ -30,7 +34,6 @@
     "stepCondition": {
       "oneOf": [
         { "$ref": "#/$defs/stateCondition" },
-        { "$ref": "#/$defs/inputCondition" },
         { "$ref": "#/$defs/andCondition" },
         { "$ref": "#/$defs/orCondition" },
         { "$ref": "#/$defs/eqCondition" },
@@ -47,15 +50,6 @@
       "required": ["state"],
       "properties": {
         "state": { "type": "string", "minLength": 1 },
-        "not": { "type": "boolean", "default": false }
-      }
-    },
-    "inputCondition": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["input"],
-      "properties": {
-        "input": { "type": "string", "minLength": 1 },
         "not": { "type": "boolean", "default": false }
       }
     },
@@ -91,13 +85,9 @@
       "required": ["value"],
       "properties": {
         "state": { "type": "string", "minLength": 1 },
-        "input": { "type": "string", "minLength": 1 },
         "value": { "$ref": "#/$defs/scalar" }
       },
-      "oneOf": [
-        { "required": ["state"] },
-        { "required": ["input"] }
-      ]
+      "required": ["state"]
     },
     "eqCondition": {
       "type": "object",
@@ -529,6 +519,27 @@
         "capture": { "type": "string" },
         "match_capture": { "type": "string" }
       }
+    },
+    "recipeExport": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "captured_operands",
+            "captured_instructions",
+            "captured_index_values",
+            "variables",
+            "state"
+          ]
+        },
+        "keys": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["kind"]
     }
   }
 }

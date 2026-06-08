@@ -706,6 +706,65 @@ PatchResult PatchContainer(const std::vector<uint8_t> &inputContainer,
     return result;
   }
 
+  // Populate typed exports.
+  for (const auto &exp : recipe.GetExports()) {
+    if (exp.keys.empty()) {
+      // Export all.
+      switch (exp.kind) {
+        case RecipeExport::Kind::CapturedOperands:
+          result.captured_operands = result.RecipeContext.captures.operands;
+          break;
+        case RecipeExport::Kind::CapturedInstructions:
+          result.captured_instructions =
+              result.RecipeContext.captures.instructions;
+          break;
+        case RecipeExport::Kind::CapturedIndexValues:
+          result.captured_index_values =
+              result.RecipeContext.captures.indexValues;
+          break;
+        case RecipeExport::Kind::Variables:
+          result.variables = result.RecipeContext.Variables;
+          break;
+        case RecipeExport::Kind::State:
+          result.state = result.RecipeContext.State;
+          break;
+      }
+    } else {
+      // Export filtered keys.
+      for (const auto &k : exp.keys) {
+        switch (exp.kind) {
+          case RecipeExport::Kind::CapturedOperands:
+            if (auto it = result.RecipeContext.captures.operands.find(k);
+                it != result.RecipeContext.captures.operands.end())
+              result.captured_operands[k] = it->second;
+            break;
+          case RecipeExport::Kind::CapturedInstructions:
+            if (auto it =
+                    result.RecipeContext.captures.instructions.find(k);
+                it != result.RecipeContext.captures.instructions.end())
+              result.captured_instructions[k] = it->second;
+            break;
+          case RecipeExport::Kind::CapturedIndexValues:
+            if (auto it =
+                    result.RecipeContext.captures.indexValues.find(k);
+                it != result.RecipeContext.captures.indexValues.end())
+              result.captured_index_values[k] = it->second;
+            break;
+          case RecipeExport::Kind::Variables:
+            if (auto it = result.RecipeContext.Variables.find(k);
+                it != result.RecipeContext.Variables.end())
+              result.variables[k] = it->second;
+            break;
+          case RecipeExport::Kind::State:
+            if (auto it = result.RecipeContext.State.find(k);
+                it != result.RecipeContext.State.end())
+              result.state[k] = it->second;
+            break;
+        }
+      }
+    }
+  }
+
   if (!result.RecipeContext.ModuleVerified) {
     std::vector<uint8_t> verifiedShaderBytes;
     if (!RebuildShaderChunk(program, verifiedShaderBytes)) {

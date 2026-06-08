@@ -63,7 +63,7 @@ int main(int argc, char **argv) {
   optionalFailRecipe.AddStep(
       dxp::sm5::MakeCustomRecipeStep(
           "execute_after_required", [](dxp::sm5::RecipeContext &context) {
-            context.SetState<bool>("executed_after_required", true);
+            context.SetVariable<bool>("executed_after_required", true);
             return dxp::sm5::MakeRecipeStepSuccess();
           })
           .When(dxp::sm5::RecipeStepCondition::AllOf(
@@ -73,7 +73,7 @@ int main(int argc, char **argv) {
   optionalFailRecipe.AddStep(
       dxp::sm5::MakeCustomRecipeStep(
           "execute_after_any", [](dxp::sm5::RecipeContext &context) {
-            context.SetState<bool>("executed_after_any", true);
+            context.SetVariable<bool>("executed_after_any", true);
             return dxp::sm5::MakeRecipeStepSuccess();
           })
           .When(dxp::sm5::RecipeStepCondition::AnyOf(
@@ -84,7 +84,7 @@ int main(int argc, char **argv) {
       dxp::sm5::MakeCustomRecipeStep(
           "execute_after_negated_optional",
           [](dxp::sm5::RecipeContext &context) {
-            context.SetState<bool>("executed_after_negated_optional", true);
+            context.SetVariable<bool>("executed_after_negated_optional", true);
             return dxp::sm5::MakeRecipeStepSuccess();
           })
           .When(dxp::sm5::RecipeStepCondition::FromState(
@@ -92,7 +92,7 @@ int main(int argc, char **argv) {
   optionalFailRecipe.AddStep(
       dxp::sm5::MakeCustomRecipeStep(
           "execute_after_callback", [](dxp::sm5::RecipeContext &context) {
-            context.SetState<bool>("executed_after_callback", true);
+            context.SetVariable<bool>("executed_after_callback", true);
             return dxp::sm5::MakeRecipeStepSuccess();
           })
           .When([](dxp::sm5::RecipeContext &context) {
@@ -131,14 +131,14 @@ int main(int argc, char **argv) {
   const bool *optionalImpossible =
       optionalFailResult.RecipeContext.FindState<bool>("optional_impossible");
     const bool *executedAfterRequired =
-      optionalFailResult.RecipeContext.FindState<bool>("executed_after_required");
+      optionalFailResult.RecipeContext.FindVariable<bool>("executed_after_required");
     const bool *executedAfterAny =
-      optionalFailResult.RecipeContext.FindState<bool>("executed_after_any");
+      optionalFailResult.RecipeContext.FindVariable<bool>("executed_after_any");
   const bool *executedAfterNegatedOptional =
-      optionalFailResult.RecipeContext.FindState<bool>(
+      optionalFailResult.RecipeContext.FindVariable<bool>(
           "executed_after_negated_optional");
   const bool *executedAfterCallback =
-      optionalFailResult.RecipeContext.FindState<bool>(
+      optionalFailResult.RecipeContext.FindVariable<bool>(
           "executed_after_callback");
   if (requiredSingleMul == nullptr || !*requiredSingleMul ||
       requiredSequence == nullptr || !*requiredSequence ||

@@ -654,6 +654,7 @@ bool ApplyRewriteActions(Program &program,
         output.insert(output.end(), e.newInstructions.begin(),
                       e.newInstructions.end());
         instrIdx = e.removeEnd + 1;  // advance past consumed range
+        ++eIdx;                       // skip this entry on next iteration
         break;                        // exit inner loop, outer loop continues
       }
       ++eIdx;

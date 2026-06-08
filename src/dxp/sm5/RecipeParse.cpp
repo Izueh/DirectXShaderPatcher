@@ -2307,6 +2307,21 @@ bool ParseRecipeText(const std::string &recipeText, RecipeParseResult &result,
     return false;
   }
 
+  // Parse exports.
+  for (const auto &exp : document.exports) {
+    RecipeExport::Kind kind = RecipeExport::Kind::CapturedOperands;
+    if (exp.kind == "captured_operands") kind = RecipeExport::Kind::CapturedOperands;
+    else if (exp.kind == "captured_instructions") kind = RecipeExport::Kind::CapturedInstructions;
+    else if (exp.kind == "captured_index_values") kind = RecipeExport::Kind::CapturedIndexValues;
+    else if (exp.kind == "variables") kind = RecipeExport::Kind::Variables;
+    else if (exp.kind == "state") kind = RecipeExport::Kind::State;
+    else {
+      result.Error = sourceName + ": unknown export kind '" + exp.kind + "'";
+      return false;
+    }
+    result.Recipe.AddExport(RecipeExport{kind, exp.keys});
+  }
+
   return true;
 }
 

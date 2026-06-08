@@ -39,6 +39,10 @@ struct CaptureStore {
 };
 
 /// @brief Carries mutable state across SM5 recipe execution.
+///
+/// Variables are set via `SetVariable()` and persist across steps.
+/// State is set internally by rule execution and check steps; use
+/// `FindState()` to read. External callers must not modify State directly.
 struct RecipeContext {
   Program *ProgramHandle = nullptr;
   bool TraceEnabled = false;
@@ -60,9 +64,8 @@ struct RecipeContext {
   std::unordered_map<std::string, uint32_t> UavBindings;
   std::string LastError;
   std::vector<std::string> Diagnostics;
-  std::unordered_map<std::string, std::any> Inputs;
   std::unordered_map<std::string, std::any> Variables;
-  std::unordered_map<std::string, std::any> InitialVariables;
+  std::unordered_map<std::string, std::any> InitialVariables;  // internal reset baseline
   bool HasInitialVariablesSnapshot = false;
   std::unordered_map<std::string, std::any> State;
 
@@ -72,29 +75,6 @@ struct RecipeContext {
 
   void AddDiagnostic(std::string message) {
     Diagnostics.push_back(std::move(message));
-  }
-
-  template <typename TValue>
-  void SetInput(const std::string &name, TValue value) {
-    Inputs[name] = std::any(std::move(value));
-    Variables[name] = Inputs[name];
-  }
-
-  template <typename TValue> TValue *FindInput(const std::string &name) {
-    auto it = Inputs.find(name);
-    if (it == Inputs.end()) {
-      return nullptr;
-    }
-    return std::any_cast<TValue>(&it->second);
-  }
-
-  template <typename TValue>
-  const TValue *FindInput(const std::string &name) const {
-    auto it = Inputs.find(name);
-    if (it == Inputs.end()) {
-      return nullptr;
-    }
-    return std::any_cast<TValue>(&it->second);
   }
 
   template <typename TValue>
@@ -115,10 +95,6 @@ struct RecipeContext {
     if (it != Variables.end()) {
       return std::any_cast<TValue>(&it->second);
     }
-    auto inputIt = Inputs.find(name);
-    if (inputIt != Inputs.end()) {
-      return std::any_cast<TValue>(&inputIt->second);
-    }
     return nullptr;
   }
 
@@ -128,10 +104,6 @@ struct RecipeContext {
     if (it != Variables.end()) {
       return std::any_cast<TValue>(&it->second);
     }
-    auto inputIt = Inputs.find(name);
-    if (inputIt != Inputs.end()) {
-      return std::any_cast<TValue>(&inputIt->second);
-    }
     return nullptr;
   }
 
@@ -139,10 +111,6 @@ struct RecipeContext {
     auto it = Variables.find(name);
     if (it != Variables.end()) {
       return &it->second;
-    }
-    auto inputIt = Inputs.find(name);
-    if (inputIt != Inputs.end()) {
-      return &inputIt->second;
     }
     return nullptr;
   }
@@ -159,11 +127,6 @@ struct RecipeContext {
       SnapshotInitialVariables();
     }
     Variables = InitialVariables;
-  }
-
-  template <typename TValue>
-  void SetState(const std::string &name, TValue value) {
-    State[name] = std::any(std::move(value));
   }
 
   template <typename TValue> TValue *FindState(const std::string &name) {
@@ -2390,18 +2353,66 @@ RecipeStep MakeAddSamplerStep(std::string id, RecipeSamplerDecl decl);
 
 RecipeStep MakeAddUavStep(std::string id, RecipeUavDecl decl);
 
+/// @brief Declares one typed export from a recipe execution.
+struct RecipeExport {
+  /// @brief Export data category.
+  enum class Kind {
+    CapturedOperands,     ///< All captured operands
+    CapturedInstructions, ///< All captured instructions
+    CapturedIndexValues,  ///< All captured index/immediate values
+    Variables,            ///< Recipe variables
+    State,                ///< Recipe context state
+  };
+
+  Kind kind = Kind::CapturedOperands;
+  std::vector<std::string> keys;  ///< Empty = export all; non-empty = filter to these keys
+
+  RecipeExport &Keys(std::vector<std::string> k) & {
+    keys = std::move(k);
+    return *this;
+  }
+  RecipeExport &&Keys(std::vector<std::string> k) && {
+    keys = std::move(k);
+    return std::move(*this);
+  }
+  RecipeExport &Keys(std::initializer_list<std::string> k) & {
+    keys = k;
+    return *this;
+  }
+  RecipeExport &&Keys(std::initializer_list<std::string> k) && {
+    keys = k;
+    return std::move(*this);
+  }
+};
+
 /// @brief Owns the declarative SM5 recipe definition.
 class Recipe {
 public:
+  /// @brief Appends a step to the recipe.
   Recipe &AddStep(RecipeStep step) {
     steps_.push_back(std::move(step));
     return *this;
   }
 
+  /// @brief Returns the list of recipe steps in execution order.
   const std::vector<RecipeStep> &GetSteps() const { return steps_; }
+
+  /// @brief Appends a typed export to the recipe.
+  Recipe &AddExport(RecipeExport export_) & {
+    exports_.push_back(std::move(export_));
+    return *this;
+  }
+  Recipe &&AddExport(RecipeExport export_) && {
+    exports_.push_back(std::move(export_));
+    return std::move(*this);
+  }
+
+  /// @brief Returns the list of recipe exports.
+  const std::vector<RecipeExport> &GetExports() const { return exports_; }
 
 private:
   std::vector<RecipeStep> steps_;
+  std::vector<RecipeExport> exports_;
 };
 
 } // namespace dxp::sm5

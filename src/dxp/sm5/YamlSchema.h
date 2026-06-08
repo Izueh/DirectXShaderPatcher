@@ -224,6 +224,8 @@ struct YamlRecipeDocument {
   uint32_t version = 1;
   std::vector<YamlRule> rewrite_rules;
   std::vector<YamlStep> steps;
+  struct YamlExport { std::string kind; std::vector<std::string> keys; };
+  std::vector<YamlExport> exports;
 
   std::vector<YamlTextureDecl> texture_decls;
   std::vector<YamlInputDecl> input_decls;

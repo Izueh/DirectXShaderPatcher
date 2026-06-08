@@ -50,6 +50,32 @@ Notes:
 - `mode` is valid only for `apply_rules`.
 - `rules` is valid only for `apply_rules`.
 
+## Exports
+
+Recipes may declare typed exports to extract captured data after execution.
+
+Export shape:
+
+- `kind` required: `captured_operands`, `captured_instructions`, `captured_index_values`, `variables`, `state`
+- `keys` optional: array of names; omit for all
+
+Example:
+
+```yaml
+exports:
+  - kind: captured_operands
+    keys: [dst, src]
+  - kind: variables
+  - kind: state
+    keys: [rule_matched]
+```
+
+Export data is available in `PatchResult` fields: `captured_operands`, `captured_instructions`, `captured_index_values`, `variables`, `state`.
+
+## Variables
+
+Variables are set via `SetVariable()` and persist across steps. The `Inputs` map, `SetInput()`, and `FindInput()` have been removed — all input data should use `SetVariable()` instead. `InitialVariables` and `SnapshotInitialVariables()` are internal helpers for `ResetVariables()` and are not part of the public API.
+
 ## Conditional Steps
 
 Any SM5 step may define `if`.
@@ -57,7 +83,6 @@ Any SM5 step may define `if`.
 Condition forms (exactly one per object):
 
 - `state`
-- `input`
 - `and`
 - `or`
 - `eq`
@@ -74,8 +99,7 @@ Optional field:
 Notes:
 
 - `if.state` reads from recipe context state.
-- `if.input` reads from input variables.
-- Comparison forms (`eq`/`ne`/`gt`/`gte`/`lt`/`lte`) require exactly one selector (`state` or `input`) plus literal `value`.
+- Comparison forms (`eq`/`ne`/`gt`/`gte`/`lt`/`lte`) require exactly one selector (`state`) plus literal `value`.
 - Missing state values are treated as `false`.
 
 ## Explicit Check Steps
