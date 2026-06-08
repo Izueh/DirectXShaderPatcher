@@ -346,7 +346,7 @@ Internally, `dxp::sm5` tracks whether each operand position in an instruction is
 | Capture Role | Emit Role | Conversion |
 |---|---|---|
 | Source | Destination | NOSWIZZLE → full mask (xyzw); SELECT_1 → mask with selected bit; SWIZZLE → mask with unique sorted components; MASK → keep as-is |
-| Destination | Source | NOSWIZZLE → keep as-is; single-bit MASK → SELECT_1; multi-bit MASK → SWIZZLE (replicated); SWIZZLE → keep as-is; SELECT_1 → keep as-is |
+| Destination | Source | NOSWIZZLE → keep as-is; single-bit MASK → SELECT_1; multi-bit MASK → SWIZZLE (sequential); SWIZZLE → keep as-is; SELECT_1 → keep as-is |
 | Same role | Same role | Keep as-is |
 
 This ensures that when a captured source operand (e.g., a single-component read from `ult`) is emitted as a destination (e.g., the target of `mov`), the write mask matches the read components.
