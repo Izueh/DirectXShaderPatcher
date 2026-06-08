@@ -123,6 +123,7 @@ Rule fields:
 - `emit` optional
 - `mode` optional: `first`, `last`, `match_all`
 - `required_match` optional
+- `refresh_declarations` optional, defaults to `false`
 
 Removed rule fields:
 
@@ -139,6 +140,56 @@ Rule behavior notes:
 - `match.sequence` cannot be combined with single-instruction match fields in the same `match` object.
 - `match.opcode` and `emit[].opcode` accept canonical SM5 opcode names.
 - Rule outcomes are published into recipe context state under the rule `name`.
+- `refresh_declarations: true` tells the patcher to call `RefreshDeclarations`
+  after the rule applies, updating derived metadata from the instruction stream.
+  Set this on rules that modify DCL instructions.
+
+## Global Capture System
+
+All declarative matching writes captured operands, instructions, and index
+immediates into a global `CaptureStore` as **copies** (not pointers). This
+eliminates thousands of transient `unordered_map` allocations that previously
+occurred per-instruction during `CollectMatches`. Captures survive instruction
+rewrites and are automatically merged into subsequent steps.
+
+### Cross-Step Capture References
+
+`match_capture` references can point to any capture name defined in any rule
+across any step in the recipe. All named identifiers share a single global
+namespace:
+
+| Name type | Where defined | Example |
+|---|---|---|
+| Capture names | `match.Operands[].capture`, `emit[].Operands[].capture` | `dst`, `src` |
+| Match-capture names | `match.Operands[].match_capture`, `emit[].Operands[].match_capture` | `dst` (references a capture) |
+| From-handle names | `emit[].Operands[].from_handle` | `my_texture` |
+| Variable names | `immediates_u32`/`immediates_u64`/`immediates_i32`/`immediates_i64`/`immediates_f32`/`immediates_f64` shorthand array entries (when a value is a non-numeric identifier) | `my_reg` |
+| Step names | `RecipeStep.name` | `step1` |
+| Rule names | `RecipeRule.name` | `rule1` |
+
+### Name Uniqueness
+
+All recipe-defined names must be unique across the entire recipe. Duplicate
+names are rejected at parse time with a clear error message:
+
+```
+duplicate name 'dst' in step 'step1' rule 'rule1'
+```
+
+### Index Capture Storage
+
+`match_capture` on index objects resolves captured index immediates from the
+global store. The old `CapturedInstructionIndices` map and
+`GetCapturedInstructionIndex()` method have been removed — instruction indices
+for sequence matches are now stored in `context.captures.indexValues` under
+the key `<captureName>_index`.
+
+### Capture Fields Projection
+
+`match_capture_fields` and `capture_fields` control which operand fields are
+replayed from captures. When `capture_fields: { components: true }` is used on
+an emit operand, the component mode is automatically converted based on the
+role change (source → destination, etc.). See the [Operand Roles](#operand-roles-and-component-mode-conversion) section for details.
 
 ## Operand Roles and Component Mode Conversion
 
@@ -204,6 +255,7 @@ Notes:
 - YAML selectors use `components.kind` + `components.value`; direct `mask`/`swizzle`/`select` YAML fields are not part of schema version `1`.
 - Emit operands may use explicit `indices` or shorthand immediates arrays, but not both on the same operand.
 - Shorthand immediates arrays are emit-only and rejected on match operands.
+- `match_capture` and `capture` names must be unique across the entire recipe (see [Global Capture System](#global-capture-system)).
 
 `indices` is an ordered list of index objects.
 
@@ -218,9 +270,9 @@ Index object fields:
 
 Notes:
 
-- `immediate_lo` and `immediate_hi` accept integer literals.
-- Transitional replay-object form is accepted for `immediate_lo`: `immediate_lo: { from: <index_capture_name> }`.
-- Replay-object form for `immediate_hi` is unsupported.
+- `immediate_lo` and `immediate_hi` accept integer literals (parsed from YAML strings).
+- `match_capture` on index objects resolves captured index immediates from the
+global `CaptureStore`. May reference captures from any rule in any step.
 
 ## Declaration Steps
 

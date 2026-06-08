@@ -375,7 +375,8 @@
           "type": "string",
           "enum": ["first", "last", "match_all"]
         },
-        "required_match": { "type": "boolean", "default": false }
+        "required_match": { "type": "boolean", "default": false },
+        "refresh_declarations": { "type": "boolean", "default": false }
       }
     },
     "instructionMatch": {
@@ -507,19 +508,7 @@
             "immediate64_plus_relative"
           ]
         },
-        "immediate_lo": {
-          "oneOf": [
-            { "$ref": "#/$defs/scalar" },
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["from"],
-              "properties": {
-                "from": { "type": "string", "minLength": 1 }
-              }
-            }
-          ]
-        },
+        "immediate_lo": { "$ref": "#/$defs/scalar" },
         "immediate_hi": { "$ref": "#/$defs/scalar" },
         "capture": { "type": "string" },
         "match_capture": { "type": "string" }
