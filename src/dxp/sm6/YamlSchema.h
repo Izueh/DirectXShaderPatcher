@@ -8,11 +8,6 @@
 
 namespace dxp::sm6 {
 
-// ---------------------------------------------------------------------------
-// YAML schema structs — mirror the declarative recipe format
-// All field names match C++ member names — automatic reflection works
-// ---------------------------------------------------------------------------
-
 struct YamlRecipeBindingModel {
   std::string bind = "auto";
   unsigned space = 0;
@@ -163,11 +158,6 @@ struct YamlRecipeDocumentModel {
 };
 
 } // namespace dxp::sm6
-
-// ---------------------------------------------------------------------------
-// glaze::meta for SM6 structs with non-matching YAML keys
-// Placed inside dxp::sm6 for ADL compatibility
-// ---------------------------------------------------------------------------
 
 template <>
 struct glz::meta<dxp::sm6::YamlRecipeStepModel> {

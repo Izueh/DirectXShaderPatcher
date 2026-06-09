@@ -28,7 +28,6 @@ using OpcodeType = uint32_t;
 using ExtendedOpcodeType = uint32_t;
 using ProgramType = uint32_t;
 
-// Mirrored SM5 token values used by public API defaults.
 constexpr OperandType kOperandTypeTemp = 0u;
 constexpr OperandType kOperandTypeImmediate32 = 4u;
 constexpr OperandType kOperandTypeImmediate64 = 5u;
