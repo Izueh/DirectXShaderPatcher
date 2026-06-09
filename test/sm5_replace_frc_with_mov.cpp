@@ -37,7 +37,7 @@ static std::string DefaultOutPath(const std::string &inPath) {
   return DefaultArtifactOutputPath(inPath, ".sm5.mov.patched.cso");
 }
 
-} // namespace
+}
 
 int main(int argc, char **argv) {
   if (argc != 2 && argc != 3) {

@@ -16,11 +16,11 @@
 #include <string>
 #include <vector>
 
-// ============================================================================
-// Benchmark: BM_CollectMatches
-// Measures single-instruction pattern matching on a loaded program.
-// This is the O(N) match loop that runs once per rule per step.
-// ============================================================================
+
+
+
+
+
 static void BM_CollectMatches(benchmark::State& state) {
   const std::filesystem::path shaderPath = DefaultTestShaderPath();
   const auto containerBytes = LoadShaderBytes(shaderPath);
@@ -32,7 +32,7 @@ static void BM_CollectMatches(benchmark::State& state) {
     return;
   }
 
-  // Build a simple MOV match pattern — matches a common opcode.
+
   dxp::sm5::InstructionMatch pattern;
   pattern.Opcode = dxp::sm5::Opcode{static_cast<uint32_t>(
       D3D10_SB_OPCODE_MOV)};
@@ -47,11 +47,11 @@ static void BM_CollectMatches(benchmark::State& state) {
 }
 BENCHMARK(BM_CollectMatches);
 
-// ============================================================================
-// Benchmark: BM_CollectSequenceMatches
-// Measures multi-pattern sequence matching on a loaded program.
-// This is the O(N×M) match loop — worst case for long instruction streams.
-// ============================================================================
+
+
+
+
+
 static void BM_CollectSequenceMatches(benchmark::State& state) {
   const std::filesystem::path shaderPath = DefaultTestShaderPath();
   const auto containerBytes = LoadShaderBytes(shaderPath);
@@ -63,7 +63,7 @@ static void BM_CollectSequenceMatches(benchmark::State& state) {
     return;
   }
 
-  // Build a two-instruction sequence pattern: MOV followed by MOV.
+
   std::vector<dxp::sm5::InstructionMatch> patterns;
   patterns.reserve(2);
 
@@ -84,11 +84,11 @@ static void BM_CollectSequenceMatches(benchmark::State& state) {
 }
 BENCHMARK(BM_CollectSequenceMatches);
 
-// ============================================================================
-// Benchmark: BM_RefreshDeclarations
-// Measures full declaration refresh (Resources, Samplers, CBuffers, etc.)
-// Called once per recipe step when refresh_declarations is set.
-// ============================================================================
+
+
+
+
+
 static void BM_RefreshDeclarations(benchmark::State& state) {
   const std::filesystem::path shaderPath = DefaultTestShaderPath();
   const auto containerBytes = LoadShaderBytes(shaderPath);
@@ -100,7 +100,7 @@ static void BM_RefreshDeclarations(benchmark::State& state) {
     return;
   }
 
-  // Make a working copy so we don't mutate the original.
+
   dxp::sm5::Program workingProgram = program;
 
   for (auto _ : state) {
@@ -111,11 +111,11 @@ static void BM_RefreshDeclarations(benchmark::State& state) {
 }
 BENCHMARK(BM_RefreshDeclarations);
 
-// ============================================================================
-// Benchmark: BM_RewriteAndRebuild
-// Measures the worst-case scenario: MatchAll with many matches, each
-// triggering a rewrite and a RebuildMetadata call.
-// ============================================================================
+
+
+
+
+
 static void BM_RewriteAndRebuild(benchmark::State& state) {
   const std::filesystem::path shaderPath = DefaultTestShaderPath();
   const auto containerBytes = LoadShaderBytes(shaderPath);
@@ -127,7 +127,7 @@ static void BM_RewriteAndRebuild(benchmark::State& state) {
     return;
   }
 
-  // Build a MOV match pattern.
+
   dxp::sm5::InstructionMatch pattern;
   pattern.Opcode = dxp::sm5::Opcode{static_cast<uint32_t>(
       D3D10_SB_OPCODE_MOV)};
@@ -140,7 +140,7 @@ static void BM_RewriteAndRebuild(benchmark::State& state) {
     return;
   }
 
-  // Build a replacement MOV instruction (noop rewrite).
+
   dxp::sm5::Instruction replacement = program.Instructions[0];
   replacement.RawTokens.clear();
 
@@ -155,7 +155,7 @@ static void BM_RewriteAndRebuild(benchmark::State& state) {
     actions.push_back(std::move(action));
   }
 
-  // Sort actions by index descending (as the real pipeline does).
+
   std::sort(actions.begin(), actions.end(),
             [](const dxp::sm5::RewriteAction& lhs,
                const dxp::sm5::RewriteAction& rhs) {
@@ -170,11 +170,11 @@ static void BM_RewriteAndRebuild(benchmark::State& state) {
 }
 BENCHMARK(BM_RewriteAndRebuild);
 
-// ============================================================================
-// Benchmark: BM_RebuildShaderChunk
-// Measures full program-to-bytes serialization.
-// Called after every patch execution.
-// ============================================================================
+
+
+
+
+
 static void BM_RebuildShaderChunk(benchmark::State& state) {
   const std::filesystem::path shaderPath = DefaultTestShaderPath();
   const auto containerBytes = LoadShaderBytes(shaderPath);
@@ -195,11 +195,11 @@ static void BM_RebuildShaderChunk(benchmark::State& state) {
 }
 BENCHMARK(BM_RebuildShaderChunk);
 
-// ============================================================================
-// Benchmark: BM_SerializeDxbcContainer
-// Measures full container serialization (chunks + header + offset table).
-// Called once per patch execution.
-// ============================================================================
+
+
+
+
+
 static void BM_SerializeDxbcContainer(benchmark::State& state) {
   const std::filesystem::path shaderPath = DefaultTestShaderPath();
   const auto containerBytes = LoadShaderBytes(shaderPath);
@@ -219,12 +219,12 @@ static void BM_SerializeDxbcContainer(benchmark::State& state) {
 }
 BENCHMARK(BM_SerializeDxbcContainer);
 
-// ============================================================================
-// Benchmark: BM_RecipeCompile
-// Measures recipe compilation cost (CompileRule for all rules).
-// Recipes are compiled once from YAML and executed many times,
-// so this benchmark isolates that one-time cost.
-// ============================================================================
+
+
+
+
+
+
 static void BM_RecipeCompile(benchmark::State& state) {
   const dxp::sm5::Recipe recipe = BuildNoopMovRecipe();
 
@@ -246,21 +246,21 @@ static void BM_RecipeCompile(benchmark::State& state) {
 }
 BENCHMARK(BM_RecipeCompile);
 
-// ============================================================================
-// Benchmark: BM_PatchContainer_end_to_end
-// Measures the full patch pipeline: parse → execute recipe → serialize.
-// Recipe is pre-compiled outside the loop to match real-world usage
-// (YAML parsed once, then executed many times).
-// This is the real-world throughput measurement.
-// ============================================================================
+
+
+
+
+
+
+
 static void BM_PatchContainer_end_to_end(benchmark::State& state) {
   const std::filesystem::path shaderPath = DefaultTestShaderPath();
   const auto containerBytes = LoadShaderBytes(shaderPath);
 
-  // Pre-compile recipe outside the loop (one-time cost).
+
   const dxp::sm5::Recipe recipe = BuildNoopMovRecipe();
 
-  // Parse once outside the loop to isolate execution cost.
+
   dxp::sm5::Program program;
   std::string error;
   if (!ParseShaderToProgram(containerBytes, program, error)) {
@@ -269,7 +269,7 @@ static void BM_PatchContainer_end_to_end(benchmark::State& state) {
   }
 
   for (auto _ : state) {
-    // Re-parse each iteration to measure the full pipeline.
+
     dxp::sm5::Program iterProgram;
     if (!ParseShaderToProgram(containerBytes, iterProgram, error)) {
       state.SkipWithError(error.c_str());
@@ -278,7 +278,7 @@ static void BM_PatchContainer_end_to_end(benchmark::State& state) {
     dxp::sm5::RecipeContext ctx;
     auto result = dxp::sm5::ExecuteRecipe(iterProgram, recipe, ctx);
 
-    // Serialize to complete the full pipeline measurement.
+
     std::vector<uint8_t> shaderBytes;
     dxp::sm5::RebuildShaderChunk(iterProgram, shaderBytes);
 
@@ -295,16 +295,16 @@ static void BM_PatchContainer_end_to_end(benchmark::State& state) {
 }
 BENCHMARK(BM_PatchContainer_end_to_end);
 
-// ============================================================================
-// Benchmark: BM_PatchSequenceMatch_end_to_end
-// Measures end-to-end patching with sequence matching (harder path).
-// Recipe is pre-compiled outside the loop.
-// ============================================================================
+
+
+
+
+
 static void BM_PatchSequenceMatch_end_to_end(benchmark::State& state) {
   const std::filesystem::path shaderPath = DefaultTestShaderPath();
   const auto containerBytes = LoadShaderBytes(shaderPath);
 
-  // Pre-compile recipe outside the loop (one-time cost).
+
   const dxp::sm5::Recipe recipe = BuildSequenceMatchRecipe();
 
   for (auto _ : state) {
@@ -317,7 +317,7 @@ static void BM_PatchSequenceMatch_end_to_end(benchmark::State& state) {
     dxp::sm5::RecipeContext ctx;
     auto result = dxp::sm5::ExecuteRecipe(iterProgram, recipe, ctx);
 
-    // Serialize to complete the full pipeline measurement.
+
     std::vector<uint8_t> shaderBytes;
     dxp::sm5::RebuildShaderChunk(iterProgram, shaderBytes);
 
@@ -334,5 +334,5 @@ static void BM_PatchSequenceMatch_end_to_end(benchmark::State& state) {
 }
 BENCHMARK(BM_PatchSequenceMatch_end_to_end);
 
-// Register a custom main so we can pass benchmark flags.
+
 BENCHMARK_MAIN();

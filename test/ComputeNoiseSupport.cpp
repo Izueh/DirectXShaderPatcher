@@ -782,7 +782,7 @@ static void PruneTrackedInstructionRoots(
   }
 }
 
-} // namespace
+}
 
 unsigned CountIgnNoiseChains(llvm::Function &function) {
   std::vector<IgnNoiseChainMatch> matches;

@@ -557,7 +557,7 @@ static void TraceResourceMessage(bool traceEnabled, const char *message) {
     std::cerr << "[trace] " << message << "\n";
 }
 
-} // namespace
+}
 
 std::string MakeUniqueGlobalName(const Module &module,
                                  const std::string &baseName) {

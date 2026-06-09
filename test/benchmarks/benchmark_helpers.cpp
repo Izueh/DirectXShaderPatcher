@@ -41,24 +41,24 @@ bool ParseShaderToProgram(const std::vector<uint8_t>& containerBytes,
 dxp::sm5::Recipe BuildNoopMovRecipe() {
   dxp::sm5::Recipe recipe;
 
-  // Build a rule that matches MOV instructions and re-emits them unchanged.
-  // This exercises the match + rewrite pipeline without modifying the shader.
+
+
   dxp::sm5::RecipeRule rule;
   rule.Match.Opcode = "mov";
   rule.Emit.emplace_back();
   rule.Emit.front().Opcode = "mov";
   rule.Emit.front().Operands.emplace_back();
-  // Destination operand: capture from matched instruction
+
   rule.Emit.front().Operands[0].Capture = "dst";
   rule.Emit.front().Operands[0].CaptureFields =
       dxp::sm5::RecipeOperandCaptureFields{true, true, true, true, true};
-  // Source operand: capture from matched instruction
+
   rule.Emit.front().Operands.emplace_back();
   rule.Emit.front().Operands[1].Capture = "src";
   rule.Emit.front().Operands[1].CaptureFields =
       dxp::sm5::RecipeOperandCaptureFields{true, true, true, true, true};
 
-  // Add the rule to a step
+
   dxp::sm5::RecipeStep step;
   step.Name = "noop_mov";
   step.Rules.push_back(std::move(rule));
@@ -71,7 +71,7 @@ dxp::sm5::Recipe BuildNoopMovRecipe() {
 dxp::sm5::Recipe BuildSequenceMatchRecipe() {
   dxp::sm5::Recipe recipe;
 
-  // Build a rule that matches a two-instruction sequence: MOV followed by ADD.
+
   dxp::sm5::RecipeRule rule;
   rule.Match.Sequence.emplace_back();
   rule.Match.Sequence[0].Opcode = "mov";
@@ -87,7 +87,7 @@ dxp::sm5::Recipe BuildSequenceMatchRecipe() {
   rule.Match.Sequence[1].Operands[0].CaptureFields =
       dxp::sm5::RecipeOperandCaptureFields{true, true, true, true, true};
 
-  // Re-emit both instructions
+
   rule.Emit.emplace_back();
   rule.Emit[0].Opcode = "mov";
   rule.Emit[0].Operands.emplace_back();
@@ -120,7 +120,7 @@ dxp::sm5::Recipe BuildSequenceMatchRecipe() {
 }
 
 std::filesystem::path DefaultTestShaderPath() {
-  // Use the same shader path as the existing SM5 tests.
-  // This resolves relative to the source directory.
+
+
   return "test/shaders/0x7AFF256C.ps_5_0.cso";
 }

@@ -11,7 +11,7 @@ static unsigned CountOpMatches(llvm::Function &function,
   return CollectDxilCallMatches(function, DxOpCall(opCode), matches);
 }
 
-} // namespace
+}
 
 int main(int argc, char **argv) {
   if (argc != 2) {

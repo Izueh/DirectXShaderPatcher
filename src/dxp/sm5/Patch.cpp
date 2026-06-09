@@ -19,7 +19,7 @@ namespace sm5 {
 
 namespace {
 
-} // anonymous namespace
+}
 
 bool ExecuteRecipe(Program &program, const Recipe &recipe,
            RecipeContext &context, dxp::PatchReport *report = nullptr,
@@ -676,7 +676,7 @@ ParseProgramForInspection(const std::vector<uint8_t> &inputContainer,
   return true;
 }
 
-} // namespace
+}
 
 PatchResult PatchContainer(const std::vector<uint8_t> &inputContainer,
                            const Recipe &recipe, const RecipeContext &context) {
@@ -710,10 +710,10 @@ PatchResult PatchContainer(const std::vector<uint8_t> &inputContainer,
     return result;
   }
 
-  // Populate typed exports into PatchReport::Exports.
+
   for (const auto &exp : recipe.GetExports()) {
     if (exp.keys.empty()) {
-      // Export all.
+
       switch (exp.kind) {
         case RecipeExport::Kind::CapturedOperands:
           for (const auto &entry : result.RecipeContext.captures.operands) {
@@ -737,7 +737,7 @@ PatchResult PatchContainer(const std::vector<uint8_t> &inputContainer,
           break;
       }
     } else {
-      // Export filtered keys.
+
       for (const auto &k : exp.keys) {
         switch (exp.kind) {
           case RecipeExport::Kind::CapturedOperands:
@@ -889,5 +889,5 @@ bool InspectProgram(const uint8_t *inputData, size_t inputSize,
                         inspection, error);
 }
 
-} // namespace sm5
-} // namespace dxp
+}
+}

@@ -148,7 +148,7 @@ static bool ValidatePatchedContainerOrReport(std::vector<uint8_t> &container) {
   return true;
 }
 
-} // namespace
+}
 
 DxilLoadedShaderState::~DxilLoadedShaderState() {
   if (module && module->HasDxilModule()) {

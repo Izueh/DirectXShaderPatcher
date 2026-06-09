@@ -323,7 +323,7 @@ static uint32_t EncodeInstructionToken0(const Instruction &instruction,
   return token0;
 }
 
-} // namespace
+}
 
 std::vector<uint32_t> EncodeOperand(const Operand &operand) {
   return EncodeOperandImpl(operand);
@@ -410,5 +410,5 @@ bool RebuildShaderChunk(const Program &program, std::vector<uint8_t> &outData) {
   return SerializeProgram(program, outData);
 }
 
-} // namespace sm5
-} // namespace dxp
+}
+}

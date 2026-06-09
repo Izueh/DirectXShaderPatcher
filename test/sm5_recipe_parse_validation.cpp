@@ -37,7 +37,7 @@ static bool IsReservedOpcode(uint32_t opcodeValue) {
   }
 }
 
-} // namespace
+}
 
 int main() {
   for (uint32_t opcodeValue = 0; opcodeValue < D3D10_SB_NUM_OPCODES;

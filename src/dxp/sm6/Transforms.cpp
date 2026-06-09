@@ -1352,7 +1352,7 @@ static bool SupportsTextureSampleInjection(const TextureResourceDesc &desc) {
          desc.vectorWidth == 4 && !desc.isReadWrite;
 }
 
-} // namespace
+}
 
 bool FindDxilCallMatch(llvm::Function &function, const DxilCallPattern &pattern,
                        DxilMatchResult &result, hlsl::DxilModule *dxilModule) {

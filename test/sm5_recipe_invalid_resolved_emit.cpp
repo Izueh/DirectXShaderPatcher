@@ -12,7 +12,7 @@ static bool Contains(const std::string &text, const std::string &needle) {
   return text.find(needle) != std::string::npos;
 }
 
-} // namespace
+}
 
 int main(int argc, char **argv) {
   if (argc != 2) {

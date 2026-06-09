@@ -266,7 +266,7 @@ static bool ShouldExecuteStep(const DxilRecipeStep &step,
   return true;
 }
 
-} // namespace
+}
 
 DxilRecipeStepResult MakeRecipeStepSuccess(bool changed, unsigned matchCount,
                                            bool invalidatedAnalyses,

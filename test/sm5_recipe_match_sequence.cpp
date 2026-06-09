@@ -52,7 +52,7 @@ static int CountOpcode(const dxp::sm5::ProgramInspection &program,
   return count;
 }
 
-} // namespace
+}
 
 int main(int argc, char **argv) {
   if (argc != 2) {

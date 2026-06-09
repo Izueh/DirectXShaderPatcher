@@ -8,7 +8,7 @@ namespace dxp::sm5 {
 
 namespace {
 
-} // anonymous namespace
+}
 
 bool Operand::Equals(const CapturedOperand &other) const {
   if (Type != other.Type ||
@@ -322,7 +322,7 @@ bool MatchesOperand(const Operand &operand, const OperandMatch &pattern) {
   return true;
 }
 
-} // namespace
+}
 
 static bool MatchOperand(
     const Operand &operand, const OperandMatch &pattern,
@@ -414,13 +414,13 @@ static bool MatchInstruction(
       return false;
 
     if (!operandPattern.MatchAgainstCapture.empty()) {
-      // Check local captures first (from this instruction's earlier operands)
+
       const auto localIt = localOperands.find(operandPattern.MatchAgainstCapture);
       if (localIt != localOperands.end()) {
         if (!operand.Equals(localIt->second)) {
           return false;
         }
-      // Fall back to global captures for cross-step persistence
+
       } else {
         const auto globalIt = globalCaptures.operands.find(operandPattern.MatchAgainstCapture);
         if (globalIt != globalCaptures.operands.end()) {
@@ -671,7 +671,7 @@ static RewriteEntry NormalizeEntry(const RewriteAction &action) {
     e.newInstructions = std::move(action.NewInstructions);
     break;
   case RewriteActionType::InsertAfter:
-    // InsertAfter at X = InsertBefore at X+1
+
     e.pos = action.InsertPosition + 1;
     e.type = static_cast<uint8_t>(RewriteActionType::InsertBefore);
     e.priority = 0;
@@ -681,7 +681,7 @@ static RewriteEntry NormalizeEntry(const RewriteAction &action) {
   return e;
 }
 
-} // namespace
+}
 
 bool ApplyRewriteActions(Program &program,
                          const std::vector<RewriteAction> &actions) {
@@ -717,7 +717,7 @@ bool ApplyRewriteActions(Program &program,
   size_t eIdx = 0;
 
   while (instrIdx < program.Instructions.size()) {
-    // Process all entries targeting this position.
+
     while (eIdx < entries.size() && entries[eIdx].pos == instrIdx) {
       const auto &e = entries[eIdx];
 
@@ -727,14 +727,14 @@ bool ApplyRewriteActions(Program &program,
       } else {
         output.insert(output.end(), e.newInstructions.begin(),
                       e.newInstructions.end());
-        instrIdx = e.removeEnd + 1;  // advance past consumed range
-        ++eIdx;                       // skip this entry on next iteration
-        break;                        // exit inner loop, outer loop continues
+        instrIdx = e.removeEnd + 1;
+        ++eIdx;
+        break;
       }
       ++eIdx;
     }
 
-    // Emit original instruction only if not consumed by Replace/Remove.
+
     if (instrIdx < program.Instructions.size() &&
         (eIdx >= entries.size() || entries[eIdx].pos != instrIdx)) {
       output.push_back(std::move(program.Instructions[instrIdx]));
@@ -754,4 +754,4 @@ bool ApplyRewriteActions(Program &program,
 
 
 
-} // namespace dxp::sm5
+}

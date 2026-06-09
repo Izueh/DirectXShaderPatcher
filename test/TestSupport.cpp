@@ -76,7 +76,7 @@ ExtractProgramBitcodeFromContainerPart(const std::vector<uint8_t> &container,
   return true;
 }
 
-} // namespace
+}
 
 LoadedDxilShader::~LoadedDxilShader() {
   if (module && module->HasDxilModule()) {

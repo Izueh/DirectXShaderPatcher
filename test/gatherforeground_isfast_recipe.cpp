@@ -15,7 +15,7 @@ static std::string BuildDefaultPatchedOutputPath(const std::string &inputPath) {
   return DefaultArtifactOutputPath(inputPath, ".recipe.isfast.patched.cso");
 }
 
-} // namespace
+}
 
 int main(int argc, char **argv) {
   if (argc != 2 && argc != 3) {

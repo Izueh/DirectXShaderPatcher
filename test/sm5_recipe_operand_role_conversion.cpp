@@ -7,14 +7,14 @@
 #include <iostream>
 #include <vector>
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+
+
+
 
 namespace {
 
-// Find first instruction of given opcode where source operand at srcIndex
-// has SWIZZLE selection mode.
+
+
 static int FindFirstOpcodeWithSwizzleSrc(
     const dxp::sm5::ProgramInspection &program, uint32_t opcode,
     size_t srcIndex) {
@@ -36,8 +36,8 @@ static int FindFirstOpcodeWithSwizzleSrc(
   return -1;
 }
 
-// Find first instruction of given opcode where destination operand has
-// a mask (selection mode == MASK_MODE with at least one bit set).
+
+
 static int FindFirstOpcodeWithMaskDst(
     const dxp::sm5::ProgramInspection &program, uint32_t opcode) {
   for (size_t index = 0; index < program.Instructions.size(); ++index) {
@@ -63,8 +63,8 @@ static int FindFirstOpcodeWithMaskDst(
   return -1;
 }
 
-// Find first instruction of given opcode where source operand at srcIndex
-// has NOSWIZZLE mode (ComponentMode == D3D10_SB_OPERAND_4_COMPONENT_NOSWIZZLE).
+
+
 static int FindFirstOpcodeWithNOSWIZZLESrc(
     const dxp::sm5::ProgramInspection &program, uint32_t opcode,
     size_t srcIndex) {
@@ -83,8 +83,8 @@ static int FindFirstOpcodeWithNOSWIZZLESrc(
   return -1;
 }
 
-// Find first instruction of given opcode where source operand at srcIndex
-// has SELECT_1 selection mode.
+
+
 static int FindFirstOpcodeWithSelect1Src(
     const dxp::sm5::ProgramInspection &program, uint32_t opcode,
     size_t srcIndex) {
@@ -106,8 +106,8 @@ static int FindFirstOpcodeWithSelect1Src(
   return -1;
 }
 
-// Find first instruction of given opcode where source operand at srcIndex
-// has MASK selection mode with at least one bit set.
+
+
 static int FindFirstOpcodeWithMaskSrc(
     const dxp::sm5::ProgramInspection &program, uint32_t opcode,
     size_t srcIndex) {
@@ -134,7 +134,7 @@ static int FindFirstOpcodeWithMaskSrc(
   return -1;
 }
 
-// Count set bits in a 4-bit value.
+
 static int CountSetBits(uint32_t value) {
   int count = 0;
   for (int i = 0; i < 4; ++i) {
@@ -145,16 +145,16 @@ static int CountSetBits(uint32_t value) {
   return count;
 }
 
-} // namespace
+}
 
-// ---------------------------------------------------------------------------
-// Test 7a: Source (SWIZZLE) → Destination conversion.
-//
-// Find an instruction where the source operand has SWIZZLE mode. Capture
-// it with capture_fields.components enabled and emit it as the destination
-// of a mov. The conversion should produce a mask of the unique components
-// in the swizzle.
-// ---------------------------------------------------------------------------
+
+
+
+
+
+
+
+
 
 static int test_source_to_destination_conversion(
     const dxp::sm5::ProgramInspection &inputProgram,
@@ -192,8 +192,8 @@ static int test_source_to_destination_conversion(
             << " opcode " << targetOpcode << " src NumComp="
             << originalSrc.NumComponents << " ComponentMode=" << originalSrc.ComponentMode << "\n";
 
-  // Build recipe: capture source with capture_fields.components, emit as
-  // destination of mov.
+
+
   dxp::sm5::Recipe recipe;
   dxp::sm5::RecipeRule rule;
   rule.Named("src_to_dst")
@@ -262,8 +262,8 @@ static int test_source_to_destination_conversion(
     std::cerr << "Test 7a: Expected MASK selMode, got " << selMode << "\n";
     return 1;
   }
-  // The mask must be non-zero and must correspond to the unique components
-  // in the original swizzle (e.g. zxyz → X|Y|Z = 0x70).
+
+
   if (mask == 0) {
     std::cerr << "Test 7a: Expected non-zero mask from SWIZZLE conversion.\n";
     return 1;
@@ -272,19 +272,19 @@ static int test_source_to_destination_conversion(
   return 0;
 }
 
-// ---------------------------------------------------------------------------
-// Test 7b: Destination (mask) → Source conversion.
-//
-// Find a data instruction where the destination has a mask. Capture it with
-// capture_fields.components and emit it as a source operand of a new mov.
-// The conversion should produce a swizzle that replicates the masked
-// components.
-// ---------------------------------------------------------------------------
+
+
+
+
+
+
+
+
 
 static int test_destination_to_source_conversion(
     const dxp::sm5::ProgramInspection &inputProgram,
     const std::vector<uint8_t> &inputBytes) {
-  // Try multiple opcodes to find one with a masked destination.
+
   const uint32_t opcodesToTry[] = {
       D3D10_SB_OPCODE_MOV, D3D10_SB_OPCODE_ADD, D3D10_SB_OPCODE_MUL,
       D3D10_SB_OPCODE_MAD, D3D10_SB_OPCODE_DP3, D3D10_SB_OPCODE_AND,
@@ -368,14 +368,14 @@ static int test_destination_to_source_conversion(
       DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(
           patchedSrc.ComponentMode);
 
-  // Mask → source conversion: single-bit masks become SELECT_1,
-  // multi-bit masks become SWIZZLE. Both are valid.
+
+
   if (selMode ==
       static_cast<uint32_t>(D3D10_SB_OPERAND_4_COMPONENT_SELECT_1_MODE)) {
-    // Single-bit mask converted to SELECT_1: valid.
+
   } else if (selMode ==
       static_cast<uint32_t>(D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE)) {
-    // Multi-bit mask converted to SWIZZLE: valid.
+
     const uint32_t swizzle =
         DECODE_D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE(patchedSrc.ComponentMode);
     if (swizzle == 0) {
@@ -391,9 +391,9 @@ static int test_destination_to_source_conversion(
   return 0;
 }
 
-// ---------------------------------------------------------------------------
-// Test 7c: SWIZZLE capture → role change conversion.
-// ---------------------------------------------------------------------------
+
+
+
 
 static int test_swizzle_to_mask_conversion(
     const dxp::sm5::ProgramInspection &inputProgram,
@@ -433,7 +433,7 @@ static int test_swizzle_to_mask_conversion(
   }
 
   if (targetIndex < 0) {
-    return 0; // Skip, no SWIZZLE operands in this shader
+    return 0;
   }
 
   const auto &originalInstruction =
@@ -514,13 +514,13 @@ static int test_swizzle_to_mask_conversion(
   return 0;
 }
 
-// ---------------------------------------------------------------------------
-// Test 7d: Source (NOSWIZZLE) → Destination conversion.
-//
-// Find an instruction where the source operand has NOSWIZZLE mode.
-// Capture it with capture_fields.components enabled and emit it as the
-// destination of a mov. The conversion should produce a full mask (xyzw).
-// ---------------------------------------------------------------------------
+
+
+
+
+
+
+
 
 static int test_noswizzle_to_mask_conversion(
     const dxp::sm5::ProgramInspection &inputProgram,
@@ -626,7 +626,7 @@ static int test_noswizzle_to_mask_conversion(
     std::cerr << "Test 7d: Expected MASK selMode, got " << selMode << "\n";
     return 1;
   }
-  // NOSWIZZLE → full mask (xyzw = 0xF0)
+
   if (mask != D3D10_SB_OPERAND_4_COMPONENT_MASK_ALL) {
     std::cerr << "Test 7d: Expected full mask (xyzw = 0xF0), got mask=" << mask << "\n";
     return 1;
@@ -635,13 +635,13 @@ static int test_noswizzle_to_mask_conversion(
   return 0;
 }
 
-// ---------------------------------------------------------------------------
-// Test 7e: Source (SELECT_1) → Destination conversion.
-//
-// Find an instruction where the source operand has SELECT_1 mode.
-// Capture it with capture_fields.components enabled and emit it as the
-// destination of a mov. The conversion should produce a single-bit mask.
-// ---------------------------------------------------------------------------
+
+
+
+
+
+
+
 
 static int test_select1_to_mask_conversion(
     const dxp::sm5::ProgramInspection &inputProgram,
@@ -760,7 +760,7 @@ static int test_select1_to_mask_conversion(
     std::cerr << "Test 7e: Expected MASK selMode, got " << selMode << "\n";
     return 1;
   }
-  // SELECT_1 → single-bit mask (mask bits are in [7:4], shift to [3:0])
+
   const uint32_t maskBits = mask >> 4;
   if (CountSetBits(maskBits) != 1) {
     std::cerr << "Test 7e: Expected single-bit mask, got maskBits=" << maskBits << "\n";
@@ -770,13 +770,13 @@ static int test_select1_to_mask_conversion(
   return 0;
 }
 
-// ---------------------------------------------------------------------------
-// Test 7f: Source (MASK) → Destination conversion (keep as-is).
-//
-// Find an instruction where the source operand has MASK mode.
-// Capture it with capture_fields.components enabled and emit it as the
-// destination of a mov. The conversion should keep the same mask.
-// ---------------------------------------------------------------------------
+
+
+
+
+
+
+
 
 static int test_mask_to_mask_conversion(
     const dxp::sm5::ProgramInspection &inputProgram,
@@ -882,7 +882,7 @@ static int test_mask_to_mask_conversion(
     std::cerr << "Test 7f: Expected MASK selMode, got " << selMode << "\n";
     return 1;
   }
-  // MASK → keep as mask (non-zero)
+
   if (mask == 0) {
     std::cerr << "Test 7f: Expected non-zero mask.\n";
     return 1;
@@ -891,13 +891,13 @@ static int test_mask_to_mask_conversion(
   return 0;
 }
 
-// ---------------------------------------------------------------------------
-// Test 7g: Same-role conversion (no-op).
-//
-// Capture a source operand with capture_fields.components enabled and emit
-// it as another source operand (second operand position). The component
-// mode should be unchanged.
-// ---------------------------------------------------------------------------
+
+
+
+
+
+
+
 
 static int test_same_role_no_op(
     const dxp::sm5::ProgramInspection &inputProgram,
@@ -935,7 +935,7 @@ static int test_same_role_no_op(
             << " opcode " << targetOpcode << " src NumComp="
             << originalSrc.NumComponents << " ComponentMode=" << originalSrc.ComponentMode << "\n";
 
-  // Emit as second operand (source) of a new mov, not as destination.
+
   dxp::sm5::Recipe recipe;
   dxp::sm5::RecipeRule rule;
   rule.Named("same_role_no_op")
@@ -1004,7 +1004,7 @@ static int test_same_role_no_op(
             << " originalSelMode=" << originalSelMode
             << " patchedSelMode=" << patchedSelMode << "\n";
 
-  // Same role → no conversion: component mode must be unchanged.
+
   if (patchedSrc.ComponentMode != originalSrc.ComponentMode) {
     std::cerr << "Test 7g: Expected no conversion (same role), but ComponentMode changed from "
               << originalSrc.ComponentMode << " to " << patchedSrc.ComponentMode << "\n";
@@ -1014,9 +1014,9 @@ static int test_same_role_no_op(
   return 0;
 }
 
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
+
+
+
 
 int main(int argc, char **argv) {
   if (argc != 2) {

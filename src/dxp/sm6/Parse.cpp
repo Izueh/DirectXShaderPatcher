@@ -318,7 +318,6 @@ static bool ParseRecipeCastInstructionOpcode(const std::string &text,
   return false;
 }
 
-// Strip UTF-8 BOM (EF BB BF) if present
 static std::string StripBom(std::string text) {
   if (text.size() >= 3 &&
       static_cast<uint8_t>(text[0]) == 0xEF &&
@@ -329,7 +328,7 @@ static std::string StripBom(std::string text) {
   return text;
 }
 
-} // namespace
+}
 
 using namespace dxp::sm6;
 
@@ -1156,7 +1155,7 @@ static bool ParseDxilRecipeTextAsYaml(llvm::StringRef recipeText,
   return true;
 }
 
-} // namespace
+}
 
 bool ParseDxilRecipeText(const std::string &recipeText,
                          DxilRecipeParseResult &result,

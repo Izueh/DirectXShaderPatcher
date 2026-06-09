@@ -39,7 +39,7 @@ static int FindFirstMul(const dxp::sm5::ProgramInspection &program) {
   return -1;
 }
 
-} // namespace
+}
 
 int main(int argc, char **argv) {
   if (argc != 2) {
@@ -69,13 +69,13 @@ int main(int argc, char **argv) {
 
   const auto &originalMul =
       inputProgram.Instructions[static_cast<size_t>(targetInstructionIndex)];
-  const auto originalDst = originalMul.Operands[0];  // dst operand to capture
-  const auto originalSrc = originalMul.Operands[1];  // src operand to capture
+  const auto originalDst = originalMul.Operands[0];
+  const auto originalSrc = originalMul.Operands[1];
 
-  // Recipe with two steps:
-  //   Step 1 "capture_step": matches MUL, captures dst and src operands.
-  //   Step 2 "emit_step": uses the captured operands to emit a MOV.
-  // This verifies that captures from Step 1 persist into Step 2.
+
+
+
+
   const char *recipeText = R"YAML(version: 1
 steps:
   - name: capture_step
@@ -117,7 +117,7 @@ steps:
     return 1;
   }
 
-  // Verify both steps executed successfully.
+
   if (patchResult.Report.Steps.size() != 2) {
     std::cerr << "Expected two steps in recipe report.\n";
     return 1;
@@ -153,7 +153,7 @@ steps:
     return 1;
   }
 
-  // Verify the MUL at the original index was rewritten to MOV.
+
   const auto &patchedInstruction =
       patchedProgram.Instructions[static_cast<size_t>(targetInstructionIndex)];
   if (patchedInstruction.Opcode != D3D10_SB_OPCODE_MOV) {
@@ -167,8 +167,8 @@ steps:
     return 1;
   }
 
-  // Verify the emitted operands match the original MUL operands exactly.
-  // This proves the capture from Step 1 was available in Step 2.
+
+
   if (!OperandsEqual(patchedInstruction.Operands[0], originalDst)) {
     auto &p = patchedInstruction.Operands[0];
     auto &o = originalDst;

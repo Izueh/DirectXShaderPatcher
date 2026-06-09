@@ -22,7 +22,7 @@ static int FindNthOpcodeIndex(const std::vector<uint32_t> &opcodes,
   return -1;
 }
 
-} // namespace
+}
 
 int main(int argc, char **argv) {
   if (argc != 3) {

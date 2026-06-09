@@ -125,7 +125,7 @@ void ComputeDXBCHash(const uint8_t *data, uint32_t byteCount,
   std::memcpy(outHash, result, 16);
 }
 
-} // namespace
+}
 
 namespace dxp::sm5 {
 
@@ -392,4 +392,4 @@ bool RecomputeDxbcHash(std::vector<uint8_t> &containerBytes) {
   return true;
 }
 
-} // namespace dxp::sm5
+}

@@ -40,9 +40,9 @@ static int FindFirstMul(const dxp::sm5::ProgramInspection &program) {
   return -1;
 }
 
-// ---------------------------------------------------------------------------
-// Test 1: Single-instruction match capture + emit as raw copy
-// ---------------------------------------------------------------------------
+
+
+
 
 static bool TestSingleInstructionCapture() {
   std::cout << "Test: single-instruction capture + emit as raw copy\n";
@@ -73,14 +73,14 @@ steps:
     return false;
   }
 
-  // Validation passed — the recipe is syntactically correct.
+
   std::cout << "  Single-instruction capture recipe parsed successfully.\n";
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// Test 2: Sequence match capture + emit captured instruction as raw copy
-// ---------------------------------------------------------------------------
+
+
+
 
 static bool TestSequenceInstructionCapture() {
   std::cout << "Test: sequence instruction capture + emit as raw copy\n";
@@ -117,9 +117,9 @@ steps:
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// Test 3: Cross-step instruction capture
-// ---------------------------------------------------------------------------
+
+
+
 
 static bool TestCrossStepInstructionCapture() {
   std::cout << "Test: cross-step instruction capture\n";
@@ -160,9 +160,9 @@ steps:
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// Test 4: Instruction capture with capture_fields projection
-// ---------------------------------------------------------------------------
+
+
+
 
 static bool TestInstructionCaptureWithFields() {
   std::cout << "Test: instruction capture with capture_fields projection\n";
@@ -206,9 +206,9 @@ steps:
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// Test 5: Validation rejects invalid instruction capture references
-// ---------------------------------------------------------------------------
+
+
+
 
 static bool TestInvalidInstructionCaptureReference() {
   std::cout << "Test: validation rejects invalid instruction capture reference\n";
@@ -242,9 +242,9 @@ steps:
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// Test 6: Validation rejects capture_fields without capture name
-// ---------------------------------------------------------------------------
+
+
+
 
 static bool TestCaptureFieldsWithoutCapture() {
   std::cout << "Test: validation rejects capture_fields without capture name\n";
@@ -278,9 +278,9 @@ steps:
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// Test 7: Validation rejects opcode + capture on same emit
-// ---------------------------------------------------------------------------
+
+
+
 
 static bool TestOpcodeAndCaptureConflict() {
   std::cout << "Test: validation rejects opcode + capture on same emit\n";
@@ -311,10 +311,10 @@ steps:
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// Test 8: Full end-to-end — capture instruction in single-instruction match,
-//         emit captured instruction as raw copy
-// ---------------------------------------------------------------------------
+
+
+
+
 
 static bool TestEndToEndSingleInstruction() {
   std::cout << "Test: end-to-end single-instruction capture + emit\n";
@@ -355,7 +355,7 @@ steps:
   return true;
 }
 
-} // namespace
+}
 
 int main() {
   int failures = 0;

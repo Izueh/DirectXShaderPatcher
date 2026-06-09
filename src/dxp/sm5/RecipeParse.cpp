@@ -20,7 +20,6 @@
 
 namespace {
 
-// Strip UTF-8 BOM (EF BB BF) if present
 static std::string StripBom(std::string text) {
   if (text.size() >= 3 &&
       static_cast<uint8_t>(text[0]) == 0xEF &&
@@ -31,7 +30,7 @@ static std::string StripBom(std::string text) {
   return text;
 }
 
-} // namespace
+}
 
 namespace dxp {
 namespace sm5 {
@@ -62,7 +61,7 @@ static std::string interpolationModeToString(
     dxp::sm5::InterpolationMode mode) {
   switch (mode) {
   case dxp::sm5::InterpolationMode::Undefined:
-    return {};  // not set — let Recipe.cpp skip validation
+    return {};
   case dxp::sm5::InterpolationMode::Constant:
     return "constant";
   case dxp::sm5::InterpolationMode::Linear:
@@ -603,7 +602,7 @@ static bool ValidateOperandCaptureReferences(
     const CaptureNameTables &globalCaptures,
     const CaptureNameTables &localCaptures,
     bool emitOperand, std::string &error) {
-  // match_capture references can point to captures from ANY rule in ANY step.
+
   if (!operand.MatchCapture.empty()) {
     if (!ValidateCaptureReference(globalCaptures, operand.MatchCapture, "operand",
                                   globalCaptures.Operands, "operand match_capture",
@@ -612,7 +611,7 @@ static bool ValidateOperandCaptureReferences(
     }
   }
 
-  // Capture references on emit operands can also reference captures from any step.
+
   if (emitOperand && !operand.Capture.empty()) {
     if (!ValidateCaptureReference(globalCaptures, operand.Capture, "operand",
                                   globalCaptures.Operands, "emit operand capture",
@@ -649,8 +648,8 @@ static bool ValidateRuleCaptureReferences(
     const dxp::sm5::RecipeRule &rule,
     const CaptureNameTables &globalCaptures,
     std::string &error) {
-  // Collect captures from THIS rule for emit-side validation.
-  // For match_capture references, use the global set (captures from all steps).
+
+
   CaptureNameTables localCaptures;
   CollectMatchCaptures(rule.Match, localCaptures);
 
@@ -1473,8 +1472,8 @@ static bool ParseRule(const YamlRule &ruleModel,
     }
   }
 
-  // Per-rule capture validation is deferred until all steps are parsed,
-  // so that match_capture references can point to captures from any step.
+
+
   return true;
 }
 
@@ -1826,11 +1825,11 @@ static bool BuildStepCondition(const YamlStepCondition &conditionModel,
   return true;
 }
 
-} // end anonymous namespace
+}
 
 static void CollectRuleNames(const dxp::sm5::RecipeRule &rule,
                              std::unordered_set<std::string> &names) {
-  // Collect all capture names from match operands
+
   for (const auto &op : rule.Match.Operands) {
     if (!op.Capture.empty()) names.insert(op.Capture);
     if (!op.MatchCapture.empty()) names.insert(op.MatchCapture);
@@ -1842,7 +1841,7 @@ static void CollectRuleNames(const dxp::sm5::RecipeRule &rule,
       if (!idx.ImmediateHiVariable.empty()) names.insert(idx.ImmediateHiVariable);
     }
   }
-  // Collect from sequence match operands
+
   for (const auto &seq : rule.Match.Sequence) {
     for (const auto &op : seq.Operands) {
       if (!op.Capture.empty()) names.insert(op.Capture);
@@ -1856,7 +1855,7 @@ static void CollectRuleNames(const dxp::sm5::RecipeRule &rule,
       }
     }
   }
-  // Collect from emit operands
+
   for (const auto &emit : rule.Emit) {
     for (const auto &op : emit.Operands) {
       if (!op.Capture.empty()) names.insert(op.Capture);
@@ -1877,7 +1876,7 @@ static bool ValidateNameUniqueness(const dxp::sm5::Recipe &recipe,
   std::unordered_set<std::string> seen;
 
   for (const auto &step : recipe.GetSteps()) {
-    // Step name — skip names containing ':' (YAML parsing artifacts).
+
     if (!step.Name.empty() && step.Name.find(':') == std::string::npos
         && !seen.insert(step.Name).second) {
       error = "duplicate name '" + step.Name + "' (step name)";
@@ -1890,14 +1889,14 @@ static bool ValidateNameUniqueness(const dxp::sm5::Recipe &recipe,
           ? (step.Name + ".rule" + std::to_string(ruleIndex))
           : rule.Name;
 
-      // Rule name
+
       if (!rule.Name.empty() && !seen.insert(rule.Name).second) {
         error = "duplicate name '" + rule.Name +
                 "' in step '" + step.Name + "' (rule name)";
         return false;
       }
 
-      // Collect all capture/variable names from this rule
+
       std::unordered_set<std::string> ruleNames;
       CollectRuleNames(rule, ruleNames);
 
@@ -2031,11 +2030,11 @@ bool ParseRecipeText(const std::string &recipeText, RecipeParseResult &result,
         if (!appendRule(ruleModel, applicationMode, rules)) {
           return false;
         }
-        // Collect captures from this rule for cross-step validation.
+
         CollectAllCapturesFromRule(rules.back(), allCaptures);
       }
 
-      // Validate all rules' match_capture references against the global set.
+
       std::string captureError;
       for (const auto &rule : rules) {
         if (!ValidateRuleCaptureReferences(rule, allCaptures, captureError)) {
@@ -2300,14 +2299,14 @@ bool ParseRecipeText(const std::string &recipeText, RecipeParseResult &result,
     }
   }
 
-  // Validate that all recipe-defined names are unique across the entire recipe.
+
   std::string uniquenessError;
   if (!ValidateNameUniqueness(result.Recipe, uniquenessError)) {
     result.Error = sourceName + ": " + uniquenessError;
     return false;
   }
 
-  // Parse exports.
+
   for (const auto &exp : document.exports) {
     RecipeExport::Kind kind = RecipeExport::Kind::CapturedOperands;
     if (exp.kind == "captured_operands") kind = RecipeExport::Kind::CapturedOperands;
@@ -2337,6 +2336,6 @@ bool ParseRecipeFile(const std::string &recipePath, RecipeParseResult &result) {
   return ParseRecipeText(buffer.str(), result, recipePath);
 }
 
-} // namespace sm5
-} // namespace dxp
+}
+}
 

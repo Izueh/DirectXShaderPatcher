@@ -59,7 +59,7 @@ static uint32_t DecodeComponentMode(uint32_t token0) {
   case D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE: {
     const uint32_t swizzle =
         DECODE_D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE(token0);
-    // NOSWIZZLE is SWIZZLE_MODE with X-X-X-X pattern.
+
     if (swizzle == D3D10_SB_OPERAND_4_COMPONENT_NOSWIZZLE) {
       return D3D10_SB_OPERAND_4_COMPONENT_NOSWIZZLE;
     }
@@ -354,7 +354,7 @@ static void UpdateDeclarationOverlay(Program &program,
   }
 }
 
-} // namespace
+}
 
 static bool ParseProgram(const uint8_t *data, uint32_t size, Program &program);
 
@@ -467,5 +467,5 @@ static bool ParseProgram(const uint8_t *data, uint32_t size, Program &program) {
   return true;
 }
 
-} // namespace sm5
-} // namespace dxp
+}
+}

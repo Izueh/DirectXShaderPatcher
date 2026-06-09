@@ -558,7 +558,7 @@ static const std::array<InstructionLayout, 194> g_InstructionLayouts = {{
     layout(D3D10_SB_OPCODE_CUSTOMDATA),
 }};
 
-} // namespace
+}
 
 bool IsDataOpcode(OpcodeType opcode) {
   for (const auto &layout : g_InstructionLayouts) {
@@ -580,5 +580,5 @@ OperandRole GetOperandRole(OpcodeType opcode, size_t operandIndex) {
   return OperandRole::Source;
 }
 
-} // namespace sm5
-} // namespace dxp
+}
+}

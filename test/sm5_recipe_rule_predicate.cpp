@@ -47,7 +47,7 @@ static dxp::sm5::RecipeRule MakeMovFromMulRule() {
              dxp::sm5::RecipeOperandPattern{}.CaptureAs("src")));
 }
 
-} // namespace
+}
 
 int main(int argc, char **argv) {
   if (argc != 2) {

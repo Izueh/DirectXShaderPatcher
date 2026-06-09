@@ -97,7 +97,7 @@ static bool HasMovUsingUav(const dxp::sm5::ProgramInspection &program,
   return false;
 }
 
-} // namespace
+}
 
 int main(int argc, char **argv) {
   if (argc != 2) {

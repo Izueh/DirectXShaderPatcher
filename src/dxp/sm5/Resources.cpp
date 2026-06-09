@@ -371,7 +371,7 @@ RecordNamedBinding(std::unordered_map<std::string, uint32_t> &bindings,
   return true;
 }
 
-} // namespace
+}
 
 bool AddInputDeclaration(Program &program, const RecipeInputDecl &decl,
                          RecipeContext &context, std::string &error) {
@@ -643,4 +643,4 @@ bool AddUavDeclaration(Program &program, const RecipeUavDecl &decl,
   return true;
 }
 
-} // namespace dxp::sm5
+}

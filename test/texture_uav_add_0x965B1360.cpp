@@ -14,7 +14,7 @@ FindUavByName(const hlsl::DxilModule &dxilModule, const std::string &name) {
   return nullptr;
 }
 
-} // namespace
+}
 
 int main(int argc, char **argv) {
   if (argc != 2) {

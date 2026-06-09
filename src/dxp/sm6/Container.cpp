@@ -50,7 +50,7 @@ static std::string DigestToHex(const uint8_t *digest, size_t digestSize) {
   return hex;
 }
 
-} // namespace
+}
 
 bool ExtractProgramBitcodeFromContainerPart(
     const std::vector<uint8_t> &container, hlsl::DxilFourCC partKind,
@@ -171,4 +171,4 @@ bool VerifyModuleOrReport(llvm::Module &module) {
   return false;
 }
 
-} // namespace dxp::sm6
+}

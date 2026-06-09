@@ -47,7 +47,7 @@ static int FindTargetMul(const dxp::sm5::ProgramInspection &program) {
   return -1;
 }
 
-} // namespace
+}
 
 int main(int argc, char **argv) {
   if (argc != 2 && argc != 3) {

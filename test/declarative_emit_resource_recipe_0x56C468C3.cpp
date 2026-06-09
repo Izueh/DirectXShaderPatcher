@@ -15,7 +15,7 @@ static unsigned CountGroupIdXCalls(llvm::Function &function) {
   return static_cast<unsigned>(matches.size());
 }
 
-} // namespace
+}
 
 int main(int argc, char **argv) {
   if (argc != 3) {

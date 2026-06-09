@@ -24,7 +24,7 @@ static dxp::sm5::RecipeMatchPattern MakeImpossibleMulPattern() {
       .AddOperand(dxp::sm5::RecipeOperandPattern{}.WithType("sampler"));
 }
 
-} // namespace
+}
 
 int main(int argc, char **argv) {
   if (argc != 2) {

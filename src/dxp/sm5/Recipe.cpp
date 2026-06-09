@@ -16,8 +16,6 @@
 
 namespace dxp::sm5 {
 
-// ---- Operand conversion implementations ----
-
 CapturedOperand Operand::ToCaptured() const {
   CapturedOperand cap;
   cap.Type = Type;
@@ -75,8 +73,6 @@ void Operand::FromCaptured(const CapturedOperand &cap) {
     RelativeOperand->FromCaptured(*cap.RelativeOperand);
   }
 }
-
-// ---- Instruction conversion implementations ----
 
 CapturedInstruction Instruction::ToCaptured() const {
   CapturedInstruction cap;
@@ -1391,7 +1387,7 @@ static bool EvaluateRuleRewriteCallback(const RuntimeRule &rule,
 
     const auto callbackActions = rule.RewriteCallback(program, publicMatch, context);
 
-    // Merge callback-set captures back into context for declarative emit.
+
     for (const auto &entry : publicMatch.CapturedOperands) {
       context.captures.operands[entry.first] = entry.second;
     }
@@ -2016,7 +2012,7 @@ static uint32_t DecodeDstMaskFromOperand(const Operand &op) {
   switch (static_cast<D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE>(selMode)) {
   case D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE: {
     const uint32_t mask = DECODE_D3D10_SB_OPERAND_4_COMPONENT_MASK(op.ComponentMode);
-    // Mask bits are in [7:4]; shift down to [3:0] for uniform handling.
+
     return mask >> 4;
   }
   case D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE:
@@ -2037,11 +2033,11 @@ static bool HasLiteralComponentSpec(const Operand &op) {
   return (selMode != 0) || (op.ComponentMode != 0);
 }
 
-/// Extract a component bit mask (bits 0-3) from any source component mode.
-/// MASK_MODE → mask bits shifted to [3:0]
-/// SELECT_1_MODE → single bit at the selected component
-/// SWIZZLE_MODE → unique components from swizzle (NOSWIZZLE = 0xF)
-/// default (selection mode 0, non-zero ComponentMode) → 0xF (all 4)
+
+
+
+
+
 static uint32_t ExtractComponentMask(uint32_t fromComponentMode,
                                      uint32_t fromSelectionMode) {
   switch (static_cast<D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE>(
@@ -2065,16 +2061,16 @@ static uint32_t ExtractComponentMask(uint32_t fromComponentMode,
     return unique;
   }
   default:
-    // Selection mode 0 with non-zero ComponentMode = NOSWIZZLE
+
     return 0xF;
   }
 }
 
-/// Encode a component bit mask back to the proper component mode encoding.
-/// 0 → 0 (no components)
-/// 1 → SELECT_1_MODE | (component << 4)
-/// 2-3 → SWIZZLE_MODE with sequential component selection
-/// 4 → NOSWIZZLE
+
+
+
+
+
 static void EncodeMaskToComponentMode(uint32_t maskBits,
                                       uint32_t &toNumComponents,
                                       uint32_t &toComponentMode) {
@@ -2091,7 +2087,7 @@ static void EncodeMaskToComponentMode(uint32_t maskBits,
   }
 
   if (setCount == 1) {
-    // Single bit → SELECT_1
+
     for (int b = 0; b < 4; ++b) {
       if (maskBits & (1u << b)) {
         toComponentMode =
@@ -2103,7 +2099,7 @@ static void EncodeMaskToComponentMode(uint32_t maskBits,
       }
     }
   } else if (setCount >= 2 && setCount <= 3) {
-    // 2-3 bits → SWIZZLE with sequential component selection
+
     uint32_t swizzle = 0;
     int bit = 0;
     for (int comp = 0; comp < 4; ++comp) {
@@ -2119,19 +2115,19 @@ static void EncodeMaskToComponentMode(uint32_t maskBits,
     return;
   }
 
-  // All 4 bits → NOSWIZZLE
+
   toComponentMode = D3D10_SB_OPERAND_4_COMPONENT_NOSWIZZLE;
 }
 
-/// Validate that an operand's encoded fields are coherent with the expected role.
-/// Destination: selection mode must be MASK_MODE, mask bits valid.
-/// Source/destination: swizzle selectors must be in range 0-3.
-/// Also checks operand type compatibility with role.
+
+
+
+
 static bool ValidateOperandRole(const Operand &operand, OperandRole expectedRole,
                                 const std::string &path, RecipeContext &context,
                                 std::string &error) {
   if (operand.NumComponents != D3D10_SB_OPERAND_4_COMPONENT) {
-    return true; // Only 4-component operands have component mode constraints.
+    return true;
   }
 
   const uint32_t selMode =
@@ -2139,7 +2135,7 @@ static bool ValidateOperandRole(const Operand &operand, OperandRole expectedRole
   const auto sm = static_cast<D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE>(selMode);
 
   if (expectedRole == OperandRole::Destination) {
-    // Destinations must use MASK_MODE.
+
     if (sm != D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE) {
       const std::string msg = path + ": destination operand uses non-mask "
                               "component mode (selection mode " +
@@ -2150,7 +2146,7 @@ static bool ValidateOperandRole(const Operand &operand, OperandRole expectedRole
     }
   }
 
-  // Validate swizzle selectors are in range 0-3 (applies to both roles).
+
   if (sm == D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE) {
     for (int c = 0; c < 4; ++c) {
       const uint32_t src =
@@ -2166,9 +2162,9 @@ static bool ValidateOperandRole(const Operand &operand, OperandRole expectedRole
     }
   }
 
-  // Operand type compatibility checks.
+
   if (expectedRole == OperandRole::Destination) {
-    // Immediate operands and special types cannot be destinations.
+
     if (operand.Type == D3D10_SB_OPERAND_TYPE_IMMEDIATE32 ||
         operand.Type == D3D10_SB_OPERAND_TYPE_IMMEDIATE64 ||
         operand.Type == D3D10_SB_OPERAND_TYPE_SAMPLER ||
@@ -2192,12 +2188,12 @@ static void ConvertComponentModeForRoleChange(
     uint32_t contextMask,
     uint32_t &toNumComponents, uint32_t &toComponentMode) {
 
-  // Skip conversion for non-4-component operands (samplers, resources, etc.).
+
   if (fromNumComponents != D3D10_SB_OPERAND_4_COMPONENT) {
     return;
   }
 
-  // Same role: no conversion needed.
+
   if (fromRole == toRole) {
     return;
   }
@@ -2206,8 +2202,8 @@ static void ConvertComponentModeForRoleChange(
       DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(fromComponentMode);
 
   if (fromRole == OperandRole::Source && toRole == OperandRole::Destination) {
-    // Source (read) → Destination (write)
-    // Destinations only support mask mode.
+
+
     uint32_t mask = ExtractComponentMask(fromComponentMode, fromSelectionMode);
     if (contextMask != 0) {
       mask &= contextMask;
@@ -2220,9 +2216,9 @@ static void ConvertComponentModeForRoleChange(
     }
   } else if (fromRole == OperandRole::Destination &&
              toRole == OperandRole::Source) {
-    // Destination (write) → Source (read)
-    // Source operands should use SELECT_1 for single-component or SWIZZLE
-    // for multi-component reads. NOSWIZZLE for full 4-component.
+
+
+
     const uint32_t fromMask =
         DECODE_D3D10_SB_OPERAND_4_COMPONENT_MASK(fromComponentMode);
     if (fromMask != 0) {
@@ -2264,38 +2260,38 @@ static bool InstantiateOperand(const Operand &operandTemplate,
         operand.NumComponents = capturedOperand->NumComponents;
         operand.ComponentMode = capturedOperand->ComponentMode;
 
-        // Apply role-based component mode conversion with context-aware
-        // heuristics: emit dst mask > match dst mask > source swizzle.
+
+
         if (match.Instruction != nullptr) {
-          // Use the stored role from capture time.
-          // Emit operand 0 is destination; operands 1+ are sources.
+
+
           const OperandRole emitRole =
               (emitOperandIndex == 0) ? OperandRole::Destination
                                       : OperandRole::Source;
 
-          // Compute context mask by priority.
+
           uint32_t contextMask = 0;
 
-          // Priority 1: Emit operand template's literal component spec.
+
           if (HasLiteralComponentSpec(operandTemplate)) {
             contextMask = DecodeDstMaskFromOperand(operandTemplate);
           }
 
-          // Priority 2: Matched instruction's destination mask.
+
           if (contextMask == 0 && match.Instruction->Operands.size() > 0) {
             contextMask = DecodeDstMaskFromOperand(
                 match.Instruction->Operands[0]);
           }
 
-          // Priority 3: Source swizzle's unique components.
+
           if (contextMask == 0) {
             const uint32_t selMode =
                 DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(
                     capturedOperand->ComponentMode);
             if (selMode == static_cast<uint32_t>(
                 D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE)) {
-              // Build a temporary Operand from the captured data for
-              // ExtractSwizzleUniqueComponents.
+
+
               Operand tempOp;
               tempOp.FromCaptured(*capturedOperand);
               contextMask = ExtractSwizzleUniqueComponents(tempOp);
@@ -2329,7 +2325,7 @@ static bool InstantiateOperand(const Operand &operandTemplate,
         operand.ImmediateValues = capturedOperand->ImmediateValues;
       }
 
-      // Literal indices/immediates override replayed values when provided.
+
       if (!literalIndices.empty()) {
         operand.Indices = literalIndices;
       }
@@ -2341,22 +2337,22 @@ static bool InstantiateOperand(const Operand &operandTemplate,
     }
   }
 
-  // Validate and apply role conversion for captured operands.
+
   if (!operandTemplate.CaptureName.empty() && match.Instruction != nullptr) {
     const OperandRole emitRole =
         (emitOperandIndex == 0) ? OperandRole::Destination : OperandRole::Source;
 
-    // Convert captured operand to internal type for validation.
+
     Operand capturedInternal;
     capturedInternal.FromCaptured(*capturedOperand);
 
-    // Validate the captured operand against its original role.
+
     if (!ValidateOperandRole(capturedInternal, capturedRole, path, context, error)) {
       return false;
     }
 
-    // Apply role-based component mode conversion when emit role differs
-    // from the captured role. Clear RawTokens to force re-encoding.
+
+
     if (capturedRole != emitRole) {
       operand.RawTokens.clear();
       ConvertComponentModeForRoleChange(
@@ -2367,7 +2363,7 @@ static bool InstantiateOperand(const Operand &operandTemplate,
           operand.NumComponents, operand.ComponentMode);
     }
 
-    // Validate the converted emit operand against the expected role.
+
     if (!ValidateOperandRole(operand, emitRole, path, context, error)) {
       return false;
     }
@@ -2560,8 +2556,8 @@ static bool InstantiateOperand(const Operand &operandTemplate,
       }
     }
 
-    // Binding resolution can append extra binding indices (for example CB range index).
-    // Preserve those values in IndexEntries so serialization keeps operands intact.
+
+
     while (immediateCursor < operand.Indices.size()) {
       Operand::Index appendedIndex;
       appendedIndex.Representation = Operand::IndexRepresentation::Immediate32;
@@ -2618,7 +2614,7 @@ static bool InstantiateInstruction(const Instruction &instructionTemplate,
     const auto &fields = instructionTemplate.CaptureFields;
 
     if (fields.AnySelected()) {
-      // Build a default instruction and overlay selected fields.
+
       instruction.FromCaptured(CapturedInstruction{});
       if (fields.Opcode) {
         instruction.Opcode = Opcode{static_cast<uint32_t>(captured.OpCode)};
@@ -2996,8 +2992,8 @@ ExecuteRewriteRules(Program &program, const std::string &stepName,
         SelectMatchIndices(matches, rule.ApplicationMode);
 
     if (!rule.RewriteCallback && !IsMutatingRewriteMode(rule.RewriteMode)) {
-      // Even for non-mutating rules, move captures into context for
-      // cross-step reuse by subsequent rules.
+
+
       if (!selectedMatches.empty()) {
         const auto &lastMatch = matches[selectedMatches.back()];
         for (const auto &entry : lastMatch.operands) {
@@ -3039,8 +3035,8 @@ ExecuteRewriteRules(Program &program, const std::string &stepName,
         continue;
       }
 
-      // Merge per-match captures into global context for BuildRewriteInstructions.
-      // Use insert (merge) to preserve captures from previous steps.
+
+
       for (const auto &entry : match.operands) {
         context.captures.operands[entry.first] = entry.second;
       }
@@ -3070,8 +3066,8 @@ ExecuteRewriteRules(Program &program, const std::string &stepName,
       ++ruleReport.AppliedCount;
     }
 
-    // Actions are sorted ascending internally by ApplyRewriteActions
-    // (single-pass forward rebuild), so no pre-sorting is needed.
+
+
 
     if (actions.empty()) {
       result.RuleReports.push_back(std::move(ruleReport));
@@ -3111,7 +3107,7 @@ ExecuteRewriteRules(Program &program, const std::string &stepName,
   return result;
 }
 
-} // namespace
+}
 
 RecipeStepResult MakeRecipeStepSuccess(bool changed, uint32_t matchCount,
                                        bool stopRecipe) {
@@ -3660,7 +3656,7 @@ bool ExecuteRecipe(Program &program, const Recipe &recipe,
   return true;
 }
 
-/// Public API: execute a pre-compiled recipe against a parsed program.
+
 RecipeStepResult ExecuteRecipe(Program &program, const Recipe &recipe,
                                RecipeContext &context) {
   ScopedProgramBinding boundProgram(context, program);
@@ -3716,4 +3712,4 @@ RecipeStepResult ExecuteRecipe(Program &program, const Recipe &recipe,
   return overallResult;
 }
 
-} // namespace dxp::sm5
+}
