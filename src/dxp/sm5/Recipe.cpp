@@ -85,6 +85,12 @@ CapturedInstruction Instruction::ToCaptured() const {
     auto capOp = Operands[i].ToCaptured();
     capOp.Role = static_cast<PublicOperandRole>(
         GetOperandRole(static_cast<OpcodeType>(Opcode), i));
+    if (!Operands.empty()) {
+      capOp.DestinationMask = ExtractComponentMask(
+          Operands[0].ComponentMode,
+          DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(
+              Operands[0].ComponentMode));
+    }
     cap.Operands.push_back(std::move(capOp));
   }
   return cap;
@@ -2033,44 +2039,6 @@ static bool HasLiteralComponentSpec(const Operand &op) {
   return (selMode != 0) || (op.ComponentMode != 0);
 }
 
-
-
-
-
-
-static uint32_t ExtractComponentMask(uint32_t fromComponentMode,
-                                     uint32_t fromSelectionMode) {
-  switch (static_cast<D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE>(
-      fromSelectionMode)) {
-  case D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE: {
-    const uint32_t mask = DECODE_D3D10_SB_OPERAND_4_COMPONENT_MASK(fromComponentMode);
-    return mask >> 4;
-  }
-  case D3D10_SB_OPERAND_4_COMPONENT_SELECT_1_MODE: {
-    const uint32_t selected =
-        DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECT_1(fromComponentMode);
-    return 1u << selected;
-  }
-  case D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE: {
-    uint32_t unique = 0;
-    for (int c = 0; c < 4; ++c) {
-      const uint32_t src =
-          DECODE_D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_SOURCE(fromComponentMode, c);
-      unique |= (1u << src);
-    }
-    return unique;
-  }
-  default:
-
-    return 0xF;
-  }
-}
-
-
-
-
-
-
 static void EncodeMaskToComponentMode(uint32_t maskBits,
                                       uint32_t &toNumComponents,
                                       uint32_t &toComponentMode) {
@@ -2278,9 +2246,8 @@ static bool InstantiateOperand(const Operand &operandTemplate,
           }
 
 
-          if (contextMask == 0 && match.Instruction->Operands.size() > 0) {
-            contextMask = DecodeDstMaskFromOperand(
-                match.Instruction->Operands[0]);
+          if (contextMask == 0) {
+            contextMask = capturedOperand->DestinationMask;
           }
 
 

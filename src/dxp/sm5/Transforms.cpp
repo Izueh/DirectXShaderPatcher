@@ -435,6 +435,12 @@ static bool MatchInstruction(
       CapturedOperand capOp = operand.ToCaptured();
       capOp.Role = static_cast<PublicOperandRole>(
           GetOperandRole(static_cast<OpcodeType>(instruction.Opcode), index));
+      if (!instruction.Operands.empty()) {
+        capOp.DestinationMask = ExtractComponentMask(
+            instruction.Operands[0].ComponentMode,
+            DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(
+                instruction.Operands[0].ComponentMode));
+      }
       localOperands[operandPattern.CaptureName] = std::move(capOp);
     }
   }

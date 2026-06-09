@@ -9,7 +9,37 @@
 #include <unordered_map>
 #include <vector>
 
+#include "d3d11TokenizedProgramFormat.hpp"
+
 namespace dxp::sm5 {
+
+static inline uint32_t ExtractComponentMask(uint32_t fromComponentMode,
+                                            uint32_t fromSelectionMode) {
+  switch (static_cast<D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE>(
+      fromSelectionMode)) {
+  case D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE: {
+    const uint32_t mask =
+        DECODE_D3D10_SB_OPERAND_4_COMPONENT_MASK(fromComponentMode);
+    return mask >> 4;
+  }
+  case D3D10_SB_OPERAND_4_COMPONENT_SELECT_1_MODE: {
+    const uint32_t selected =
+        DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECT_1(fromComponentMode);
+    return 1u << selected;
+  }
+  case D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE: {
+    uint32_t unique = 0;
+    for (int c = 0; c < 4; ++c) {
+      const uint32_t src =
+          DECODE_D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_SOURCE(fromComponentMode, c);
+      unique |= (1u << src);
+    }
+    return unique;
+  }
+  default:
+    return 0xF;
+  }
+}
 
 struct OperandIndexMatchPattern {
   bool Any = false;

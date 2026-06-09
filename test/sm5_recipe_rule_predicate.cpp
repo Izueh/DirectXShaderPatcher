@@ -189,7 +189,8 @@ int main(int argc, char **argv) {
                                          instruction.Operands[0].FromHandle,
                                          static_cast<dxp::sm5::PublicOperandRole>(
                                              dxp::sm5::GetOperandRole(
-                                                 static_cast<dxp::sm5::OpcodeType>(instruction.Opcode), 0))});
+                                                 static_cast<dxp::sm5::OpcodeType>(instruction.Opcode), 0)),
+                                         0xF});
           match.SetCapturedOperand("src",
               dxp::sm5::CapturedOperand{instruction.Operands[1].Type,
                                          instruction.Operands[1].NumComponents,
@@ -203,7 +204,8 @@ int main(int argc, char **argv) {
                                          instruction.Operands[1].FromHandle,
                                          static_cast<dxp::sm5::PublicOperandRole>(
                                              dxp::sm5::GetOperandRole(
-                                                 static_cast<dxp::sm5::OpcodeType>(instruction.Opcode), 1))});
+                                                 static_cast<dxp::sm5::OpcodeType>(instruction.Opcode), 1)),
+                                         0xF});
           matches.push_back(std::move(match));
         }
         return matches;

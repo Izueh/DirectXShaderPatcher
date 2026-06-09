@@ -46,6 +46,7 @@ struct CapturedOperand {
   std::shared_ptr<CapturedOperand> RelativeOperand;
   std::string FromHandle;
   PublicOperandRole Role = PublicOperandRole::Source;
+  uint32_t DestinationMask = 0;
 };
 
 /// @brief Lightweight captured instruction — exposes only the fields needed
