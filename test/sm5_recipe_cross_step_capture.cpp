@@ -7,27 +7,6 @@
 
 namespace {
 
-static bool OperandsEqual(const dxp::sm5::ProgramOperand &lhs,
-                          const dxp::sm5::ProgramOperand &rhs) {
-  if (lhs.Type != rhs.Type || lhs.NumComponents != rhs.NumComponents ||
-      lhs.ComponentMode != rhs.ComponentMode || lhs.Modifier != rhs.Modifier ||
-      lhs.Indices != rhs.Indices || lhs.ImmediateValues != rhs.ImmediateValues) {
-    return false;
-  }
-
-  if (lhs.RelativeOperands.size() != rhs.RelativeOperands.size()) {
-    return false;
-  }
-
-  if (!lhs.RelativeOperands.empty() &&
-      !OperandsEqual(lhs.RelativeOperands.front(),
-                     rhs.RelativeOperands.front())) {
-    return false;
-  }
-
-  return true;
-}
-
 static int FindFirstMul(const dxp::sm5::ProgramInspection &program) {
   for (size_t index = 0; index < program.Instructions.size(); ++index) {
     const auto &instruction = program.Instructions[index];
@@ -169,7 +148,7 @@ steps:
 
 
 
-  if (!OperandsEqual(patchedInstruction.Operands[0], originalDst)) {
+  if (patchedInstruction.Operands[0] != originalDst) {
     auto &p = patchedInstruction.Operands[0];
     auto &o = originalDst;
     std::cerr << "Cross-step capture mismatch on dst operand:\n";
@@ -188,7 +167,7 @@ steps:
     return 1;
   }
 
-  if (!OperandsEqual(patchedInstruction.Operands[1], originalSrc)) {
+  if (patchedInstruction.Operands[1] != originalSrc) {
     std::cerr << "Expected emitted MOV source operand to preserve the "
                  "captured source from step 1.\n";
     return 1;

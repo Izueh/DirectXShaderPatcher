@@ -151,6 +151,10 @@ struct DxilRewriteEmitValue {
   std::string resourceName;
   ResourceBindingDesc resourceBinding;
   unsigned extractIndex = 0;
+
+  /// @brief Resolves the LLVM scalar type for this emit value.
+  llvm::Type *GetScalarType(llvm::LLVMContext &context,
+                            llvm::Type *fallback) const;
 };
 
 /// @brief Describes a sequence of emitted values and the final replacement.
@@ -253,6 +257,11 @@ struct DxilRewriteRule {
   /// honored regardless of this flag.
   bool pruneDeadInstructions = true;
   DxilRewriteCallback replacementCallback;
+
+  /// @brief Resolves the instruction range for this rewrite rule.
+  bool GetReplacementRange(llvm::Instruction *replacementTarget,
+                           llvm::Instruction *&rangeStart,
+                           llvm::Instruction *&rangeEnd) const;
 };
 
 /// @brief Fluent builder for DxilOperandPattern values.

@@ -1852,6 +1852,9 @@ struct RecipeMatchPattern {
     Sequence.push_back(std::move(instruction));
     return std::move(*this);
   }
+
+  /// @brief Returns true when this match pattern has any declared match criteria.
+  bool HasDeclarativeMatch() const;
 };
 
 /// @brief Stores one callback-supplied SM5 rule match and its captures.
@@ -2148,6 +2151,9 @@ struct RecipeRule {
     Predicate = std::move(predicate);
     return std::move(*this);
   }
+
+  /// @brief Returns true when this rule has a declarative rewrite plan.
+  bool HasDeclarativeRewrite() const;
 };
 
 /// @brief Reports the result of executing one recipe step.
