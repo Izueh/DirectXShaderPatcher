@@ -1,8 +1,8 @@
 #pragma once
 
-#include "dxp/sm5/Model.h"  // Operand, Instruction
-#include "dxp/sm5/Recipe.h"  // CaptureStore
-#include "dxp/sm5/Types.h"  // CapturedOperand
+#include "dxp/sm5/Model.h"
+#include "dxp/sm5/Recipe.h"
+#include "dxp/sm5/Types.h"
 
 #include <cstdint>
 #include <string>
@@ -125,20 +125,10 @@ struct MatchResult {
   std::unordered_map<std::string, uint32_t> indexValues;
 };
 
-/// @brief Collects all instructions that match a pattern.
-/// @param program Program to scan.
-/// @param pattern Pattern to match.
-/// @param captures Global capture store for storing matched operand data.
-/// @return All match results.
 std::vector<MatchResult> CollectMatches(const Program &program,
                                         const InstructionMatch &pattern,
                                         CaptureStore &captures);
 
-/// @brief Collects contiguous instruction ranges matching a sequence.
-/// @param program Program to scan.
-/// @param patterns Sequence of patterns to match.
-/// @param captures Global capture store for storing matched operand data.
-/// @return All sequence matches.
 std::vector<MatchResult>
 CollectSequenceMatches(const Program &program,
                        const std::vector<InstructionMatch> &patterns,
@@ -172,15 +162,9 @@ struct RewriteAction {
   RewriteAction();
 };
 
-/// @brief Applies rewrite actions to a decoded program.
-/// @param program Program to mutate.
-/// @param actions Actions to apply in order.
-/// @return `true` on success, or `false` when the action set is invalid.
 bool ApplyRewriteActions(Program &program,
                          const std::vector<RewriteAction> &actions);
 
-/// @brief Refreshes derived declaration metadata from the instruction stream.
-/// @param program Program whose declarations should be refreshed.
 void RefreshDeclarations(Program &program);
 
 } // namespace dxp::sm5

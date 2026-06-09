@@ -176,28 +176,11 @@ struct Operand {
            CaptureIndices || CaptureImmediates;
   }
 
-  /// @brief Compares this operand against a CapturedOperand for match purposes.
   bool Equals(const CapturedOperand &other) const;
-
-  /// @brief Compares this operand against another Operand for match purposes.
   bool Equals(const Operand &other) const;
-
-  /// @brief Computes the destination component mask from this operand's
-  /// NumComponents and ComponentMode fields.
   uint32_t GetDestinationMask() const;
-
-  /// @brief Returns true when this operand has literal component specification
-  /// (non-4 component count or non-default component mode).
   bool HasLiteralComponents() const;
-
-  /// @brief Converts this Operand into a CapturedOperand for public API storage.
-  /// Copies Type, NumComponents, ComponentMode, Modifier, Indices,
-  /// ImmediateValues, IndexEntries, RelativeOperand (recursive), and FromHandle.
   CapturedOperand ToCaptured() const;
-
-  /// @brief Populates this Operand from a CapturedOperand.
-  /// Copies Type, NumComponents, ComponentMode, Modifier, Indices,
-  /// ImmediateValues, IndexEntries, RelativeOperand (recursive), and FromHandle.
   void FromCaptured(const CapturedOperand &cap);
 };
 
@@ -214,16 +197,9 @@ struct Instruction {
   std::string Capture;
   InstructionCaptureFields CaptureFields;
 
-  /// @brief Converts this Instruction into a CapturedInstruction for public API storage.
   CapturedInstruction ToCaptured() const;
-
-  /// @brief Populates this Instruction from a CapturedInstruction.
   void FromCaptured(const CapturedInstruction &cap);
-
-  /// @brief Encodes this instruction's RawTokens and sets LengthInDwords.
   void Finalize();
-
-  /// @brief Returns true when this instruction is a DCL_* declarative opcode.
   bool IsDeclaration() const;
 };
 
@@ -284,41 +260,11 @@ struct Program {
   std::vector<uint32_t> IndexableTemps;
 };
 
-/// @brief Returns a human-readable name for an opcode.
-/// @param opcode Opcode to format.
-/// @return A static opcode name string.
 const char *GetOpcodeName(Opcode opcode);
-
-/// @brief Returns whether an opcode carries the test_boolean control bit.
-/// @param opcode Opcode to inspect.
-/// @return `true` when the opcode uses the zero/nonzero test control.
 bool OpcodeUsesTestBoolean(Opcode opcode);
-
-/// @brief Parses an opcode name into its typed representation.
-/// @param name Opcode name to parse.
-/// @param opcode Receives the parsed opcode on success.
-/// @return `true` when the name maps to a known opcode.
 bool ParseOpcode(const std::string &name, Opcode &opcode);
-
-/// @brief Returns whether an opcode is a data instruction (as opposed to a
-/// DCL/declarative opcode). Data opcodes have operand-role layouts.
-/// @param opcode Opcode to inspect.
-/// @return `true` when the opcode is a data instruction.
 bool IsDataOpcode(OpcodeType opcode);
-
-/// @brief Returns the operand role (source or destination) for a given
-/// opcode and operand index.
-/// @param opcode Opcode to look up.
-/// @param operandIndex Operand position within the instruction.
-/// @return The operand role, or `Source` if the opcode is unknown.
 OperandRole GetOperandRole(OpcodeType opcode, size_t operandIndex);
-
-/// @brief Parses an opcode name and resolves any implicit test_boolean alias.
-/// @param name Opcode name or assembly-style alias to parse.
-/// @param opcode Receives the parsed opcode on success.
-/// @param implicitTestBoolean Receives `-1` when no alias implied a test,
-/// otherwise the decoded zero/nonzero control.
-/// @return `true` when the name maps to a known opcode or supported alias.
 bool ParseOpcodeWithImplicitTestBoolean(const std::string &name,
                                         Opcode &opcode,
                                         int32_t &implicitTestBoolean);

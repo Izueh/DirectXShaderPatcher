@@ -70,8 +70,6 @@ bool SerializeDxbcContainer(const Container &container,
 
 bool RecomputeDxbcHash(std::vector<uint8_t> &containerBytes);
 
-/// @brief Executes a pre-compiled recipe against an already-parsed program.
-/// Internal API — available for benchmarking. Not part of the public SDK surface.
 bool ExecuteRecipe(
     Program &program, const Recipe &recipe,
     RecipeContext &context, dxp::PatchReport *outReport,

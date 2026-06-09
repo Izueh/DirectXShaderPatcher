@@ -248,8 +248,6 @@ struct RuntimeRule {
   RecipeRewriteCallback RewriteCallback;
   bool RefreshDeclarations = false;
 
-  /// @brief Resolves the instruction range for this rule based on the match
-  /// window and the rule's offset configuration.
   bool ResolveReplacementRange(const MatchResult &match,
                                const std::string &rewritePath,
                                uint32_t &rangeStart,
