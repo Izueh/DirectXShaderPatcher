@@ -2,6 +2,7 @@
 
 #include "dxp/sm5/Model.h"  // Operand, Instruction
 #include "dxp/sm5/Recipe.h"  // CaptureStore
+#include "dxp/sm5/Types.h"  // CapturedOperand
 
 #include <cstdint>
 #include <string>
@@ -89,7 +90,7 @@ struct MatchResult {
   const dxp::sm5::Instruction *Instruction;
   uint32_t RangeStartIndex;
   uint32_t RangeEndIndex;
-  std::unordered_map<std::string, Operand> operands;
+  std::unordered_map<std::string, CapturedOperand> operands;
   std::unordered_map<std::string, dxp::sm5::Instruction> instructions;
   std::unordered_map<std::string, uint32_t> indexValues;
 };

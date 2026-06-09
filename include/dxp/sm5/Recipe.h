@@ -1,13 +1,14 @@
 #pragma once
 
 #include "dxp/PatchReport.h"
-#include "../src/dxp/sm5/Model.h"  // Operand, Instruction, OperandRole
+#include "Types.h"
 
 #include <any>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -24,9 +25,9 @@ struct Program;
 /// across the entire recipe.
 struct CaptureStore {
   /// Captured operands, keyed by their `capture` name.
-  std::unordered_map<std::string, Operand> operands;
+  std::unordered_map<std::string, CapturedOperand> operands;
   /// Captured instructions (sequence matches), keyed by name.
-  std::unordered_map<std::string, Instruction> instructions;
+  std::unordered_map<std::string, CapturedInstruction> instructions;
   /// Captured index immediates and instruction indices, keyed by name.
   std::unordered_map<std::string, uint32_t> indexValues;
 
@@ -1858,28 +1859,51 @@ struct RecipeMatchPattern {
 /// Callback matches are normalized into the same runtime rewrite flow used by
 /// declarative rules. Captures are stored in `context.captures` for declarative
 /// matching; this struct's capture maps are populated only by code callbacks.
+///
+/// Callbacks may read captures via `GetCapturedOperand`/`GetCapturedInstruction`
+/// and write captures via `SetCapturedOperand`/`SetCapturedInstruction` so that
+/// subsequent declarative emit templates can reference them by capture name.
 struct RecipeRuleMatch {
   uint32_t InstructionIndex = 0;
-  const Instruction *InstructionHandle = nullptr;
   uint32_t RangeStartIndex = 0;
   uint32_t RangeEndIndex = 0;
   /// Operands captured by name. Only populated by code callbacks.
-  std::unordered_map<std::string, const Operand *> CapturedOperands;
+  std::unordered_map<std::string, CapturedOperand> CapturedOperands;
   /// Instructions captured by name. Only populated by code callbacks.
-  std::unordered_map<std::string, const Instruction *> CapturedInstructions;
+  std::unordered_map<std::string, CapturedInstruction> CapturedInstructions;
 
   /// Per-slot index immediates captured via `RecipeOperandIndexPattern::Capture`.
   /// Only populated by code callbacks.
   std::unordered_map<std::string, uint32_t> CapturedOperandIndexValues;
 
-  const Operand *GetCapturedOperand(const std::string &name) const {
+  /// @brief Looks up a captured operand by name.
+  /// @param name Capture name.
+  /// @return Pointer to the captured operand, or `nullptr` when absent.
+  const CapturedOperand *GetCapturedOperand(const std::string &name) const {
     const auto it = CapturedOperands.find(name);
-    return it == CapturedOperands.end() ? nullptr : it->second;
+    return it == CapturedOperands.end() ? nullptr : &it->second;
   }
 
-  const Instruction *GetCapturedInstruction(const std::string &name) const {
+  /// @brief Looks up a captured instruction by name.
+  /// @param name Capture name.
+  /// @return Pointer to the captured instruction, or `nullptr` when absent.
+  const CapturedInstruction *GetCapturedInstruction(const std::string &name) const {
     const auto it = CapturedInstructions.find(name);
-    return it == CapturedInstructions.end() ? nullptr : it->second;
+    return it == CapturedInstructions.end() ? nullptr : &it->second;
+  }
+
+  /// @brief Stores a captured operand for declarative emit resolution.
+  /// @param name Capture name.
+  /// @param operand Captured operand data.
+  void SetCapturedOperand(std::string_view name, CapturedOperand operand) {
+    CapturedOperands[std::string(name)] = std::move(operand);
+  }
+
+  /// @brief Stores a captured instruction for declarative emit resolution.
+  /// @param name Capture name.
+  /// @param instruction Captured instruction data.
+  void SetCapturedInstruction(std::string_view name, CapturedInstruction instruction) {
+    CapturedInstructions[std::string(name)] = std::move(instruction);
   }
 
   /// @brief Looks up a per-slot index immediate captured during matching.

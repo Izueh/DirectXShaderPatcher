@@ -17,6 +17,10 @@
 namespace dxp {
 namespace sm5 {
 
+namespace {
+
+} // anonymous namespace
+
 bool ExecuteRecipe(Program &program, const Recipe &recipe,
            RecipeContext &context, dxp::PatchReport *report = nullptr,
            const std::function<void(const std::string &, RecipeContext &)>
@@ -706,27 +710,30 @@ PatchResult PatchContainer(const std::vector<uint8_t> &inputContainer,
     return result;
   }
 
-  // Populate typed exports.
+  // Populate typed exports into PatchReport::Exports.
   for (const auto &exp : recipe.GetExports()) {
     if (exp.keys.empty()) {
       // Export all.
       switch (exp.kind) {
         case RecipeExport::Kind::CapturedOperands:
-          result.captured_operands = result.RecipeContext.captures.operands;
+          for (const auto &entry : result.RecipeContext.captures.operands) {
+            result.Report.Exports.captured_operands[entry.first] = entry.second;
+          }
           break;
         case RecipeExport::Kind::CapturedInstructions:
-          result.captured_instructions =
-              result.RecipeContext.captures.instructions;
+          for (const auto &entry : result.RecipeContext.captures.instructions) {
+            result.Report.Exports.captured_instructions[entry.first] = entry.second;
+          }
           break;
         case RecipeExport::Kind::CapturedIndexValues:
-          result.captured_index_values =
+          result.Report.Exports.captured_index_values =
               result.RecipeContext.captures.indexValues;
           break;
         case RecipeExport::Kind::Variables:
-          result.variables = result.RecipeContext.Variables;
+          result.Report.Exports.variables = result.RecipeContext.Variables;
           break;
         case RecipeExport::Kind::State:
-          result.state = result.RecipeContext.State;
+          result.Report.Exports.state = result.RecipeContext.State;
           break;
       }
     } else {
@@ -736,29 +743,29 @@ PatchResult PatchContainer(const std::vector<uint8_t> &inputContainer,
           case RecipeExport::Kind::CapturedOperands:
             if (auto it = result.RecipeContext.captures.operands.find(k);
                 it != result.RecipeContext.captures.operands.end())
-              result.captured_operands[k] = it->second;
+              result.Report.Exports.captured_operands[k] = it->second;
             break;
           case RecipeExport::Kind::CapturedInstructions:
             if (auto it =
                     result.RecipeContext.captures.instructions.find(k);
                 it != result.RecipeContext.captures.instructions.end())
-              result.captured_instructions[k] = it->second;
+              result.Report.Exports.captured_instructions[k] = it->second;
             break;
           case RecipeExport::Kind::CapturedIndexValues:
             if (auto it =
                     result.RecipeContext.captures.indexValues.find(k);
                 it != result.RecipeContext.captures.indexValues.end())
-              result.captured_index_values[k] = it->second;
+              result.Report.Exports.captured_index_values[k] = it->second;
             break;
           case RecipeExport::Kind::Variables:
             if (auto it = result.RecipeContext.Variables.find(k);
                 it != result.RecipeContext.Variables.end())
-              result.variables[k] = it->second;
+              result.Report.Exports.variables[k] = it->second;
             break;
           case RecipeExport::Kind::State:
             if (auto it = result.RecipeContext.State.find(k);
                 it != result.RecipeContext.State.end())
-              result.state[k] = it->second;
+              result.Report.Exports.state[k] = it->second;
             break;
         }
       }

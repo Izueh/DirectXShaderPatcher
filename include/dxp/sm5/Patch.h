@@ -2,8 +2,8 @@
 
 #include "dxp/PatchReport.h"
 #include "Recipe.h"
+#include "Types.h"
 
-#include <any>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -20,22 +20,6 @@ struct PatchResult {
   std::string Error;
   RecipeContext RecipeContext;
   dxp::PatchReport Report;
-
-  /// Exported captured operands (keyed by capture name). Populated when the
-  /// recipe defines an export of kind `captured_operands`.
-  std::unordered_map<std::string, Operand> captured_operands;
-  /// Exported captured instructions (keyed by capture name). Populated when
-  /// the recipe defines an export of kind `captured_instructions`.
-  std::unordered_map<std::string, Instruction> captured_instructions;
-  /// Exported captured index values (keyed by capture name). Populated when
-  /// the recipe defines an export of kind `captured_index_values`.
-  std::unordered_map<std::string, uint32_t> captured_index_values;
-  /// Exported variables (keyed by variable name). Populated when the recipe
-  /// defines an export of kind `variables`.
-  std::unordered_map<std::string, std::any> variables;
-  /// Exported state (keyed by state name). Populated when the recipe defines
-  /// an export of kind `state`.
-  std::unordered_map<std::string, std::any> state;
 };
 
 /// @brief Optional callbacks for mutating/observing context during execution.
@@ -147,18 +131,5 @@ bool InspectProgram(const std::vector<uint8_t> &inputContainer,
 bool InspectProgram(const uint8_t *inputData, size_t inputSize,
                     ProgramInspection &inspection,
                     std::string *error = nullptr);
-
-/// @brief Executes a pre-compiled recipe against an already-parsed program.
-///
-/// This is the core execution path — it skips container parsing and
-/// serialization, making it suitable for benchmarking the match/rewrite
-/// pipeline or for repeated execution of a single recipe.
-///
-/// @param program Program to patch (mutated in place).
-/// @param recipe Recipe to execute (pre-compiled from YAML).
-/// @param context Execution context (captures, variables, state).
-/// @return The step result, including match counts and changed flags.
-RecipeStepResult ExecuteRecipe(Program &program, const Recipe &recipe,
-                               RecipeContext &context);
 
 } // namespace dxp::sm5

@@ -6,6 +6,90 @@
 
 namespace dxp::sm5 {
 
+namespace {
+
+} // anonymous namespace
+
+bool Operand::Equals(const CapturedOperand &other) const {
+  if (Type != other.Type ||
+      NumComponents != other.NumComponents ||
+      ComponentMode != other.ComponentMode ||
+      Modifier != other.Modifier) {
+    return false;
+  }
+
+  if (Indices != other.Indices ||
+      ImmediateValues != other.ImmediateValues) {
+    return false;
+  }
+
+  if (IndexEntries.size() != other.IndexEntries.size()) {
+    return false;
+  }
+
+  for (size_t i = 0; i < IndexEntries.size(); ++i) {
+    const auto &lhsIdx = IndexEntries[i];
+    const auto &rhsIdx = other.IndexEntries[i];
+    if (static_cast<uint32_t>(lhsIdx.Representation) != rhsIdx.Representation ||
+        lhsIdx.HasImmediateLo != rhsIdx.HasImmediateLo ||
+        lhsIdx.HasImmediateHi != rhsIdx.HasImmediateHi ||
+        lhsIdx.ImmediateLo != rhsIdx.ImmediateLo ||
+        lhsIdx.ImmediateHi != rhsIdx.ImmediateHi) {
+      return false;
+    }
+  }
+
+  if (static_cast<bool>(RelativeOperand) != static_cast<bool>(other.RelativeOperand)) {
+    return false;
+  }
+  if (RelativeOperand && other.RelativeOperand) {
+    if (!RelativeOperand->Equals(*other.RelativeOperand)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool Operand::Equals(const Operand &other) const {
+  if (Type != other.Type ||
+      NumComponents != other.NumComponents ||
+      ComponentMode != other.ComponentMode ||
+      Modifier != other.Modifier ||
+      Indices != other.Indices ||
+      ImmediateValues != other.ImmediateValues ||
+      RelativeOperand != other.RelativeOperand) {
+    return false;
+  }
+
+  if (IndexEntries.size() != other.IndexEntries.size()) {
+    return false;
+  }
+
+  for (size_t i = 0; i < IndexEntries.size(); ++i) {
+    const auto &lhs = IndexEntries[i];
+    const auto &rhs = other.IndexEntries[i];
+    if (lhs.Representation != rhs.Representation ||
+        lhs.HasImmediateLo != rhs.HasImmediateLo ||
+        lhs.HasImmediateHi != rhs.HasImmediateHi ||
+        lhs.ImmediateLo != rhs.ImmediateLo ||
+        lhs.ImmediateHi != rhs.ImmediateHi) {
+      return false;
+    }
+    if (static_cast<bool>(lhs.RelativeOperand) !=
+        static_cast<bool>(rhs.RelativeOperand)) {
+      return false;
+    }
+    if (lhs.RelativeOperand && rhs.RelativeOperand) {
+      if (!lhs.RelativeOperand->Equals(*rhs.RelativeOperand)) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
 OperandMatch::OperandMatch()
   : Any(false), MatchType(D3D10_SB_OPERAND_TYPE_TEMP), HasTypeMatch(false),
       MatchComponentMode(D3D10_SB_OPERAND_4_COMPONENT_NOSWIZZLE),
@@ -139,7 +223,7 @@ static bool OperandIndexEntriesEqual(const Operand &lhs, const Operand &rhs) {
 static bool OperandsEqualProjected(const Operand &lhs, const Operand &rhs,
                                    const OperandMatch &pattern) {
   if (!pattern.HasMatchCaptureProjection()) {
-    return OperandsEqual(lhs, rhs);
+    return lhs.Equals(rhs);
   }
 
   if (pattern.MatchCaptureType && lhs.Type != rhs.Type) {
@@ -242,7 +326,7 @@ bool MatchesOperand(const Operand &operand, const OperandMatch &pattern) {
 
 static bool MatchOperand(
     const Operand &operand, const OperandMatch &pattern,
-    std::unordered_map<std::string, Operand> &localOperands,
+    std::unordered_map<std::string, CapturedOperand> &localOperands,
     std::unordered_map<std::string, uint32_t> &localIndexValues,
     const std::unordered_map<std::string, uint32_t> &existingCapturedIndexValues) {
   if (!MatchesOperand(operand, pattern)) {
@@ -292,7 +376,7 @@ static bool MatchOperand(
 
 static bool MatchInstruction(
     const Instruction &instruction, const InstructionMatch &pattern,
-    std::unordered_map<std::string, Operand> &localOperands,
+    std::unordered_map<std::string, CapturedOperand> &localOperands,
     std::unordered_map<std::string, Instruction> &localInstructions,
     std::unordered_map<std::string, uint32_t> &localIndexValues,
     const CaptureStore &globalCaptures,
@@ -330,30 +414,28 @@ static bool MatchInstruction(
       return false;
 
     if (!operandPattern.MatchAgainstCapture.empty()) {
-      const Operand *captured = nullptr;
       // Check local captures first (from this instruction's earlier operands)
       const auto localIt = localOperands.find(operandPattern.MatchAgainstCapture);
       if (localIt != localOperands.end()) {
-        captured = &localIt->second;
-      }
+        if (!operand.Equals(localIt->second)) {
+          return false;
+        }
       // Fall back to global captures for cross-step persistence
-      if (captured == nullptr) {
+      } else {
         const auto globalIt = globalCaptures.operands.find(operandPattern.MatchAgainstCapture);
         if (globalIt != globalCaptures.operands.end()) {
-          captured = &globalIt->second;
+          if (!operand.Equals(globalIt->second)) {
+            return false;
+          }
         }
-      }
-
-      if (captured == nullptr || !OperandsEqualProjected(operand, *captured,
-                                                        operandPattern)) {
-        return false;
       }
     }
 
     if (!operandPattern.CaptureName.empty()) {
-      Operand capturedOperand = operand;
-      capturedOperand.Role = GetOperandRole(instruction.Opcode.Value, index);
-      localOperands[operandPattern.CaptureName] = std::move(capturedOperand);
+      CapturedOperand capOp = operand.ToCaptured();
+      capOp.Role = static_cast<PublicOperandRole>(
+          GetOperandRole(static_cast<OpcodeType>(instruction.Opcode), index));
+      localOperands[operandPattern.CaptureName] = std::move(capOp);
     }
   }
 
@@ -367,7 +449,7 @@ std::vector<MatchResult> CollectMatches(const Program &program,
   matches.reserve(program.Instructions.size());
 
   for (uint32_t index = 0; index < program.Instructions.size(); ++index) {
-    std::unordered_map<std::string, Operand> localOperands;
+    std::unordered_map<std::string, CapturedOperand> localOperands;
     std::unordered_map<std::string, Instruction> localInstructions;
     std::unordered_map<std::string, uint32_t> localIndexValues;
 
@@ -407,7 +489,7 @@ CollectSequenceMatches(const Program &program,
   const uint32_t limit =
       static_cast<uint32_t>(program.Instructions.size() - patterns.size() + 1);
   for (uint32_t startIndex = 0; startIndex < limit; ++startIndex) {
-    std::unordered_map<std::string, Operand> localOperands;
+    std::unordered_map<std::string, CapturedOperand> localOperands;
     std::unordered_map<std::string, Instruction> localInstructions;
     std::unordered_map<std::string, uint32_t> localIndexValues;
 

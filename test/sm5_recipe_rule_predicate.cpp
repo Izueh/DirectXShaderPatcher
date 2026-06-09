@@ -174,11 +174,36 @@ int main(int argc, char **argv) {
 
           dxp::sm5::RecipeRuleMatch match;
           match.InstructionIndex = index;
-          match.InstructionHandle = &instruction;
           match.RangeStartIndex = index;
           match.RangeEndIndex = index;
-          match.CapturedOperands["dst"] = &instruction.Operands[0];
-          match.CapturedOperands["src"] = &instruction.Operands[1];
+          match.SetCapturedOperand("dst",
+              dxp::sm5::CapturedOperand{instruction.Operands[0].Type,
+                                         instruction.Operands[0].NumComponents,
+                                         instruction.Operands[0].ComponentMode,
+                                         instruction.Operands[0].Modifier,
+                                         instruction.Operands[0].Indices,
+                                         instruction.Operands[0].ImmediateValues,
+                                         {},
+                                         {},
+                                         nullptr,
+                                         instruction.Operands[0].FromHandle,
+                                         static_cast<dxp::sm5::PublicOperandRole>(
+                                             dxp::sm5::GetOperandRole(
+                                                 static_cast<dxp::sm5::OpcodeType>(instruction.Opcode), 0))});
+          match.SetCapturedOperand("src",
+              dxp::sm5::CapturedOperand{instruction.Operands[1].Type,
+                                         instruction.Operands[1].NumComponents,
+                                         instruction.Operands[1].ComponentMode,
+                                         instruction.Operands[1].Modifier,
+                                         instruction.Operands[1].Indices,
+                                         instruction.Operands[1].ImmediateValues,
+                                         {},
+                                         {},
+                                         nullptr,
+                                         instruction.Operands[1].FromHandle,
+                                         static_cast<dxp::sm5::PublicOperandRole>(
+                                             dxp::sm5::GetOperandRole(
+                                                 static_cast<dxp::sm5::OpcodeType>(instruction.Opcode), 1))});
           matches.push_back(std::move(match));
         }
         return matches;

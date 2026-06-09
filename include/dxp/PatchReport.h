@@ -1,9 +1,12 @@
 #pragma once
 
+#include <any>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+#include "dxp/sm5/Types.h"
 
 namespace dxp {
 
@@ -87,6 +90,37 @@ struct PatchContainerReport {
   std::vector<PatchChunkReport> Chunks;
 };
 
+/// @brief Wraps all exported data from a recipe execution.
+///
+/// Populated when the recipe defines exports (YAML `exports` or C++
+/// `Recipe::AddExport`). Callers access captured operands, instructions,
+/// index values, variables, and state through typed getters.
+struct PatchExport {
+  std::unordered_map<std::string, dxp::sm5::CapturedOperand> captured_operands;
+  std::unordered_map<std::string, dxp::sm5::CapturedInstruction> captured_instructions;
+  std::unordered_map<std::string, uint32_t> captured_index_values;
+  std::unordered_map<std::string, std::any> variables;
+  std::unordered_map<std::string, std::any> state;
+
+  /// @brief Looks up a captured operand by name.
+  const dxp::sm5::CapturedOperand *GetCapturedOperand(const std::string &name) const {
+    const auto it = captured_operands.find(name);
+    return it == captured_operands.end() ? nullptr : &it->second;
+  }
+
+  /// @brief Looks up a captured instruction by name.
+  const dxp::sm5::CapturedInstruction *GetCapturedInstruction(const std::string &name) const {
+    const auto it = captured_instructions.find(name);
+    return it == captured_instructions.end() ? nullptr : &it->second;
+  }
+
+  /// @brief Looks up a captured index value by name.
+  const uint32_t *GetCapturedOperandIndexValue(const std::string &name) const {
+    const auto it = captured_index_values.find(name);
+    return it == captured_index_values.end() ? nullptr : &it->second;
+  }
+};
+
 /// @brief Caller-facing patch report surface.
 /// Additional execution details can be added here without changing the
 /// mutable recipe-context contract.
@@ -94,6 +128,7 @@ struct PatchReport {
   std::vector<PatchStepReport> Steps;
   std::unordered_map<std::string, PatchBindingValue> NewBindings;
   PatchContainerReport OutputContainer;
+  PatchExport Exports;
 };
 
 } // namespace dxp

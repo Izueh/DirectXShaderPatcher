@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include "dxp/sm5/Types.h"
+
 namespace dxp {
 namespace sm5 {
 
@@ -169,16 +171,27 @@ struct Operand {
   bool CaptureModifier = false;
   bool CaptureIndices = false;
   bool CaptureImmediates = false;
-  OperandRole Role = OperandRole::Source;
 
   bool HasCaptureFieldProjection() const {
     return CaptureType || CaptureComponents || CaptureModifier ||
            CaptureIndices || CaptureImmediates;
   }
 
-  OperandRole GetOperandRole() const {
-    return Role;
-  }
+  /// @brief Compares this operand against a CapturedOperand for match purposes.
+  bool Equals(const CapturedOperand &other) const;
+
+  /// @brief Compares this operand against another Operand for match purposes.
+  bool Equals(const Operand &other) const;
+
+  /// @brief Converts this Operand into a CapturedOperand for public API storage.
+  /// Copies Type, NumComponents, ComponentMode, Modifier, Indices,
+  /// ImmediateValues, IndexEntries, RelativeOperand (recursive), and FromHandle.
+  CapturedOperand ToCaptured() const;
+
+  /// @brief Populates this Operand from a CapturedOperand.
+  /// Copies Type, NumComponents, ComponentMode, Modifier, Indices,
+  /// ImmediateValues, IndexEntries, RelativeOperand (recursive), and FromHandle.
+  void FromCaptured(const CapturedOperand &cap);
 };
 
 struct Instruction {
@@ -193,6 +206,12 @@ struct Instruction {
   std::string Name;
   std::string Capture;
   InstructionCaptureFields CaptureFields;
+
+  /// @brief Converts this Instruction into a CapturedInstruction for public API storage.
+  CapturedInstruction ToCaptured() const;
+
+  /// @brief Populates this Instruction from a CapturedInstruction.
+  void FromCaptured(const CapturedInstruction &cap);
 };
 
 struct ResourceDecl {

@@ -16,6 +16,98 @@
 
 namespace dxp::sm5 {
 
+// ---- Operand conversion implementations ----
+
+CapturedOperand Operand::ToCaptured() const {
+  CapturedOperand cap;
+  cap.Type = Type;
+  cap.NumComponents = NumComponents;
+  cap.ComponentMode = ComponentMode;
+  cap.Modifier = Modifier;
+  cap.Indices = Indices;
+  cap.ImmediateValues = ImmediateValues;
+  cap.RawTokens = RawTokens;
+  cap.FromHandle = FromHandle;
+  for (const auto &idx : IndexEntries) {
+    CapturedOperandIndex capIdx;
+    capIdx.Representation = static_cast<uint32_t>(idx.Representation);
+    capIdx.HasImmediateLo = idx.HasImmediateLo;
+    capIdx.ImmediateLo = idx.ImmediateLo;
+    capIdx.HasImmediateHi = idx.HasImmediateHi;
+    capIdx.ImmediateHi = idx.ImmediateHi;
+    cap.IndexEntries.push_back(std::move(capIdx));
+  }
+  if (RelativeOperand) {
+    cap.RelativeOperand = std::make_shared<CapturedOperand>(RelativeOperand->ToCaptured());
+  }
+  return cap;
+}
+
+void Operand::FromCaptured(const CapturedOperand &cap) {
+  Type = cap.Type;
+  NumComponents = cap.NumComponents;
+  ComponentMode = cap.ComponentMode;
+  Modifier = cap.Modifier;
+  Indices = cap.Indices;
+  ImmediateValues = cap.ImmediateValues;
+  RawTokens = cap.RawTokens;
+  FromHandle = cap.FromHandle;
+  IndexEntries.clear();
+  for (const auto &capIdx : cap.IndexEntries) {
+    Operand::Index idx;
+    idx.Representation = static_cast<IndexRepresentation>(capIdx.Representation);
+    idx.HasImmediateLo = capIdx.HasImmediateLo;
+    idx.ImmediateLo = capIdx.ImmediateLo;
+    idx.HasImmediateHi = capIdx.HasImmediateHi;
+    idx.ImmediateHi = capIdx.ImmediateHi;
+    if (capIdx.Representation == static_cast<uint32_t>(IndexRepresentation::Relative) ||
+        capIdx.Representation == static_cast<uint32_t>(IndexRepresentation::Immediate32PlusRelative) ||
+        capIdx.Representation == static_cast<uint32_t>(IndexRepresentation::Immediate64PlusRelative)) {
+      if (cap.RelativeOperand) {
+        idx.RelativeOperand = std::make_shared<Operand>();
+        idx.RelativeOperand->FromCaptured(*cap.RelativeOperand);
+      }
+    }
+    IndexEntries.push_back(std::move(idx));
+  }
+  if (cap.RelativeOperand) {
+    RelativeOperand = std::make_shared<Operand>();
+    RelativeOperand->FromCaptured(*cap.RelativeOperand);
+  }
+}
+
+// ---- Instruction conversion implementations ----
+
+CapturedInstruction Instruction::ToCaptured() const {
+  CapturedInstruction cap;
+  cap.OpCode = static_cast<PublicOpcode>(static_cast<uint32_t>(Opcode));
+  cap.Saturate = Controls.Saturate;
+  cap.HasTestBoolean = Controls.HasTestBoolean;
+  cap.TestBoolean = Controls.TestBoolean;
+  cap.CustomData = CustomData;
+  for (size_t i = 0; i < Operands.size(); ++i) {
+    auto capOp = Operands[i].ToCaptured();
+    capOp.Role = static_cast<PublicOperandRole>(
+        GetOperandRole(static_cast<OpcodeType>(Opcode), i));
+    cap.Operands.push_back(std::move(capOp));
+  }
+  return cap;
+}
+
+void Instruction::FromCaptured(const CapturedInstruction &cap) {
+  this->Opcode = dxp::sm5::Opcode{static_cast<uint32_t>(cap.OpCode)};
+  Controls.Saturate = cap.Saturate;
+  Controls.HasTestBoolean = cap.HasTestBoolean;
+  Controls.TestBoolean = cap.TestBoolean;
+  CustomData = cap.CustomData;
+  Operands.clear();
+  for (const auto &capOp : cap.Operands) {
+    Operand op;
+    op.FromCaptured(capOp);
+    Operands.push_back(std::move(op));
+  }
+}
+
 bool AddInputDeclaration(Program &program, const RecipeInputDecl &decl,
                          RecipeContext &context, std::string &error);
 
@@ -349,14 +441,15 @@ static bool ValidateRuleCaptureReferences(const RecipeRule &rule,
 static MatchResult ToRuntimeMatchResult(const RecipeRuleMatch &match) {
   MatchResult runtimeMatch;
   runtimeMatch.InstructionIndex = match.InstructionIndex;
-  runtimeMatch.Instruction = match.InstructionHandle;
   runtimeMatch.RangeStartIndex = match.RangeStartIndex;
   runtimeMatch.RangeEndIndex = match.RangeEndIndex;
   for (const auto &entry : match.CapturedOperands) {
-    runtimeMatch.operands[entry.first] = *entry.second;
+    runtimeMatch.operands[entry.first] = entry.second;
   }
   for (const auto &entry : match.CapturedInstructions) {
-    runtimeMatch.instructions[entry.first] = *entry.second;
+    Instruction inst;
+    inst.FromCaptured(entry.second);
+    runtimeMatch.instructions[entry.first] = std::move(inst);
   }
   runtimeMatch.indexValues = match.CapturedOperandIndexValues;
   return runtimeMatch;
@@ -1286,18 +1379,25 @@ static bool EvaluateRuleRewriteCallback(const RuntimeRule &rule,
   try {
     RecipeRuleMatch publicMatch;
     publicMatch.InstructionIndex = match.InstructionIndex;
-    publicMatch.InstructionHandle = match.Instruction;
     publicMatch.RangeStartIndex = match.RangeStartIndex;
     publicMatch.RangeEndIndex = match.RangeEndIndex;
     for (const auto &entry : context.captures.operands) {
-      publicMatch.CapturedOperands[entry.first] = &entry.second;
+      publicMatch.CapturedOperands[entry.first] = entry.second;
     }
     for (const auto &entry : context.captures.instructions) {
-      publicMatch.CapturedInstructions[entry.first] = &entry.second;
+      publicMatch.CapturedInstructions[entry.first] = entry.second;
     }
     publicMatch.CapturedOperandIndexValues = context.captures.indexValues;
 
     const auto callbackActions = rule.RewriteCallback(program, publicMatch, context);
+
+    // Merge callback-set captures back into context for declarative emit.
+    for (const auto &entry : publicMatch.CapturedOperands) {
+      context.captures.operands[entry.first] = entry.second;
+    }
+    for (const auto &entry : publicMatch.CapturedInstructions) {
+      context.captures.instructions[entry.first] = entry.second;
+    }
     actions.reserve(callbackActions.size());
     for (const RecipeRewriteAction &actionModel : callbackActions) {
       RewriteAction action;
@@ -2138,7 +2238,7 @@ static bool InstantiateOperand(const Operand &operandTemplate,
                                RecipeContext &context, Operand &operand,
                                std::string &error,
                                size_t emitOperandIndex = 0) {
-  const Operand *capturedOperand = nullptr;
+  const CapturedOperand *capturedOperand = nullptr;
   OperandRole capturedRole = OperandRole::Source;
 
   if (!operandTemplate.CaptureName.empty()) {
@@ -2149,7 +2249,7 @@ static bool InstantiateOperand(const Operand &operandTemplate,
       return false;
     }
     capturedOperand = &capIt->second;
-    capturedRole = capturedOperand->Role;
+    capturedRole = static_cast<OperandRole>(capturedOperand->Role);
 
     if (operandTemplate.HasCaptureFieldProjection()) {
       const std::vector<uint32_t> literalIndices = operandTemplate.Indices;
@@ -2194,7 +2294,11 @@ static bool InstantiateOperand(const Operand &operandTemplate,
                     capturedOperand->ComponentMode);
             if (selMode == static_cast<uint32_t>(
                 D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE)) {
-              contextMask = ExtractSwizzleUniqueComponents(*capturedOperand);
+              // Build a temporary Operand from the captured data for
+              // ExtractSwizzleUniqueComponents.
+              Operand tempOp;
+              tempOp.FromCaptured(*capturedOperand);
+              contextMask = ExtractSwizzleUniqueComponents(tempOp);
             }
           }
 
@@ -2210,9 +2314,16 @@ static bool InstantiateOperand(const Operand &operandTemplate,
         operand.Modifier = capturedOperand->Modifier;
       }
       if (operandTemplate.CaptureIndices) {
-        operand.IndexEntries = capturedOperand->IndexEntries;
+        for (const auto &capIdx : capturedOperand->IndexEntries) {
+          Operand::Index idx;
+          idx.Representation = static_cast<Operand::IndexRepresentation>(capIdx.Representation);
+          idx.HasImmediateLo = capIdx.HasImmediateLo;
+          idx.ImmediateLo = capIdx.ImmediateLo;
+          idx.HasImmediateHi = capIdx.HasImmediateHi;
+          idx.ImmediateHi = capIdx.ImmediateHi;
+          operand.IndexEntries.push_back(std::move(idx));
+        }
         operand.Indices = capturedOperand->Indices;
-        operand.RelativeOperand = capturedOperand->RelativeOperand;
       }
       if (operandTemplate.CaptureImmediates) {
         operand.ImmediateValues = capturedOperand->ImmediateValues;
@@ -2226,7 +2337,7 @@ static bool InstantiateOperand(const Operand &operandTemplate,
         operand.ImmediateValues = literalImmediates;
       }
     } else {
-      operand = *capturedOperand;
+      operand.FromCaptured(*capturedOperand);
     }
   }
 
@@ -2235,8 +2346,12 @@ static bool InstantiateOperand(const Operand &operandTemplate,
     const OperandRole emitRole =
         (emitOperandIndex == 0) ? OperandRole::Destination : OperandRole::Source;
 
+    // Convert captured operand to internal type for validation.
+    Operand capturedInternal;
+    capturedInternal.FromCaptured(*capturedOperand);
+
     // Validate the captured operand against its original role.
-    if (!ValidateOperandRole(*capturedOperand, capturedRole, path, context, error)) {
+    if (!ValidateOperandRole(capturedInternal, capturedRole, path, context, error)) {
       return false;
     }
 
@@ -2499,29 +2614,35 @@ static bool InstantiateInstruction(const Instruction &instructionTemplate,
       return false;
     }
 
-    const Instruction &captured = it->second;
+    const CapturedInstruction &captured = it->second;
     const auto &fields = instructionTemplate.CaptureFields;
 
     if (fields.AnySelected()) {
-      instruction = Instruction{};
+      // Build a default instruction and overlay selected fields.
+      instruction.FromCaptured(CapturedInstruction{});
       if (fields.Opcode) {
-        instruction.Opcode = captured.Opcode;
+        instruction.Opcode = Opcode{static_cast<uint32_t>(captured.OpCode)};
       }
       if (fields.Saturate) {
-        instruction.Controls.Saturate = captured.Controls.Saturate;
+        instruction.Controls.Saturate = captured.Saturate;
       }
       if (fields.TestBoolean) {
-        instruction.Controls.HasTestBoolean = captured.Controls.HasTestBoolean;
-        instruction.Controls.TestBoolean = captured.Controls.TestBoolean;
+        instruction.Controls.HasTestBoolean = captured.HasTestBoolean;
+        instruction.Controls.TestBoolean = captured.TestBoolean;
       }
       if (fields.Operands) {
-        instruction.Operands = captured.Operands;
+        instruction.Operands.clear();
+        for (const auto &capOp : captured.Operands) {
+          Operand op;
+          op.FromCaptured(capOp);
+          instruction.Operands.push_back(std::move(op));
+        }
       }
       if (fields.Immediates) {
         instruction.CustomData = captured.CustomData;
       }
     } else {
-      instruction = captured;
+      instruction.FromCaptured(captured);
     }
 
     if (!ValidateInstructionStructure(instruction, instructionPath, error)) {
@@ -2879,8 +3000,12 @@ ExecuteRewriteRules(Program &program, const std::string &stepName,
       // cross-step reuse by subsequent rules.
       if (!selectedMatches.empty()) {
         const auto &lastMatch = matches[selectedMatches.back()];
-        context.captures.operands.insert(lastMatch.operands.begin(), lastMatch.operands.end());
-        context.captures.instructions.insert(lastMatch.instructions.begin(), lastMatch.instructions.end());
+        for (const auto &entry : lastMatch.operands) {
+          context.captures.operands[entry.first] = entry.second;
+        }
+        for (const auto &entry : lastMatch.instructions) {
+          context.captures.instructions[entry.first] = entry.second.ToCaptured();
+        }
         context.captures.indexValues.insert(lastMatch.indexValues.begin(), lastMatch.indexValues.end());
       }
       for (uint32_t selectedIndex : selectedMatches) {
@@ -2916,8 +3041,12 @@ ExecuteRewriteRules(Program &program, const std::string &stepName,
 
       // Merge per-match captures into global context for BuildRewriteInstructions.
       // Use insert (merge) to preserve captures from previous steps.
-      context.captures.operands.insert(match.operands.begin(), match.operands.end());
-      context.captures.instructions.insert(match.instructions.begin(), match.instructions.end());
+      for (const auto &entry : match.operands) {
+        context.captures.operands[entry.first] = entry.second;
+      }
+      for (const auto &entry : match.instructions) {
+        context.captures.instructions[entry.first] = entry.second.ToCaptured();
+      }
       context.captures.indexValues.insert(match.indexValues.begin(), match.indexValues.end());
 
       std::vector<RewriteAction> localActions;

@@ -1,9 +1,18 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
+#include <string>
 #include <vector>
 
+#include "dxp/PatchReport.h"
+
 namespace dxp::sm5 {
+
+struct Program;
+struct Recipe;
+struct RecipeContext;
+struct RecipeStepResult;
 
 struct DxbcContainerHeader {
   uint32_t Signature;
@@ -60,5 +69,13 @@ bool SerializeDxbcContainer(const Container &container,
                             std::vector<uint8_t> &outBytes);
 
 bool RecomputeDxbcHash(std::vector<uint8_t> &containerBytes);
+
+/// @brief Executes a pre-compiled recipe against an already-parsed program.
+/// Internal API — available for benchmarking. Not part of the public SDK surface.
+bool ExecuteRecipe(
+    Program &program, const Recipe &recipe,
+    RecipeContext &context, dxp::PatchReport *outReport,
+    const std::function<void(const std::string &, RecipeContext &)> *beforeStep,
+    const std::function<void(const std::string &, const RecipeStepResult &, RecipeContext &)> *afterStep);
 
 } // namespace dxp::sm5
