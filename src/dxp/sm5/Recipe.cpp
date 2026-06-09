@@ -247,24 +247,18 @@ struct RuntimeRule {
   std::function<bool(RecipeContext &)> Predicate;
   RecipeRewriteCallback RewriteCallback;
   bool RefreshDeclarations = false;
-
-  bool ResolveReplacementRange(const MatchResult &match,
-                               const std::string &rewritePath,
-                               uint32_t &rangeStart,
-                               uint32_t &rangeEnd,
-                               std::string &error) const;
 };
 
-bool RecipeMatchPattern::HasDeclarativeMatch() const {
-  return !Opcode.empty() || !Capture.empty() ||
-         !Saturate.empty() || !InterpolationMode.empty() ||
-         TestBoolean >= 0 || !Operands.empty() ||
-         !Sequence.empty();
+static bool HasDeclarativeMatchPattern(const RecipeMatchPattern &match) {
+  return !match.Opcode.empty() || !match.Capture.empty() ||
+         !match.Saturate.empty() || !match.InterpolationMode.empty() ||
+         match.TestBoolean >= 0 || !match.Operands.empty() ||
+         !match.Sequence.empty();
 }
 
-bool RecipeRule::HasDeclarativeRewrite() const {
-  return !Emit.empty() ||
-         RewriteMode != RecipeRuleRewriteMode::Replace;
+static bool HasDeclarativeRewritePlan(const RecipeRule &rule) {
+  return !rule.Emit.empty() ||
+         rule.RewriteMode != RecipeRuleRewriteMode::Replace;
 }
 
 struct CaptureNameTables {
@@ -490,6 +484,8 @@ static bool ResolveRangeReplacement(const RuntimeRule &rule,
                                     const std::string &rewritePath,
                                     RewriteAction &action,
                                     std::string &error);
+
+static Instruction FinalizeInstruction(Instruction instruction);
 
 static bool BuildRewriteInstructions(const std::vector<Instruction> &templates,
                                      const MatchResult &match,
@@ -1207,7 +1203,7 @@ static bool CompileRule(const RecipeRule &ruleModel,
     rule.ApplicationMode = ruleModel.ApplicationMode;
   }
 
-  const bool hasDeclarativeMatch = ruleModel.Match.HasDeclarativeMatch();
+  const bool hasDeclarativeMatch = HasDeclarativeMatchPattern(ruleModel.Match);
   if (ruleModel.MatchCallback) {
     if (hasDeclarativeMatch) {
       error =
@@ -1233,7 +1229,7 @@ static bool CompileRule(const RecipeRule &ruleModel,
   rule.RewriteCallback = ruleModel.RewriteCallback;
 
   if (rule.RewriteCallback) {
-    if (ruleModel.HasDeclarativeRewrite()) {
+    if (HasDeclarativeRewritePlan(ruleModel)) {
       error =
           "SM5 rules cannot combine declarative rewrite fields with rewrite callbacks";
       return false;
@@ -1467,17 +1463,19 @@ static bool EvaluateRuleRewriteCallback(const RuntimeRule &rule,
   return true;
 }
 
-void Instruction::Finalize() {
-  RawTokens = EncodeInstruction(*this);
-  LengthInDwords = static_cast<uint32_t>(RawTokens.size());
+static Instruction FinalizeInstruction(Instruction instruction) {
+  instruction.RawTokens = EncodeInstruction(instruction);
+  instruction.LengthInDwords =
+      static_cast<uint32_t>(instruction.RawTokens.size());
+  return instruction;
 }
 
-bool Instruction::IsDeclaration() const {
-  const char *opcodeName = GetOpcodeName(Opcode);
+static bool IsDeclarationInstruction(const Instruction &instruction) {
+  const char *opcodeName = GetOpcodeName(instruction.Opcode);
   return opcodeName != nullptr && std::strncmp(opcodeName, "dcl_", 4) == 0;
 }
 
-Instruction Instruction::MakeTempDeclaration(uint32_t tempCount) {
+static Instruction BuildTempDeclaration(uint32_t tempCount) {
   Instruction instruction;
   instruction.Opcode = Opcode{D3D10_SB_OPCODE_DCL_TEMPS};
 
@@ -1488,8 +1486,7 @@ Instruction Instruction::MakeTempDeclaration(uint32_t tempCount) {
   operand.Indices = {tempCount};
   instruction.Operands.push_back(std::move(operand));
 
-  instruction.Finalize();
-  return instruction;
+  return FinalizeInstruction(std::move(instruction));
 }
 
 static void EnsureTempDeclaration(Program &program,
@@ -1518,7 +1515,7 @@ static void EnsureTempDeclaration(Program &program,
       instruction.LengthInDwords =
           static_cast<uint32_t>(instruction.RawTokens.size());
     } else {
-      instruction = Instruction::MakeTempDeclaration(requiredTempCount);
+      instruction = BuildTempDeclaration(requiredTempCount);
     }
     program.TempCount = requiredTempCount;
     program.TempSize = requiredTempCount * 4;
@@ -1527,14 +1524,14 @@ static void EnsureTempDeclaration(Program &program,
 
   uint32_t insertIndex = 0;
   for (uint32_t i = 0; i < program.Instructions.size(); ++i) {
-    if (program.Instructions[i].IsDeclaration()) {
+    if (IsDeclarationInstruction(program.Instructions[i])) {
       insertIndex = i + 1;
     }
   }
 
   program.Instructions.insert(program.Instructions.begin() +
                                   static_cast<ptrdiff_t>(insertIndex),
-                              Instruction::MakeTempDeclaration(requiredTempCount));
+                              BuildTempDeclaration(requiredTempCount));
   program.TempCount = requiredTempCount;
   program.TempSize = requiredTempCount * 4;
 }
@@ -1751,11 +1748,12 @@ static bool ValidateProgramStructure(const Program &program,
   return true;
 }
 
-bool RuntimeRule::ResolveReplacementRange(const MatchResult &match,
-                                          const std::string &rewritePath,
-                                          uint32_t &rangeStart,
-                                          uint32_t &rangeEnd,
-                                          std::string &error) const {
+static bool ResolveReplacementRange(const RuntimeRule &rule,
+                                    const MatchResult &match,
+                                    const std::string &rewritePath,
+                                    uint32_t &rangeStart,
+                                    uint32_t &rangeEnd,
+                                    std::string &error) {
   const uint32_t windowStart = match.RangeStartIndex;
   const uint32_t windowEnd = match.RangeEndIndex;
   if (windowStart > windowEnd) {
@@ -1763,28 +1761,28 @@ bool RuntimeRule::ResolveReplacementRange(const MatchResult &match,
     return false;
   }
 
-  if (RewriteMode == RecipeRuleRewriteMode::Replace) {
+  if (rule.RewriteMode == RecipeRuleRewriteMode::Replace) {
     rangeStart = windowStart;
     rangeEnd = windowEnd;
     return true;
   }
 
-  if (RewriteMode != RecipeRuleRewriteMode::ReplaceRange) {
+  if (rule.RewriteMode != RecipeRuleRewriteMode::ReplaceRange) {
     error = rewritePath + ": unsupported replacement window mode";
     return false;
   }
 
-  if (RangeStartOffset < 0 || RangeEndOffset < -1) {
+  if (rule.RangeStartOffset < 0 || rule.RangeEndOffset < -1) {
     error = rewritePath + ": invalid SM5 replacement range offsets";
     return false;
   }
 
   const uint32_t windowLength = windowEnd - windowStart + 1;
-  const uint32_t startOffset = static_cast<uint32_t>(RangeStartOffset);
+  const uint32_t startOffset = static_cast<uint32_t>(rule.RangeStartOffset);
   const uint32_t endOffset =
-      RangeEndOffset < 0
+      rule.RangeEndOffset < 0
           ? (windowLength - 1)
-          : static_cast<uint32_t>(RangeEndOffset);
+          : static_cast<uint32_t>(rule.RangeEndOffset);
 
   if (startOffset >= windowLength || endOffset >= windowLength) {
     error = rewritePath +
@@ -1809,8 +1807,8 @@ static bool ResolveRangeReplacement(const RuntimeRule &rule,
   if (rule.RewriteMode == RecipeRuleRewriteMode::Replace) {
     uint32_t rangeStart = 0;
     uint32_t rangeEnd = 0;
-    if (!rule.ResolveReplacementRange(match, rewritePath, rangeStart,
-                                      rangeEnd, error)) {
+    if (!ResolveReplacementRange(rule, match, rewritePath, rangeStart,
+                                 rangeEnd, error)) {
       return false;
     }
     action.Type = RewriteActionType::ReplaceRange;
@@ -1845,8 +1843,8 @@ static bool ResolveRangeReplacement(const RuntimeRule &rule,
   if (rule.RewriteMode == RecipeRuleRewriteMode::ReplaceRange) {
     uint32_t rangeStart = 0;
     uint32_t rangeEnd = 0;
-    if (!rule.ResolveReplacementRange(match, rewritePath, rangeStart,
-                                      rangeEnd, error)) {
+    if (!ResolveReplacementRange(rule, match, rewritePath, rangeStart,
+                                 rangeEnd, error)) {
       return false;
     }
     action.Type = RewriteActionType::ReplaceRange;
@@ -2009,35 +2007,36 @@ static uint32_t ExtractSwizzleUniqueComponents(const Operand &op) {
   return mask;
 }
 
-uint32_t Operand::GetDestinationMask() const {
-  if (NumComponents != D3D10_SB_OPERAND_4_COMPONENT) {
+static uint32_t DecodeDstMaskFromOperand(const Operand &op) {
+  if (op.NumComponents != D3D10_SB_OPERAND_4_COMPONENT) {
     return 0;
   }
 
   const uint32_t selMode =
-      DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(ComponentMode);
+      DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(op.ComponentMode);
 
   switch (static_cast<D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE>(selMode)) {
   case D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE: {
-    const uint32_t mask = DECODE_D3D10_SB_OPERAND_4_COMPONENT_MASK(ComponentMode);
+    const uint32_t mask = DECODE_D3D10_SB_OPERAND_4_COMPONENT_MASK(op.ComponentMode);
+
     return mask >> 4;
   }
   case D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE:
-    return ExtractSwizzleUniqueComponents(*this);
+    return ExtractSwizzleUniqueComponents(op);
   case D3D10_SB_OPERAND_4_COMPONENT_SELECT_1_MODE:
-    return 1u << DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECT_1(ComponentMode);
+    return 1u << DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECT_1(op.ComponentMode);
   default:
     return 0;
   }
 }
 
-bool Operand::HasLiteralComponents() const {
-  if (NumComponents >= 0 && NumComponents != 4) {
+static bool HasLiteralComponentSpec(const Operand &op) {
+  if (op.NumComponents >= 0 && op.NumComponents != 4) {
     return true;
   }
   const uint32_t selMode =
-      DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(ComponentMode);
-  return (selMode != 0) || (ComponentMode != 0);
+      DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(op.ComponentMode);
+  return (selMode != 0) || (op.ComponentMode != 0);
 }
 
 static void EncodeMaskToComponentMode(uint32_t maskBits,
@@ -2242,8 +2241,8 @@ static bool InstantiateOperand(const Operand &operandTemplate,
           uint32_t contextMask = 0;
 
 
-          if (operandTemplate.HasLiteralComponents()) {
-            contextMask = operandTemplate.GetDestinationMask();
+          if (HasLiteralComponentSpec(operandTemplate)) {
+            contextMask = DecodeDstMaskFromOperand(operandTemplate);
           }
 
 
@@ -2613,7 +2612,7 @@ static bool InstantiateInstruction(const Instruction &instructionTemplate,
       return false;
     }
 
-    instruction.Finalize();
+    instruction = FinalizeInstruction(std::move(instruction));
     return true;
   }
 
@@ -2639,7 +2638,7 @@ static bool InstantiateInstruction(const Instruction &instructionTemplate,
     return false;
   }
 
-  instruction.Finalize();
+  instruction = FinalizeInstruction(std::move(instruction));
   return true;
 }
 

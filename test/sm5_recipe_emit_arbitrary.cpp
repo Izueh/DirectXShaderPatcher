@@ -7,6 +7,28 @@
 
 namespace {
 
+static bool OperandsEqual(const dxp::sm5::ProgramOperand &lhs,
+                          const dxp::sm5::ProgramOperand &rhs) {
+  if (lhs.Type != rhs.Type || lhs.NumComponents != rhs.NumComponents ||
+      lhs.ComponentMode != rhs.ComponentMode || lhs.Modifier != rhs.Modifier ||
+      lhs.Indices != rhs.Indices ||
+      lhs.ImmediateValues != rhs.ImmediateValues) {
+    return false;
+  }
+
+  if (lhs.RelativeOperands.size() != rhs.RelativeOperands.size()) {
+    return false;
+  }
+
+  if (!lhs.RelativeOperands.empty() &&
+      !OperandsEqual(lhs.RelativeOperands.front(),
+                     rhs.RelativeOperands.front())) {
+    return false;
+  }
+
+  return true;
+}
+
 static int FindTargetInstruction(const dxp::sm5::ProgramInspection &program) {
   for (size_t index = 0; index < program.Instructions.size(); ++index) {
     const auto &instruction = program.Instructions[index];
@@ -103,8 +125,8 @@ steps:
     return 1;
   }
 
-  if (patchedInstruction.Operands[0] !=
-                     originalInstruction.Operands[0]) {
+  if (!OperandsEqual(patchedInstruction.Operands[0],
+                     originalInstruction.Operands[0])) {
     auto &p = patchedInstruction.Operands[0];
     auto &o = originalInstruction.Operands[0];
     std::cerr << "DEBUG dst: Type=" << p.Type << " o.Type=" << o.Type
@@ -125,8 +147,8 @@ steps:
     return 1;
   }
 
-  if (patchedInstruction.Operands[1] !=
-                     originalInstruction.Operands[1]) {
+  if (!OperandsEqual(patchedInstruction.Operands[1],
+                     originalInstruction.Operands[1])) {
     std::cerr << "Expected emitted MOV source operand to preserve the captured "
                  "source operand.\n";
     return 1;

@@ -205,60 +205,62 @@ EvaluateRecipePrefilter(DxilRecipeContext &context,
   return MakeRecipeStepSuccess(false, matchedPatterns);
 }
 
-bool DxilRecipeStepCondition::Evaluate(const DxilRecipeContext &context) const {
-  if (!IsSet()) {
+static bool EvaluateStepCondition(const DxilRecipeStepCondition &condition,
+                                  const DxilRecipeContext &context) {
+  if (!condition.IsSet()) {
     return true;
   }
 
   bool value = false;
 
-  if (!state.empty()) {
-    const bool *boolValue = context.FindState<bool>(state);
+  if (!condition.state.empty()) {
+    const bool *boolValue = context.FindState<bool>(condition.state);
     if (boolValue != nullptr) {
       value = *boolValue;
     } else {
-      const uint32_t *u32Value = context.FindState<uint32_t>(state);
+      const uint32_t *u32Value = context.FindState<uint32_t>(condition.state);
       if (u32Value != nullptr) {
         value = *u32Value != 0;
       } else {
-        const int32_t *i32Value = context.FindState<int32_t>(state);
+        const int32_t *i32Value = context.FindState<int32_t>(condition.state);
         if (i32Value != nullptr) {
           value = *i32Value != 0;
         } else {
           const std::string *stringValue =
-              context.FindState<std::string>(state);
+              context.FindState<std::string>(condition.state);
           if (stringValue != nullptr) {
             value = !stringValue->empty();
           }
         }
       }
     }
-  } else if (!all.empty()) {
+  } else if (!condition.all.empty()) {
     value = true;
-    for (const DxilRecipeStepCondition &child : all) {
-      if (!child.Evaluate(context)) {
+    for (const DxilRecipeStepCondition &child : condition.all) {
+      if (!EvaluateStepCondition(child, context)) {
         value = false;
         break;
       }
     }
-  } else if (!any.empty()) {
+  } else if (!condition.any.empty()) {
     value = false;
-    for (const DxilRecipeStepCondition &child : any) {
-      if (child.Evaluate(context)) {
+    for (const DxilRecipeStepCondition &child : condition.any) {
+      if (EvaluateStepCondition(child, context)) {
         value = true;
         break;
       }
     }
   }
 
-  return negate ? !value : value;
+  return condition.negate ? !value : value;
 }
 
-bool DxilRecipeStep::ShouldExecute(DxilRecipeContext &context) {
-  if (!ifCondition.Evaluate(context)) {
+static bool ShouldExecuteStep(const DxilRecipeStep &step,
+                              DxilRecipeContext &context) {
+  if (!EvaluateStepCondition(step.ifCondition, context)) {
     return false;
   }
-  if (predicate && !predicate(context)) {
+  if (step.predicate && !step.predicate(context)) {
     return false;
   }
   return true;
@@ -546,7 +548,7 @@ bool ExecuteDxilRecipe(const DxilRecipe &recipe, Module &module,
     outReport->NewBindings.clear();
 
   for (const DxilRecipeStep &step : recipe.GetSteps()) {
-    if (!step.ShouldExecute(context)) {
+    if (!ShouldExecuteStep(step, context)) {
       if (outReport != nullptr) {
         dxp::PatchStepReport stepReport;
         stepReport.Name = step.name;

@@ -43,9 +43,6 @@ struct ProgramOperand {
   std::vector<uint32_t> Indices;
   std::vector<uint32_t> ImmediateValues;
   std::vector<ProgramOperand> RelativeOperands;
-
-  /// @brief Compares this operand with another for structural equality.
-  bool operator==(const ProgramOperand &rhs) const;
 };
 
 /// @brief Describes one instruction in the inspection-friendly program view.

@@ -598,29 +598,6 @@ static bool UpdateIoSignatures(Container &container, const Program &before,
   return true;
 }
 
-bool ProgramOperand::operator==(const ProgramOperand &rhs) const {
-  if (Type != rhs.Type ||
-      NumComponents != rhs.NumComponents ||
-      ComponentMode != rhs.ComponentMode ||
-      Modifier != rhs.Modifier ||
-      Indices != rhs.Indices ||
-      ImmediateValues != rhs.ImmediateValues) {
-    return false;
-  }
-
-  if (RelativeOperands.size() != rhs.RelativeOperands.size()) {
-    return false;
-  }
-
-  for (size_t i = 0; i < RelativeOperands.size(); ++i) {
-    if (RelativeOperands[i] != rhs.RelativeOperands[i]) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
 static ProgramOperand ConvertOperand(const Operand &operand) {
   ProgramOperand converted;
   converted.Type = static_cast<uint32_t>(operand.Type);

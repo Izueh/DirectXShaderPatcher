@@ -77,9 +77,6 @@ struct DxilRecipeStepCondition {
   bool IsSet() const {
     return !state.empty() || !all.empty() || !any.empty();
   }
-
-  /// @brief Evaluates this condition against the given recipe context.
-  bool Evaluate(const DxilRecipeContext &context) const;
 };
 
 /// @brief Carries mutable state across DXIL recipe execution.
@@ -199,9 +196,6 @@ struct DxilRecipeStep {
     predicate = std::move(stepPredicate);
     return std::move(*this);
   }
-
-  /// @brief Returns true when this step's conditions allow execution.
-  bool ShouldExecute(DxilRecipeContext &context);
 };
 
 /// @brief Owns the ordered sequence of DXIL recipe steps.

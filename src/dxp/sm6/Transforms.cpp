@@ -62,12 +62,13 @@ static llvm::Type *GetDxilScalarType(llvm::LLVMContext &context,
   }
 }
 
-llvm::Type *DxilRewriteEmitValue::GetScalarType(llvm::LLVMContext &context,
-                                                llvm::Type *fallbackType) const {
-  if (!hasExplicitResultComponentType)
+static llvm::Type *GetEmitValueScalarType(const DxilRewriteEmitValue &value,
+                                          llvm::LLVMContext &context,
+                                          llvm::Type *fallbackType) {
+  if (!value.hasExplicitResultComponentType)
     return fallbackType;
 
-  return GetDxilScalarType(context, resultComponentType);
+  return GetDxilScalarType(context, value.resultComponentType);
 }
 
 static bool IsDxOpCall(const llvm::Instruction &instruction,
@@ -693,30 +694,31 @@ static bool ResolveInstructionAtOffset(llvm::Instruction *base,
   return true;
 }
 
-bool DxilRewriteRule::GetReplacementRange(llvm::Instruction *replacementTarget,
-                                          llvm::Instruction *&rangeStart,
-                                          llvm::Instruction *&rangeEnd) const {
+static bool ResolveReplacementRange(const DxilRewriteRule &rule,
+                                    llvm::Instruction *replacementTarget,
+                                    llvm::Instruction *&rangeStart,
+                                    llvm::Instruction *&rangeEnd) {
   rangeStart = nullptr;
   rangeEnd = nullptr;
   if (replacementTarget == nullptr)
     return false;
 
-  if (mode == DxilRewriteMode::Replace) {
+  if (rule.mode == DxilRewriteMode::Replace) {
     rangeStart = replacementTarget;
     rangeEnd = replacementTarget;
     return true;
   }
 
-  if (mode != DxilRewriteMode::ReplaceRange)
+  if (rule.mode != DxilRewriteMode::ReplaceRange)
     return false;
 
-  if (rangeStartOffset < 0 || rangeEndOffset < -1)
+  if (rule.rangeStartOffset < 0 || rule.rangeEndOffset < -1)
     return false;
 
-  const uint32_t startOffset = static_cast<uint32_t>(rangeStartOffset);
+  const uint32_t startOffset = static_cast<uint32_t>(rule.rangeStartOffset);
   const uint32_t endOffset =
-      rangeEndOffset < 0 ? startOffset
-                         : static_cast<uint32_t>(rangeEndOffset);
+      rule.rangeEndOffset < 0 ? startOffset
+                              : static_cast<uint32_t>(rule.rangeEndOffset);
   if (startOffset > endOffset)
     return false;
 
@@ -936,8 +938,8 @@ static bool BuildDeclarativeSequenceRewriteResult(
 
     llvm::Value *emittedValue = nullptr;
     if (value.kind == DxilRewriteEmitValueKind::DxOpCall) {
-      llvm::Type *emittedResultType = value.GetScalarType(
-          module.getContext(), replacementTarget->getType());
+      llvm::Type *emittedResultType = GetEmitValueScalarType(
+          value, module.getContext(), replacementTarget->getType());
       if (emittedResultType == nullptr)
         return false;
 
@@ -990,8 +992,8 @@ static bool BuildDeclarativeSequenceRewriteResult(
       emittedValue =
           builder.CreateExtractValue(aggregateIt->second, value.extractIndex);
     } else if (value.kind == DxilRewriteEmitValueKind::BinaryInstruction) {
-      llvm::Type *resultType = value.GetScalarType(
-          module.getContext(), replacementTarget->getType());
+      llvm::Type *resultType = GetEmitValueScalarType(
+          value, module.getContext(), replacementTarget->getType());
       if (resultType == nullptr)
         return false;
 
@@ -1021,8 +1023,8 @@ static bool BuildDeclarativeSequenceRewriteResult(
           static_cast<llvm::Instruction::BinaryOps>(value.instructionOpcode),
           lhs, rhs);
     } else if (value.kind == DxilRewriteEmitValueKind::CastInstruction) {
-      llvm::Type *resultType = value.GetScalarType(
-          module.getContext(), replacementTarget->getType());
+      llvm::Type *resultType = GetEmitValueScalarType(
+          value, module.getContext(), replacementTarget->getType());
       if (resultType == nullptr)
         return false;
 
@@ -1504,7 +1506,7 @@ bool ApplyDxilRewriteRules(llvm::Function &function, llvm::Module &module,
         llvm::Instruction *rangeEndInstruction = replacementTarget;
         if ((rule.mode == DxilRewriteMode::Replace ||
              rule.mode == DxilRewriteMode::ReplaceRange) &&
-            !rule.GetReplacementRange(replacementTarget,
+            !ResolveReplacementRange(rule, replacementTarget,
                                      rangeStartInstruction,
                                      rangeEndInstruction)) {
           return false;
@@ -1653,7 +1655,7 @@ bool ApplyDxilRewriteRulesOnce(llvm::Function &function, llvm::Module &module,
     llvm::Instruction *rangeEndInstruction = replacementTarget;
     if ((rule.mode == DxilRewriteMode::Replace ||
          rule.mode == DxilRewriteMode::ReplaceRange) &&
-        !rule.GetReplacementRange(replacementTarget,
+        !ResolveReplacementRange(rule, replacementTarget,
                                  rangeStartInstruction,
                                  rangeEndInstruction)) {
       return false;

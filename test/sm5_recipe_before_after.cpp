@@ -7,6 +7,28 @@
 
 namespace {
 
+static bool OperandsEqual(const dxp::sm5::ProgramOperand &lhs,
+                          const dxp::sm5::ProgramOperand &rhs) {
+  if (lhs.Type != rhs.Type || lhs.NumComponents != rhs.NumComponents ||
+      lhs.ComponentMode != rhs.ComponentMode || lhs.Modifier != rhs.Modifier ||
+      lhs.Indices != rhs.Indices ||
+      lhs.ImmediateValues != rhs.ImmediateValues) {
+    return false;
+  }
+
+  if (lhs.RelativeOperands.size() != rhs.RelativeOperands.size()) {
+    return false;
+  }
+
+  if (!lhs.RelativeOperands.empty() &&
+      !OperandsEqual(lhs.RelativeOperands.front(),
+                     rhs.RelativeOperands.front())) {
+    return false;
+  }
+
+  return true;
+}
+
 static int FindTargetInstruction(const dxp::sm5::ProgramInspection &program) {
   for (size_t index = 0; index < program.Instructions.size(); ++index) {
     const auto &instruction = program.Instructions[index];
@@ -117,10 +139,10 @@ steps:
     return 1;
   }
   if (beforeInsertedInstruction.Operands.size() != 2 ||
-      beforeInsertedInstruction.Operands[0] !=
-                     originalInstruction.Operands[0] ||
-      beforeInsertedInstruction.Operands[1] !=
-                     originalInstruction.Operands[1]) {
+      !OperandsEqual(beforeInsertedInstruction.Operands[0],
+                     originalInstruction.Operands[0]) ||
+      !OperandsEqual(beforeInsertedInstruction.Operands[1],
+                     originalInstruction.Operands[1])) {
     std::cerr << "Expected Before rewrite to preserve captured operands on the "
                  "inserted MOV.\n";
     return 1;
@@ -192,10 +214,10 @@ steps:
     return 1;
   }
   if (afterInsertedInstruction.Operands.size() != 2 ||
-      afterInsertedInstruction.Operands[0] !=
-                     originalInstruction.Operands[0] ||
-      afterInsertedInstruction.Operands[1] !=
-                     originalInstruction.Operands[1]) {
+      !OperandsEqual(afterInsertedInstruction.Operands[0],
+                     originalInstruction.Operands[0]) ||
+      !OperandsEqual(afterInsertedInstruction.Operands[1],
+                     originalInstruction.Operands[1])) {
     std::cerr << "Expected After rewrite to preserve captured operands on the "
                  "inserted MOV.\n";
     return 1;
@@ -268,10 +290,10 @@ steps:
     return 1;
   }
   if (indexedAfterInsertedInstruction.Operands.size() != 2 ||
-      indexedAfterInsertedInstruction.Operands[0] !=
-                     originalInstruction.Operands[0] ||
-      indexedAfterInsertedInstruction.Operands[1] !=
-                     originalInstruction.Operands[1]) {
+      !OperandsEqual(indexedAfterInsertedInstruction.Operands[0],
+                     originalInstruction.Operands[0]) ||
+      !OperandsEqual(indexedAfterInsertedInstruction.Operands[1],
+                     originalInstruction.Operands[1])) {
     std::cerr << "Expected indexed after rewrite to preserve captured operands "
                  "on the inserted MOV.\n";
     return 1;
