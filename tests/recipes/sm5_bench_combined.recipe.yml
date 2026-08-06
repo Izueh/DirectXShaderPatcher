@@ -1,0 +1,41 @@
+version: 1
+steps:
+  - kind: check_shader_version
+    name: require_sm5_0
+    major: 5
+    minor: 0
+
+  - kind: check_opcode_count
+    name: count_movs
+    opcodes:
+      - mov
+      - add
+      - mul
+
+  - kind: check_resource_count
+    name: count_resources
+
+  - kind: apply_rule
+    name: noop_mov
+    match_mode: match_all
+    condition:
+      is: require_sm5_0
+    rule:
+      match:
+        - opcode: mov
+          operands:
+            - capture: dst
+            - capture: src
+      emit:
+        - opcode: mov
+          operands:
+            - type: temp
+              capture: dst
+              components:
+                selection_mode: mask
+                value: xyzw
+            - type: temp
+              capture: src
+              components:
+                selection_mode: mask
+                value: xyzw

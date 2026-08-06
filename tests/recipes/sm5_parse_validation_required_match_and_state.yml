@@ -1,0 +1,19 @@
+version: 1
+steps:
+  - kind: apply_rule
+    name: probe_has_mul
+    required: true
+    rewrite_mode: none
+    rule:
+      match:
+        - opcode: mul
+
+  - kind: apply_rule
+    name: rewrite_probe
+    condition:
+      is: has_mul
+    required: false
+    rewrite_mode: none
+    rule:
+      match:
+        - opcode: mul

@@ -1,0 +1,19 @@
+version: 1
+steps:
+  - kind: apply_rule
+    name: invalid_match_capture_index_name
+    rule:
+      match:
+        - opcode: mov
+          operands:
+            - type: temp
+              capture: dst
+              indices:
+                - representation: immediate32
+                  match_capture: dst
+            - capture: src
+      emit:
+        - opcode: mov
+          operands:
+            - capture: dst
+            - capture: src

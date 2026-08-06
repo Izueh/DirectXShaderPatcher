@@ -1,0 +1,5 @@
+version: 1
+steps:
+  - kind: check_opcode_count
+    name: empty_opcodes
+    opcodes: []

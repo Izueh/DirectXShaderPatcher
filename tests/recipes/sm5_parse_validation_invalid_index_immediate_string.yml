@@ -1,0 +1,18 @@
+version: 1
+steps:
+  - kind: apply_rule
+    name: invalid_index_immediate_probe
+    rule:
+      match:
+        - opcode: mov
+          operands:
+            - capture: dst
+            - capture: src
+      emit:
+        - opcode: mov
+          operands:
+            - type: temp
+              indices:
+                - representation: immediate32
+                  immediate_lo: shared_temp_r
+            - capture: src

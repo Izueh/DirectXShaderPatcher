@@ -1,0 +1,20 @@
+version: 1
+steps:
+  - kind: check_opcode_count
+    name: check_before
+    opcodes: [frc, mov]
+  - kind: apply_rule
+    name: frc_to_mov
+    rule:
+      match:
+        - opcode: frc
+          operands:
+            - capture: ign_frc
+      emit:
+        - opcode: mov
+          operands:
+            - capture: ign_frc
+            - capture: ign_frc
+  - kind: check_opcode_count
+    name: check_after
+    opcodes: [frc, mov]

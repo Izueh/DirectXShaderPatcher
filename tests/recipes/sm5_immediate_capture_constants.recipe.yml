@@ -1,0 +1,13 @@
+version: 1
+steps:
+  - kind: apply_rule
+    name: capture_frc_constants
+    rewrite_mode: none
+    rule:
+      match:
+        - opcode: frc
+          operands:
+            - type: temp
+            - type: temp
+              capture: frc_op
+              export_as: frc_constants

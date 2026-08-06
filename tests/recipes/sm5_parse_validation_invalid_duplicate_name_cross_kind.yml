@@ -1,0 +1,11 @@
+version: 1
+steps:
+  - kind: add_resource
+    name: shared_name
+    temps: [tmp0]
+  - kind: apply_rule
+    name: rewrite_stage
+    rewrite_mode: none
+    rule:
+      match:
+        - opcode: frc

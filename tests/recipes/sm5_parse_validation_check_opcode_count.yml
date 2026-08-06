@@ -1,0 +1,8 @@
+version: 1
+steps:
+  - kind: check_opcode_count
+    name: count_movs
+    opcodes:
+      - mov
+      - mul
+      - add

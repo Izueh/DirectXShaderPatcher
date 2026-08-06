@@ -1,0 +1,14 @@
+version: 1
+steps:
+  - kind: apply_rule
+    name: capture_sample_level
+    match_mode: match_all
+    rewrite_mode: none
+    rule:
+      match:
+        - opcode: SampleLevel
+          operands:
+            - index: 1
+              kind: resource
+              capture: sample_level_op
+              export_as: sample_levels

@@ -1,0 +1,21 @@
+version: 1
+steps:
+  - kind: check_shader_version
+    name: require_sm5_0
+    major: 5
+    minor: 0
+
+  - name: interpolation_mode_bad_opcode
+    rule:
+      match:
+        - opcode: ret
+      emit:
+        - opcode: mov
+          interpolation: linear
+          operands:
+            - type: temp
+              indices:
+                - immediate_lo: 0
+            - type: temp
+              indices:
+                - immediate_lo: 1

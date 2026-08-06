@@ -1,0 +1,11 @@
+# clangd configuration for DirectXShaderPatcher
+CompileCommands: out/build/ninja-x64/compile_commands.json
+HeaderFilterRegex: '^src/|^includes/'
+ClangTidy:
+  AddChecks: "bugprone-*,cppcoreguidelines-*,modernize-*,readability-*,bugprone-*"
+  Checks:
+    "-*": "*"
+    "bugprone-*": "*"
+    "cppcoreguidelines-*": "*"
+    "modernize-*": "*"
+    "readability-*": "*"

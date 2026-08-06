@@ -1,0 +1,756 @@
+{
+   "type": "object",
+   "properties": {
+      "steps": {
+         "type": "array",
+         "items": {
+            "type": "object",
+            "oneOf": [
+               {
+                  "type": "object",
+                  "properties": {
+                     "cbuffers": {
+                        "$ref": "#/$defs/std::vector<dxp::sm6::step::AddResourceDeclData>"
+                     },
+                     "condition": {
+                        "$ref": "#/$defs/dxp::ConditionData"
+                     },
+                     "inputs": {
+                        "type": "array",
+                        "items": {
+                           "type": "object",
+                           "properties": {
+                              "comp_type": {
+                                 "$ref": "#/$defs/dxp::ComponentType"
+                              },
+                              "handle": {
+                                 "type": "string"
+                              },
+                              "interp_mode": {
+                                 "$ref": "#/$defs/dxp::sm6::InterpolationMode"
+                              },
+                              "register_index": {
+                                 "anyOf": [
+                                    {
+                                       "$ref": "#/$defs/uint32_t"
+                                    },
+                                    {
+                                       "type": "null"
+                                    }
+                                 ]
+                              },
+                              "semantic_name": {
+                                 "type": "string"
+                              },
+                              "vector_size": {
+                                 "$ref": "#/$defs/uint32_t"
+                              }
+                           },
+                           "additionalProperties": false
+                        }
+                     },
+                     "kind": {
+                        "const": "add_resource"
+                     },
+                     "name": {
+                        "type": "string"
+                     },
+                     "outputs": {
+                        "type": "array",
+                        "items": {
+                           "type": "object",
+                           "properties": {
+                              "comp_type": {
+                                 "$ref": "#/$defs/dxp::ComponentType"
+                              },
+                              "handle": {
+                                 "type": "string"
+                              },
+                              "register_index": {
+                                 "anyOf": [
+                                    {
+                                       "$ref": "#/$defs/uint32_t"
+                                    },
+                                    {
+                                       "type": "null"
+                                    }
+                                 ]
+                              },
+                              "semantic_name": {
+                                 "type": "string"
+                              },
+                              "vector_size": {
+                                 "$ref": "#/$defs/uint32_t"
+                              }
+                           },
+                           "additionalProperties": false
+                        }
+                     },
+                     "required": {
+                        "type": "boolean"
+                     },
+                     "samplers": {
+                        "$ref": "#/$defs/std::vector<dxp::sm6::step::AddResourceDeclData>"
+                     },
+                     "textures": {
+                        "$ref": "#/$defs/std::vector<dxp::sm6::step::AddResourceDeclData>"
+                     },
+                     "uavs": {
+                        "$ref": "#/$defs/std::vector<dxp::sm6::step::AddResourceDeclData>"
+                     }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                     "kind"
+                  ],
+                  "title": "add_resource"
+               },
+               {
+                  "type": "object",
+                  "properties": {
+                     "condition": {
+                        "$ref": "#/$defs/dxp::ConditionData"
+                     },
+                     "kind": {
+                        "const": "apply_rule"
+                     },
+                     "match_mode": {
+                        "$ref": "#/$defs/dxp::sm6::step::MatchKind"
+                     },
+                     "name": {
+                        "type": "string"
+                     },
+                     "required": {
+                        "type": "boolean"
+                     },
+                     "rewrite_mode": {
+                        "$ref": "#/$defs/dxp::sm6::step::RewriteKind"
+                     },
+                     "rule": {
+                        "type": "object",
+                        "properties": {
+                           "emit": {
+                              "type": "array",
+                              "items": {
+                                 "type": "object",
+                                 "properties": {
+                                    "aggregate": {
+                                       "type": "string"
+                                    },
+                                    "capture": {
+                                       "type": "string"
+                                    },
+                                    "cast_opcode": {
+                                       "type": [
+                                          "string",
+                                          "null"
+                                       ]
+                                    },
+                                    "extract_index": {
+                                       "$ref": "#/$defs/uint32_t"
+                                    },
+                                    "name": {
+                                       "type": "string"
+                                    },
+                                    "opcode": {
+                                       "type": "string"
+                                    },
+                                    "operands": {
+                                       "type": "array",
+                                       "items": {
+                                          "type": "object",
+                                          "properties": {
+                                             "capture": {
+                                                "type": "string"
+                                             },
+                                             "component_type": {
+                                                "anyOf": [
+                                                   {
+                                                      "$ref": "#/$defs/dxp::ComponentType"
+                                                   },
+                                                   {
+                                                      "type": "null"
+                                                   }
+                                                ]
+                                             },
+                                             "constant_float_values": {
+                                                "$ref": "#/$defs/std::vector<double>"
+                                             },
+                                             "constant_int_values": {
+                                                "$ref": "#/$defs/std::vector<int64_t>"
+                                             },
+                                             "handle": {
+                                                "type": "string"
+                                             },
+                                             "index": {
+                                                "$ref": "#/$defs/uint32_t"
+                                             },
+                                             "instruction": {
+                                                "anyOf": [
+                                                   {
+                                                      "$ref": "#/$defs/dxp::sm6::step::MatchInstructionPatternData"
+                                                   },
+                                                   {
+                                                      "type": "null"
+                                                   }
+                                                ]
+                                             },
+                                             "kind": {
+                                                "anyOf": [
+                                                   {
+                                                      "$ref": "#/$defs/dxp::sm6::step::OperandKind"
+                                                   },
+                                                   {
+                                                      "type": "null"
+                                                   }
+                                                ]
+                                             }
+                                          },
+                                          "additionalProperties": false
+                                       }
+                                    },
+                                    "replace_captured": {
+                                       "type": "string"
+                                    },
+                                    "result_component_type": {
+                                       "anyOf": [
+                                          {
+                                             "$ref": "#/$defs/dxp::ComponentType"
+                                          },
+                                          {
+                                             "type": "null"
+                                          }
+                                       ]
+                                    }
+                                 },
+                                 "additionalProperties": false
+                              }
+                           },
+                           "insert_index": {
+                              "$ref": "#/$defs/int32_t"
+                           },
+                           "match": {
+                              "type": "array",
+                              "items": {
+                                 "$ref": "#/$defs/dxp::sm6::step::MatchInstructionPatternData"
+                              }
+                           },
+                           "name": {
+                              "type": "string"
+                           },
+                           "prune": {
+                              "type": "boolean"
+                           },
+                           "range_end_offset": {
+                              "$ref": "#/$defs/int32_t"
+                           },
+                           "range_start_offset": {
+                              "$ref": "#/$defs/int32_t"
+                           }
+                        },
+                        "additionalProperties": false
+                     }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                     "kind"
+                  ],
+                  "title": "apply_rule"
+               },
+               {
+                  "type": "object",
+                  "properties": {
+                     "condition": {
+                        "$ref": "#/$defs/dxp::ConditionData"
+                     },
+                     "dxil_opcodes": {
+                        "$ref": "#/$defs/std::vector<std::string>"
+                     },
+                     "kind": {
+                        "type": "string",
+                        "const": "check_opcode_count"
+                     },
+                     "llvm_opcodes": {
+                        "$ref": "#/$defs/std::vector<std::string>"
+                     },
+                     "name": {
+                        "type": "string"
+                     },
+                     "required": {
+                        "type": "boolean"
+                     }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                     "kind"
+                  ],
+                  "title": "check_opcode_count"
+               },
+               {
+                  "type": "object",
+                  "properties": {
+                     "condition": {
+                        "$ref": "#/$defs/dxp::ConditionData"
+                     },
+                     "kind": {
+                        "type": "string",
+                        "const": "check_resource_count"
+                     },
+                     "name": {
+                        "type": "string"
+                     },
+                     "required": {
+                        "type": "boolean"
+                     }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                     "kind"
+                  ],
+                  "title": "check_resource_count"
+               },
+               {
+                  "type": "object",
+                  "properties": {
+                     "condition": {
+                        "$ref": "#/$defs/dxp::ConditionData"
+                     },
+                     "kind": {
+                        "type": "string",
+                        "const": "check_shader_version"
+                     },
+                     "major": {
+                        "$ref": "#/$defs/int32_t"
+                     },
+                     "minor": {
+                        "$ref": "#/$defs/int32_t"
+                     },
+                     "name": {
+                        "type": "string"
+                     },
+                     "required": {
+                        "type": "boolean"
+                     }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                     "kind"
+                  ],
+                  "title": "check_shader_version"
+               }
+            ]
+         }
+      },
+      "version": {
+         "$ref": "#/$defs/uint32_t"
+      }
+   },
+   "additionalProperties": false,
+   "$defs": {
+      "double": {
+         "type": "number",
+         "minimum": -1.7976931348623157E308,
+         "maximum": 1.7976931348623157E308
+      },
+      "dxp::ComponentType": {
+         "type": [
+            "number",
+            "string",
+            "boolean",
+            "object",
+            "array",
+            "null"
+         ]
+      },
+      "dxp::ConditionData": {
+         "type": "object",
+         "properties": {
+            "and": {
+               "$ref": "#/$defs/std::vector<dxp::ConditionData>"
+            },
+            "eq": {
+               "$ref": "#/$defs/dxp::ConditionData::Comparison"
+            },
+            "gt": {
+               "$ref": "#/$defs/dxp::ConditionData::Comparison"
+            },
+            "gte": {
+               "$ref": "#/$defs/dxp::ConditionData::Comparison"
+            },
+            "is": {
+               "type": "string"
+            },
+            "lt": {
+               "$ref": "#/$defs/dxp::ConditionData::Comparison"
+            },
+            "lte": {
+               "$ref": "#/$defs/dxp::ConditionData::Comparison"
+            },
+            "ne": {
+               "$ref": "#/$defs/dxp::ConditionData::Comparison"
+            },
+            "not": {
+               "type": "boolean"
+            },
+            "or": {
+               "$ref": "#/$defs/std::vector<dxp::ConditionData>"
+            }
+         },
+         "additionalProperties": false
+      },
+      "dxp::ConditionData::Comparison": {
+         "type": "object",
+         "properties": {
+            "lhs": {
+               "$ref": "#/$defs/std::variant<std::string,bool,int32_t,uint32_t,int64_t,uint64_t,double>"
+            },
+            "rhs": {
+               "$ref": "#/$defs/std::variant<std::string,bool,int32_t,uint32_t,int64_t,uint64_t,double>"
+            }
+         },
+         "additionalProperties": false
+      },
+      "dxp::sm6::DxilResourceKind": {
+         "type": [
+            "number",
+            "string",
+            "boolean",
+            "object",
+            "array",
+            "null"
+         ]
+      },
+      "dxp::sm6::InterpolationMode": {
+         "type": [
+            "number",
+            "string",
+            "boolean",
+            "object",
+            "array",
+            "null"
+         ]
+      },
+      "dxp::sm6::ResourceClass": {
+         "type": [
+            "number",
+            "string",
+            "boolean",
+            "object",
+            "array",
+            "null"
+         ]
+      },
+      "dxp::sm6::step::MatchInstructionPatternData": {
+         "type": "object",
+         "properties": {
+            "capture": {
+               "type": "string"
+            },
+            "match_capture": {
+               "type": "string"
+            },
+            "opcode": {
+               "type": "string"
+            },
+            "operands": {
+               "type": "array",
+               "items": {
+                  "type": "object",
+                  "properties": {
+                     "capture": {
+                        "type": "string"
+                     },
+                     "component_type": {
+                        "anyOf": [
+                           {
+                              "$ref": "#/$defs/dxp::ComponentType"
+                           },
+                           {
+                              "type": "null"
+                           }
+                        ]
+                     },
+                     "constant_float_values": {
+                        "$ref": "#/$defs/std::vector<double>"
+                     },
+                     "constant_int_values": {
+                        "$ref": "#/$defs/std::vector<int64_t>"
+                     },
+                     "export_as": {
+                        "type": [
+                           "string",
+                           "null"
+                        ]
+                     },
+                     "index": {
+                        "$ref": "#/$defs/uint32_t"
+                     },
+                     "instruction": {
+                        "anyOf": [
+                           {
+                              "$ref": "#/$defs/dxp::sm6::step::MatchInstructionPatternData"
+                           },
+                           {
+                              "type": "null"
+                           }
+                        ]
+                     },
+                     "kind": {
+                        "anyOf": [
+                           {
+                              "$ref": "#/$defs/dxp::sm6::step::OperandKind"
+                           },
+                           {
+                              "type": "null"
+                           }
+                        ]
+                     },
+                     "match_capture": {
+                        "type": "string"
+                     },
+                     "register_index": {
+                        "anyOf": [
+                           {
+                              "$ref": "#/$defs/int32_t"
+                           },
+                           {
+                              "type": "null"
+                           }
+                        ]
+                     },
+                     "resource_class": {
+                        "anyOf": [
+                           {
+                              "$ref": "#/$defs/dxp::sm6::ResourceClass"
+                           },
+                           {
+                              "type": "null"
+                           }
+                        ]
+                     },
+                     "resource_kind": {
+                        "anyOf": [
+                           {
+                              "$ref": "#/$defs/dxp::sm6::DxilResourceKind"
+                           },
+                           {
+                              "type": "null"
+                           }
+                        ]
+                     },
+                     "resource_name": {
+                        "type": "string"
+                     },
+                     "resource_name_like": {
+                        "type": "string"
+                     },
+                     "space": {
+                        "anyOf": [
+                           {
+                              "$ref": "#/$defs/int32_t"
+                           },
+                           {
+                              "type": "null"
+                           }
+                        ]
+                     }
+                  },
+                  "additionalProperties": false
+               }
+            }
+         },
+         "additionalProperties": false
+      },
+      "dxp::sm6::step::MatchKind": {
+         "type": [
+            "number",
+            "string",
+            "boolean",
+            "object",
+            "array",
+            "null"
+         ]
+      },
+      "dxp::sm6::step::OperandKind": {
+         "type": [
+            "number",
+            "string",
+            "boolean",
+            "object",
+            "array",
+            "null"
+         ]
+      },
+      "dxp::sm6::step::RewriteKind": {
+         "type": [
+            "number",
+            "string",
+            "boolean",
+            "object",
+            "array",
+            "null"
+         ]
+      },
+      "int32_t": {
+         "type": "integer",
+         "minimum": -2147483648,
+         "maximum": 2147483647
+      },
+      "int64_t": {
+         "type": "integer",
+         "minimum": -9.223372036854776E18,
+         "maximum": 9.223372036854776E18
+      },
+      "std::variant<std::string,bool,int32_t,uint32_t,int64_t,uint64_t,double>": {
+         "type": [
+            "number",
+            "string",
+            "boolean"
+         ],
+         "oneOf": [
+            {
+               "type": "string",
+               "title": "std::string"
+            },
+            {
+               "type": "boolean",
+               "title": "bool"
+            },
+            {
+               "type": "integer",
+               "title": "int32_t",
+               "minimum": -2147483648,
+               "maximum": 2147483647
+            },
+            {
+               "type": "integer",
+               "title": "uint32_t",
+               "minimum": 0,
+               "maximum": 4294967295
+            },
+            {
+               "type": "integer",
+               "title": "int64_t",
+               "minimum": -9.223372036854776E18,
+               "maximum": 9.223372036854776E18
+            },
+            {
+               "type": "integer",
+               "title": "uint64_t",
+               "minimum": 0,
+               "maximum": 1.8446744073709552E19
+            },
+            {
+               "type": "number",
+               "title": "double",
+               "minimum": -1.7976931348623157E308,
+               "maximum": 1.7976931348623157E308
+            }
+         ]
+      },
+      "std::vector<double>": {
+         "type": "array",
+         "items": {
+            "$ref": "#/$defs/double"
+         }
+      },
+      "std::vector<dxp::ConditionData>": {
+         "type": "array",
+         "items": {
+            "$ref": "#/$defs/dxp::ConditionData"
+         }
+      },
+      "std::vector<dxp::sm6::step::AddResourceDeclData>": {
+         "type": "array",
+         "items": {
+            "type": "object",
+            "properties": {
+               "element_type": {
+                  "$ref": "#/$defs/dxp::ComponentType"
+               },
+               "fields": {
+                  "type": "array",
+                  "items": {
+                     "type": "object",
+                     "properties": {
+                        "name": {
+                           "type": "string"
+                        },
+                        "offset": {
+                           "$ref": "#/$defs/uint32_t"
+                        },
+                        "type": {
+                           "$ref": "#/$defs/dxp::ComponentType"
+                        },
+                        "width": {
+                           "$ref": "#/$defs/uint32_t"
+                        }
+                     },
+                     "additionalProperties": false
+                  }
+               },
+               "handle": {
+                  "type": "string"
+               },
+               "is_read_write": {
+                  "type": "boolean"
+               },
+               "kind": {
+                  "$ref": "#/$defs/dxp::sm6::DxilResourceKind"
+               },
+               "register_index": {
+                  "anyOf": [
+                     {
+                        "$ref": "#/$defs/uint32_t"
+                     },
+                     {
+                        "type": "null"
+                     }
+                  ]
+               },
+               "size": {
+                  "$ref": "#/$defs/uint32_t"
+               },
+               "space": {
+                  "anyOf": [
+                     {
+                        "$ref": "#/$defs/uint32_t"
+                     },
+                     {
+                        "type": "null"
+                     }
+                  ]
+               },
+               "type": {
+                  "type": "string"
+               },
+               "vector_width": {
+                  "$ref": "#/$defs/uint32_t"
+               }
+            },
+            "additionalProperties": false
+         }
+      },
+      "std::vector<int64_t>": {
+         "type": "array",
+         "items": {
+            "$ref": "#/$defs/int64_t"
+         }
+      },
+      "std::vector<std::string>": {
+         "type": "array",
+         "items": {
+            "type": "string"
+         }
+      },
+      "uint32_t": {
+         "type": "integer",
+         "minimum": 0,
+         "maximum": 4294967295
+      }
+   },
+   "title": "SM6 YAML Recipe Schema",
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "$id": "https://github.com/DirectXShaderPatcher/docs/sm6_recipe_schema.json",
+   "description": "JSON Schema for dxp::sm6 YAML recipes: add_resource, apply_rule, check_shader_version, check_opcode_count, and check_resource_count steps."
+}

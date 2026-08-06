@@ -1,0 +1,4 @@
+version: 1
+steps:
+  - kind: check_resource_count
+    name: count_resources

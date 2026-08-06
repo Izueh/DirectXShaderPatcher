@@ -1,0 +1,50 @@
+version: 1
+steps:
+  - kind: add_resource
+    name: add_resource_decls
+    temps: [raw_probe, uav_probe]
+    raw_resources:
+      - handle: injected_raw_srv
+    structured_resources:
+      - handle: injected_structured_srv
+        stride: 16
+    uavs:
+      - handle: injected_raw_uav
+        kind: raw
+  - kind: check_shader_version
+    name: require_sm5_0
+    major: 5
+    minor: 0
+
+  - kind: apply_rule
+    name: verify_from_handles_in_emit
+    condition:
+      is: require_sm5_0
+    rewrite_mode: replace_range
+    rule:
+      match:
+        - opcode: mul
+          operands:
+            - capture: dst
+            - capture: src
+      emit:
+        - opcode: mov
+          operands:
+            - capture: dst
+            - capture: src
+        - opcode: mov
+          operands:
+            - type: temp
+              handle: raw_probe
+              components: { selection_mode: mask, value: xyzw }
+            - type: resource
+              handle: injected_raw_srv
+              components: { selection_mode: swizzle, value: xyzw }
+        - opcode: mov
+          operands:
+            - type: temp
+              handle: uav_probe
+              components: { selection_mode: mask, value: xyzw }
+            - type: unordered_access_view
+              handle: injected_raw_uav
+              components: { selection_mode: swizzle, value: xyzw }

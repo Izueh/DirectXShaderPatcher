@@ -1,0 +1,11 @@
+version: 1
+steps:
+  - kind: apply_rule
+    name: find_resources
+    rewrite_mode: none
+    rule:
+      match:
+        - opcode: frc
+          operands:
+            - capture: frc_dest
+              export_as: frc_results

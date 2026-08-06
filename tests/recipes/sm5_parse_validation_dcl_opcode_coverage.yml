@@ -1,0 +1,28 @@
+version: 1
+steps:
+  - kind: check_shader_version
+    name: require_sm5_0
+    major: 5
+    minor: 0
+
+  - name: dcl_opcode_names
+    rule:
+      match:
+        - opcode: ret
+      emit:
+        - opcode: dcl_output_siv
+          operands:
+            - type: output
+              indices:
+                - immediate_lo: 1
+        - opcode: dcl_resource_structured
+          operands:
+            - type: resource
+              indices:
+                - immediate_lo: 3
+        - opcode: dcl_thread_group_shared_memory_raw
+          operands:
+            - type: immediate32
+              indices:
+                - immediate_lo: 16
+        - opcode: ret

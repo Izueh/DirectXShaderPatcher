@@ -1,0 +1,15 @@
+version: 1
+steps:
+  - kind: apply_rule
+    name: invalid_predicate_selector
+    condition:
+      eq:
+        lhs: has_mul
+        rhs: true
+      ne:
+        lhs: has_mul
+        rhs: false
+    rewrite_mode: none
+    rule:
+      match:
+        - opcode: mul

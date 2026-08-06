@@ -1,0 +1,14 @@
+version: 1
+steps:
+  - kind: apply_rule
+    name: capture_raw_buffer_loads
+    match_mode: match_all
+    rewrite_mode: none
+    rule:
+      match:
+        - opcode: RawBufferLoad
+          operands:
+            - index: 1
+              kind: resource
+              capture: raw_buffer_op
+              export_as: raw_buffer_loads

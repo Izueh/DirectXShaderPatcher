@@ -1,0 +1,24 @@
+version: 1
+steps:
+  - kind: apply_rule
+    name: noop_mov
+    match_mode: match_all
+    rule:
+      match:
+        - opcode: mov
+          operands:
+            - capture: dst
+            - capture: src
+      emit:
+        - opcode: mov
+          operands:
+            - type: temp
+              capture: dst
+              components:
+                selection_mode: mask
+                value: xyzw
+            - type: temp
+              capture: src
+              components:
+                selection_mode: mask
+                value: xyzw

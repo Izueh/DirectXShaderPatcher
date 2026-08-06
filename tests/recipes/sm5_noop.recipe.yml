@@ -1,0 +1,8 @@
+# Minimal SM5 no-op recipe used to validate CLI plumbing.
+# A check step parses successfully and performs no modifications.
+version: 1
+steps:
+  - kind: check_shader_version
+    name: version_check
+    major: 5
+    minor: 0

@@ -1,0 +1,5 @@
+external/**
+external/DirectXShaderCompiler/**
+out/**
+build/**
+x64/**

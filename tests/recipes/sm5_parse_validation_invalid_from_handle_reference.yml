@@ -1,0 +1,27 @@
+version: 1
+steps:
+  - kind: check_shader_version
+    name: require_sm5_0
+    major: 5
+    minor: 0
+
+  - name: bind_validate
+    rule:
+      match:
+        - opcode: sample_l
+          operands:
+            - capture: dst
+            - capture: coord
+      emit:
+        - opcode: sample_l
+          operands:
+            - capture: dst
+            - capture: coord
+            - type: resource
+              handle: missing_texture
+            - type: sampler
+              indices:
+                - immediate_lo: 0x00000000
+            - type: immediate32
+              indices:
+                - immediate_lo: 0x00000000

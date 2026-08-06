@@ -1,0 +1,46 @@
+version: 1
+steps:
+  - kind: apply_rule
+    name: predicate_eq_ne_probe
+    condition:
+      and:
+        - eq:
+          lhs: enable_patch
+          rhs: true
+        - ne:
+          lhs: quality
+          rhs: low
+    rewrite_mode: none
+    rule:
+      match:
+        - opcode: mul
+
+  - kind: apply_rule
+    name: predicate_gt_gte_probe
+    condition:
+      and:
+        - gt:
+          lhs: phase
+          rhs: 2
+        - gte:
+          lhs: phase
+          rhs: 3
+    rewrite_mode: none
+    rule:
+      match:
+        - opcode: mul
+
+  - kind: apply_rule
+    name: predicate_lt_lte_or_probe
+    condition:
+      or:
+        - lt:
+          lhs: threshold
+          rhs: 4
+        - lte:
+          lhs: pass_count
+          rhs: 1
+    rewrite_mode: none
+    rule:
+      match:
+        - opcode: mul

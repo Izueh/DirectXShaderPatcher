@@ -1,0 +1,19 @@
+version: 1
+steps:
+  - kind: apply_rule
+    name: invalid_relative_no_repr
+    rule:
+      match:
+        - opcode: mov
+          operands:
+            - type: temp
+              capture: dst
+      emit:
+        - opcode: mov
+          operands:
+            - type: temp
+              indices:
+                - representation: immediate32
+                  immediate_lo: 0
+                  relative_operand:
+                    type: temp

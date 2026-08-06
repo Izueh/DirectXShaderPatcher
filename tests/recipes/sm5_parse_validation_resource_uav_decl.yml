@@ -1,0 +1,43 @@
+version: 1
+steps:
+  - kind: add_resource
+    name: add_dcl_resources
+    raw_resources:
+      - handle: raw_srv
+    structured_resources:
+      - handle: structured_srv
+        stride: 16
+    uavs:
+      - handle: raw_uav
+        kind: raw
+  - kind: check_shader_version
+    name: require_sm5_0
+    major: 5
+    minor: 0
+
+  - name: resource_uav_from_handle
+    rule:
+      match:
+        - opcode: mul
+          operands:
+            - capture: dst
+            - capture: src
+      emit:
+        - opcode: mov
+          operands:
+            - capture: dst
+            - capture: src
+        - opcode: mov
+          operands:
+            - type: temp
+              indices:
+                - immediate_lo: 0
+            - type: resource
+              handle: raw_srv
+        - opcode: mov
+          operands:
+            - type: temp
+              indices:
+                - immediate_lo: 1
+            - type: unordered_access_view
+              handle: raw_uav

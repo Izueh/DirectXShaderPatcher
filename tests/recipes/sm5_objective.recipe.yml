@@ -1,0 +1,68 @@
+version: 1
+steps:
+  - kind: add_resource
+    name: add_dcl_resources
+    temps: [ign_sample_coord]
+    cbuffers:
+      - handle: frame_constants
+        elements: 1
+    textures:
+      - handle: ign_blue_noise
+        dimension: 6
+    samplers:
+      - handle: ign_sampler
+  - kind: apply_rule
+    name: objective
+    rewrite_mode: replace_range
+    rule:
+      match:
+        - opcode: dp2
+          capture: ign_dp2
+          operands:
+            - type: temp
+              capture: ign_dst
+            - capture: ign_coord
+        - opcode: frc
+        - opcode: mul
+        - opcode: frc
+      emit:
+        - opcode: mov
+          operands:
+            - type: temp
+              handle: ign_sample_coord
+              components:
+                selection_mode: mask
+                value: xy
+            - capture: ign_coord
+        - opcode: utof
+          operands:
+            - type: temp
+              handle: ign_sample_coord
+              components:
+                selection_mode: mask
+                value: z
+            - type: constant_buffer
+              handle: frame_constants
+              indices:
+                - immediate_lo: 0x00000000
+              components:
+                selection_mode: select
+                value: x
+        - opcode: sample_l
+          operands:
+            - capture: ign_dst
+            - type: temp
+              handle: ign_sample_coord
+              components:
+                selection_mode: swizzle
+                value: xyzx
+            - type: resource
+              handle: ign_blue_noise
+              components:
+                selection_mode: swizzle
+                value: xyzw
+            - type: sampler
+              handle: ign_sampler
+            - type: immediate32
+              indices:
+                - immediate_lo: 0x00000000

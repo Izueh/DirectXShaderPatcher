@@ -1,0 +1,44 @@
+version: 1
+steps:
+  - kind: apply_rule
+    name: before_probe
+    rewrite_mode: before
+    rule:
+      insert_index: 0
+      match:
+        - opcode: mul
+          capture: anchor
+      emit:
+        - opcode: mov
+          operands:
+            - { type: temp, indices: [{ immediate_lo: 0 }] }
+            - { type: temp, indices: [{ immediate_lo: 0 }] }
+
+  - kind: apply_rule
+    name: after_probe
+    rewrite_mode: after
+    rule:
+      insert_index: 0
+      match:
+        - opcode: mul
+          capture: anchor
+      emit:
+        - opcode: mov
+          operands:
+            - { type: temp, indices: [{ immediate_lo: 0 }] }
+            - { type: temp, indices: [{ immediate_lo: 0 }] }
+
+  - kind: apply_rule
+    name: indexed_after_probe
+    rewrite_mode: after
+    rule:
+      match:
+        - opcode: mov
+          capture: start
+        - opcode: add
+          capture: end
+      emit:
+        - opcode: mov
+          operands:
+            - { type: temp, indices: [{ immediate_lo: 1 }] }
+            - { type: temp, indices: [{ immediate_lo: 1 }] }

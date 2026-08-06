@@ -1,0 +1,14 @@
+version: 1
+steps:
+  - kind: apply_rule
+    name: capture_sampled_textures
+    rewrite_mode: none
+    rule:
+      match:
+        - opcode: sample_l
+          operands:
+            - type: temp
+            - type: temp
+            - type: resource
+              capture: sample_op
+              export_as: sampled_textures

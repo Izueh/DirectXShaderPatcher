@@ -1,0 +1,51 @@
+version: 1
+steps:
+  - kind: add_resource
+    name: add_dcl_resources
+    textures:
+      - handle: tex0
+    samplers:
+      - handle: samp0
+  - kind: check_shader_version
+    name: require_sm5_0
+    major: 5
+    minor: 0
+
+  - kind: apply_rule
+    name: portable_sample
+    rule:
+      match:
+        - opcode: sample_l
+          operands:
+            - capture: dst
+            - capture: coord
+      emit:
+        - opcode: sample_l
+          operands:
+            - capture: dst
+            - capture: coord
+            - type: resource
+              handle: tex0
+            - type: sampler
+              handle: samp0
+            - type: immediate32
+              indices:
+                - immediate_lo: 0x00000000
+
+  - kind: apply_rule
+    name: portable_mul
+    rule:
+      match:
+        - opcode: mul
+          operands:
+            - type: temp
+              components:
+                selection_mode: mask
+                value: xy
+              capture: out
+            - capture: src
+      emit:
+        - opcode: mov
+          operands:
+            - capture: out
+            - capture: src

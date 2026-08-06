@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ImportGroup Label="PropertySheets" />
+  <PropertyGroup>
+    <!-- Architecture: x64 or x86 (defaults to x64) -->
+    <DXP_ARCH Condition="'$(DXP_ARCH)'==''">x64</DXP_ARCH>
+    <!-- Configuration: Debug or Release (auto-detected from $(Configuration)) -->
+    <DXP_CONFIG Condition="'$(DXP_CONFIG)'==''">$(Configuration)</DXP_CONFIG>
+    <IncludePath>$(MSBuildThisFileDirectory)$(DXP_ARCH)\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(MSBuildThisFileDirectory)$(DXP_ARCH)\$(DXP_CONFIG)\lib;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>dxpatcher.lib;$(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>if exist "$(MSBuildThisFileDirectory)$(DXP_ARCH)\$(DXP_CONFIG)\bin\dxcompiler.dll" xcopy /y /d "$(MSBuildThisFileDirectory)$(DXP_ARCH)\$(DXP_CONFIG)\bin\dxcompiler.dll" "$(TargetDir)"</Command>
+      <Message>Copying DirectXShaderPatcher runtime dependency next to output application...</Message>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+</Project>

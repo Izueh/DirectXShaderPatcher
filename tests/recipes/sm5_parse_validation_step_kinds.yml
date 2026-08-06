@@ -1,0 +1,29 @@
+version: 1
+steps:
+  - kind: add_resource
+    name: add_dcl_resources
+    inputs:
+      - handle: in_runtime
+    temps: [tmp0]
+  - kind: check_shader_version
+    name: require_sm5_0
+    major: 5
+    minor: 0
+
+  - kind: check_opcode_count
+    name: require_frc_opcode
+    opcodes:
+      - frc
+
+  - kind: check_resource_count
+    name: require_resource_count
+
+  - kind: apply_rule
+    name: apply_probe
+    match_mode: match_all
+    rewrite_mode: none
+    condition:
+      is: require_sm5_0
+    rule:
+      match:
+        - opcode: frc

@@ -1,0 +1,14 @@
+version: 1
+steps:
+  - kind: apply_rule
+    name: capture_texture_loads
+    match_mode: match_all
+    rewrite_mode: none
+    rule:
+      match:
+        - opcode: TextureLoad
+          operands:
+            - index: 1
+              kind: resource
+              capture: texture_load_op
+              export_as: texture_loads

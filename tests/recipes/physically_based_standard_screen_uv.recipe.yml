@@ -1,0 +1,53 @@
+version: 1
+steps:
+  - kind: add_resource
+    name: add_screen_uv_resources
+    temps: [screen_uv_temp]
+    inputs:
+      - handle: screen_uv_x
+        interpolation: linear
+      - handle: screen_uv_y
+        interpolation: linear
+    outputs:
+      - handle: screen_uv_out
+  - kind: check_shader_version
+    name: require_sm5_0
+    major: 5
+    minor: 0
+
+  - kind: apply_rule
+    name: inject_screen_uv_math
+    condition:
+      is: require_sm5_0
+    match_mode: match_all
+    rewrite_mode: replace_range
+    rule:
+      match:
+        - opcode: ret
+      emit:
+        - opcode: div
+          operands:
+            - { type: temp, handle: screen_uv_temp, components: { selection_mode: mask, value: xy } }
+            - { type: input, handle: screen_uv_x, components: { selection_mode: swizzle, value: xyxx } }
+            - { type: input, handle: screen_uv_x, components: { selection_mode: swizzle, value: wwww } }
+        - opcode: div
+          operands:
+            - { type: temp, handle: screen_uv_temp, components: { selection_mode: mask, value: zw } }
+            - { type: input, handle: screen_uv_y, components: { selection_mode: swizzle, value: xxxy } }
+            - { type: input, handle: screen_uv_y, components: { selection_mode: swizzle, value: wwww } }
+        - opcode: add
+          operands:
+            - { type: temp, handle: screen_uv_temp, components: { selection_mode: mask, value: xy } }
+            - { type: temp, handle: screen_uv_temp, modifier: neg, components: { selection_mode: swizzle, value: zwzz } }
+            - { type: temp, handle: screen_uv_temp, components: { selection_mode: swizzle, value: xyxx } }
+        - opcode: mul
+          operands:
+            - { type: output, handle: screen_uv_out, components: { selection_mode: mask, value: xy } }
+            - { type: temp, handle: screen_uv_temp, components: { selection_mode: swizzle, value: xyxx } }
+            - type: immediate32
+              indices:
+                - { immediate_lo: 0x3F000000 }
+                - { immediate_lo: 0xBF000000 }
+                - { immediate_lo: 0x00000000 }
+                - { immediate_lo: 0x00000000 }
+        - opcode: ret

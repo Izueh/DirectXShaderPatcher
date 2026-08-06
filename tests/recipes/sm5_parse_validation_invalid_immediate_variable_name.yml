@@ -1,0 +1,12 @@
+version: 1
+steps:
+  - kind: apply_rule
+    name: invalid_variable_name
+    rule:
+      match:
+        - opcode: mul
+      emit:
+        - opcode: mov
+          operands:
+            - type: immediate32
+              immediates_u32: [bad-name]

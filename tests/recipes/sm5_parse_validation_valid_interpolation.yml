@@ -1,0 +1,26 @@
+version: 1
+steps:
+  - kind: add_resource
+    name: add_interpolated_input
+    inputs:
+      - handle: interpolated_input
+        interpolation: linear
+  - kind: check_shader_version
+    name: require_sm5_0
+    major: 5
+    minor: 0
+
+  - name: interpolation_mode_ok
+    rule:
+      match:
+        - opcode: ret
+      emit:
+        - opcode: dcl_input_ps
+          interpolation: linear
+          operands:
+            - type: input
+              handle: interpolated_input
+              components:
+                selection_mode: mask
+                value: xyzw
+        - opcode: ret

@@ -1,0 +1,39 @@
+version: 1
+steps:
+  - kind: apply_rule
+    name: sequence_mov_add
+    match_mode: match_all
+    rule:
+      match:
+        - opcode: mov
+          operands:
+            - capture: dst
+        - opcode: add
+          operands:
+            - capture: dst2
+            - capture: src
+      emit:
+        - opcode: mov
+          operands:
+            - type: temp
+              capture: dst
+              components:
+                selection_mode: mask
+                value: xyzw
+            - type: temp
+              capture: src
+              components:
+                selection_mode: mask
+                value: xyzw
+        - opcode: add
+          operands:
+            - type: temp
+              capture: dst2
+              components:
+                selection_mode: mask
+                value: xyzw
+            - type: temp
+              capture: src
+              components:
+                selection_mode: mask
+                value: xyzw

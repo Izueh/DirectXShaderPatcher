@@ -1,0 +1,24 @@
+version: 1
+steps:
+  - kind: add_resource
+    name: add_tmp_list
+    temps: [tmp0, tmp1]
+  - kind: apply_rule
+    name: use_tmp_list
+    rule:
+      match:
+        - opcode: mov
+          operands:
+            - capture: dst
+            - capture: src
+      emit:
+        - opcode: mov
+          operands:
+            - type: temp
+              handle: tmp0
+            - capture: src
+        - opcode: mov
+          operands:
+            - type: temp
+              handle: tmp1
+            - capture: src

@@ -1,0 +1,18 @@
+version: 1
+steps:
+  - kind: apply_rule
+    name: invalid_match_capture_operand_name
+    rule:
+      match:
+        - opcode: mov
+          capture: op_tok
+          operands:
+            - type: temp
+              capture: dst
+            - type: temp
+              match_capture: op_tok
+      emit:
+        - opcode: mov
+          operands:
+            - capture: dst
+            - capture: dst

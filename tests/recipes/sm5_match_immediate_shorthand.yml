@@ -1,0 +1,17 @@
+version: 1
+steps:
+  - kind: apply_rule
+    name: match_immediate_shorthand
+    rule:
+      match:
+        - opcode: mul
+          operands:
+            - capture: dst
+            - type: immediate32
+              immediates_u32: [1]
+            - capture: src
+      emit:
+        - opcode: mov
+          operands:
+            - capture: dst
+            - capture: src

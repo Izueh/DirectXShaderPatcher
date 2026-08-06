@@ -1,0 +1,10 @@
+version: 1
+steps:
+  - kind: add_resource
+    temps: [tmp0]
+  - kind: apply_rule
+    name: followup_apply_rules
+    rewrite_mode: none
+    rule:
+      match:
+        - opcode: mov

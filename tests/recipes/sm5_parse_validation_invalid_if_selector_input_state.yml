@@ -1,0 +1,12 @@
+version: 1
+steps:
+  - kind: apply_rule
+    name: invalid_if_selector
+    condition:
+      is: probe_ok
+      is: enable_noise_patch
+    rule:
+      match:
+        - opcode: mul
+      emit:
+        - opcode: mov

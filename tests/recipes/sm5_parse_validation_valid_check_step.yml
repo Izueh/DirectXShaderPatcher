@@ -1,0 +1,6 @@
+version: 1
+steps:
+  - kind: check_shader_version
+    name: equivalent_check_step
+    major: 5
+    minor: 0

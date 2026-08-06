@@ -1,0 +1,41 @@
+version: 1
+steps:
+  - kind: apply_rule
+    name: emit_immediate_shorthand
+    rule:
+      match:
+        - opcode: mov
+          operands:
+            - capture: dst
+            - capture: src
+      emit:
+        - opcode: mov
+          operands:
+            - capture: dst
+            - type: immediate32
+              immediates_u32: [0x3F000000]
+        - opcode: mov
+          operands:
+            - capture: dst
+            - type: immediate64
+              immediates_u64: [0x1122334455667788]
+        - opcode: mov
+          operands:
+            - capture: dst
+            - type: immediate32
+              immediates_i32: [-1]
+        - opcode: mov
+          operands:
+            - capture: dst
+            - type: immediate64
+              immediates_i64: [-2]
+        - opcode: mov
+          operands:
+            - capture: dst
+            - type: immediate32
+              immediates_f32: [0.5]
+        - opcode: mov
+          operands:
+            - capture: dst
+            - type: immediate64
+              immediates_f64: [1.25]

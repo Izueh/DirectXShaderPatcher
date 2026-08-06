@@ -1,0 +1,350 @@
+#include <any>
+#include <cstddef>
+#include <cstdint>
+#include <dxp/sm5/step/AddResourceStep.hpp>
+#include <expected>
+#include <format>
+#include <functional>
+#include <string>
+#include <string_view>
+#include <type_traits>
+#include <unordered_set>
+#include <utility>
+#include "dxp/Condition_impl.hpp"
+#include "dxp/ExportTypes.hpp"
+#include "dxp/ResultFieldTraits.hpp"
+#include "dxp/sm5/Model.hpp"
+#include "dxp/sm5/step/AddResourceStep_impl.hpp"
+#include "dxp/StepConcept.hpp"
+#include "dxp/StepResults.hpp"
+#include "dxp/ValidationContext.hpp"
+
+#include "d3d11TokenizedProgramFormat.hpp"
+#include "dxp/sm5/ExecutionContext.hpp"
+#include "dxp/sm5/ShaderProgram.hpp"
+
+namespace dxp::sm5::step {
+
+constexpr uint32_t kMaxTextureBindPoint = 127;
+constexpr uint32_t kMaxCBufferBindPoint = 14;
+constexpr uint32_t kMaxSamplerBindPoint = 15;
+constexpr uint32_t kMaxUavBindPoint = 63;
+constexpr uint32_t kMaxInputBindPoint = 31;
+constexpr uint32_t kMaxOutputBindPoint = 7;
+
+std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceStep& step, ExecutionContext& ctx) {
+  dxp::AddResourceResults result;
+  bool changed = false;
+
+  const auto fail_or_warn = [&](const std::string& message) -> bool {
+    if (step.required) return false;
+    ctx.logger.Log(LogLevel::Warning, message + " — skipped (required: false)");
+    return true;
+  };
+
+  auto add_new_binding = [&](dxp::ResourceKind kind, const std::string& handle, uint32_t bind_point) {
+    dxp::ResourceBinding binding;
+    binding.resource_kind = kind;
+    binding.handle = handle;
+    binding.register_index = bind_point;
+    binding.space = 0;
+    ctx.resource_bindings[handle] = std::move(binding);
+  };
+
+  auto resolve_and_add = [&](const auto& decls, auto add_decl, auto find_next, auto& bindings,
+                             dxp::ResourceKind kind, uint32_t max_bind_point, const char* kind_name,
+                             uint32_t* count_ptr) -> std::expected<void, std::string> {
+    for (const auto& decl : decls) {
+      uint32_t bind_point = 0;
+      if (decl.register_index.has_value()) {
+        bind_point = *decl.register_index;
+        if (bind_point > max_bind_point) {
+          const std::string message = std::string("add_resource: register_index ") + std::to_string(bind_point) + std::string(" exceeds maximum ") + std::to_string(max_bind_point) + std::string(" for '") + kind_name + "'";
+          if (!fail_or_warn(message)) return std::unexpected(message);
+          continue;
+        }
+      } else {
+        bind_point = find_next(ctx.program);
+        if (bind_point > max_bind_point) {
+          const std::string message = std::string("add_resource: auto-bind exhausted for '") + kind_name + std::string("' — maximum bind point ") + std::to_string(max_bind_point);
+          if (!fail_or_warn(message)) return std::unexpected(message);
+          continue;
+        }
+      }
+      std::string decl_error;
+      if (!add_decl(decl, bind_point, decl_error)) {
+        const std::string message = std::string("add_resource: ") + kind_name + std::string(" '") + decl.handle + "': " + decl_error;
+        if (!fail_or_warn(message)) return std::unexpected(message);
+        continue;
+      }
+      const auto handle = decl.handle.empty() ? "" : decl.handle;
+      bindings[handle] = bind_point;
+      add_new_binding(kind, handle, bind_point);
+      ++(*count_ptr);
+      changed = true;
+    }
+    return {};
+  };
+
+  if (auto r = resolve_and_add(step.textures, [&](const auto& d, uint32_t bp, std::string& e) { return ctx.program.AddTextureDeclaration(d, bp, e); }, [&](const auto& p) { return p.FindNextAvailableTexture(); }, ctx.Bindings(BindingKind::Texture), dxp::ResourceKind::Texture, kMaxTextureBindPoint, "texture", &result.textures_added); !r) {
+    return std::unexpected(std::move(r.error()));
+  }
+  if (auto r = resolve_and_add(step.raw_resources, [&](const auto& d, uint32_t bp, std::string& e) { return ctx.program.AddRawResourceDeclaration(d, bp, e); }, [&](const auto& p) { return p.FindNextAvailableTexture(); }, ctx.Bindings(BindingKind::RawResource), dxp::ResourceKind::RawResource, kMaxTextureBindPoint, "raw_resource", &result.raw_resources_added); !r) {
+    return std::unexpected(std::move(r.error()));
+  }
+  if (auto r = resolve_and_add(step.structured_resources, [&](const auto& d, uint32_t bp, std::string& e) { return ctx.program.AddStructuredResourceDeclaration(d, bp, e); }, [&](const auto& p) { return p.FindNextAvailableTexture(); }, ctx.Bindings(BindingKind::StructuredResource), dxp::ResourceKind::StructuredResource, kMaxTextureBindPoint, "structured_resource", &result.structured_resources_added); !r) {
+    return std::unexpected(std::move(r.error()));
+  }
+  if (auto r = resolve_and_add(step.cbuffers, [&](const auto& d, uint32_t bp, std::string& e) { return ctx.program.AddCBufferDeclaration(d, bp, e); }, [&](const auto& p) { return p.FindNextAvailableCBuffer(); }, ctx.Bindings(BindingKind::CBuffer), dxp::ResourceKind::CBuffer, kMaxCBufferBindPoint, "cbuffer", &result.cbuffers_added); !r) {
+    return std::unexpected(std::move(r.error()));
+  }
+  if (auto r = resolve_and_add(step.samplers, [&](const auto& d, uint32_t bp, std::string& e) { return ctx.program.AddSamplerDeclaration(d, bp, e); }, [&](const auto& p) { return p.FindNextAvailableSampler(); }, ctx.Bindings(BindingKind::Sampler), dxp::ResourceKind::Sampler, kMaxSamplerBindPoint, "sampler", &result.samplers_added); !r) {
+    return std::unexpected(std::move(r.error()));
+  }
+  if (auto r = resolve_and_add(step.uavs, [&](const auto& d, uint32_t bp, std::string& e) { return ctx.program.AddUavDeclaration(d, bp, e); }, [&](const auto& p) { return p.FindNextAvailableUAV(); }, ctx.Bindings(BindingKind::Uav), dxp::ResourceKind::Uav, kMaxUavBindPoint, "uav", &result.uavs_added); !r) {
+    return std::unexpected(std::move(r.error()));
+  }
+
+  {
+    for (const auto& decl : step.inputs) {
+      uint32_t bind_point = 0;
+      if (decl.register_index.has_value()) {
+        bind_point = *decl.register_index;
+        if (bind_point > kMaxInputBindPoint) {
+          const std::string message = "add_resource: register_index " + std::to_string(bind_point) + " exceeds maximum " + std::to_string(kMaxInputBindPoint) + " for 'input'";
+          if (!fail_or_warn(message)) return std::unexpected(message);
+          continue;
+        }
+      } else {
+        bind_point = ctx.program.FindNextAvailableInput();
+        if (bind_point > kMaxInputBindPoint) {
+          const std::string message = "add_resource: auto-bind exhausted for 'input'";
+          if (!fail_or_warn(message)) return std::unexpected(message);
+          continue;
+        }
+      }
+      std::string decl_error;
+      if (!ctx.program.AddInputDeclaration(decl, bind_point, decl_error)) {
+        const std::string message = "add_resource: input '" + decl.handle + "': " + decl_error;
+        if (!fail_or_warn(message)) return std::unexpected(message);
+        continue;
+      }
+      const auto handle = decl.handle.empty() ? "" : decl.handle;
+      ctx.Bindings(BindingKind::Input)[handle] = bind_point;
+      add_new_binding(dxp::ResourceKind::Input, handle, bind_point);
+      ++result.inputs_added;
+    }
+  }
+
+  {
+    for (const auto& decl : step.outputs) {
+      uint32_t bind_point = 0;
+      if (decl.register_index.has_value()) {
+        bind_point = *decl.register_index;
+        if (bind_point > kMaxOutputBindPoint) {
+          const std::string message = "add_resource: register_index " + std::to_string(bind_point) + " exceeds maximum " + std::to_string(kMaxOutputBindPoint) + " for 'output'";
+          if (!fail_or_warn(message)) return std::unexpected(message);
+          continue;
+        }
+      } else {
+        bind_point = ctx.program.FindNextAvailableOutput();
+        if (bind_point > kMaxOutputBindPoint) {
+          const std::string message = "add_resource: auto-bind exhausted for 'output'";
+          if (!fail_or_warn(message)) return std::unexpected(message);
+          continue;
+        }
+      }
+      std::string decl_error;
+      if (!ctx.program.AddOutputDeclaration(decl, bind_point, decl_error)) {
+        const std::string message = "add_resource: output '" + decl.handle + "': " + decl_error;
+        if (!fail_or_warn(message)) return std::unexpected(message);
+        continue;
+      }
+      const auto handle = decl.handle.empty() ? "" : decl.handle;
+      ctx.Bindings(BindingKind::Output)[handle] = bind_point;
+      add_new_binding(dxp::ResourceKind::Output, handle, bind_point);
+      ++result.outputs_added;
+    }
+  }
+
+  if (!step.temps.empty()) {
+    const uint32_t temp_base = ctx.program.temp_count;
+    for (size_t i = 0; i < step.temps.size(); ++i) {
+      const uint32_t bind_point = temp_base + static_cast<uint32_t>(i);
+      ctx.Bindings(BindingKind::Temp)[step.temps[i]] = bind_point;
+    }
+    ctx.program.temp_count += static_cast<uint32_t>(step.temps.size());
+    result.temps_added = static_cast<uint32_t>(step.temps.size());
+    changed = true;
+  }
+
+  if (ctx.program.temp_count > 0) {
+    ctx.program.EnsureTempDeclaration();
+  }
+
+  ctx.program_modified = ctx.program_modified || changed;
+  ctx.state[step.name] = true;
+  ctx.results[step.name] = std::any(result);
+  return result;
+}
+
+std::expected<void, std::string> Validate(const AddResourceStep& step, std::string& error, dxp::ValidationContext& ctx) {
+  if (step.name.empty()) {
+    error = "add_resource step requires a name";
+    return std::unexpected(std::move(error));
+  }
+
+  for (const auto& d : step.uavs) {
+    if (d.register_index.has_value()) {
+      if (d.kind == AddResourceStep::UavKind::Raw) {
+        error = "add_resource: raw UAV does not support stride";
+        return std::unexpected(std::move(error));
+      }
+    }
+  }
+
+  for (const auto& t : step.temps) {
+    if (t.empty()) {
+      error = "add_resource: temp handle must not be empty";
+      return std::unexpected(std::move(error));
+    }
+    ctx.handles.insert(t);
+  }
+
+  if (!ctx.names.insert(step.name).second) {
+    error = "duplicate SM5 name '" + step.name + "' reused by step";
+    return std::unexpected(std::move(error));
+  }
+
+  auto declareHandles = [&ctx](const auto& decls) {
+    for (const auto& d : decls) {
+      if (!d.handle.empty()) ctx.handles.insert(d.handle);
+    }
+  };
+
+  declareHandles(step.textures);
+  declareHandles(step.raw_resources);
+  declareHandles(step.structured_resources);
+  declareHandles(step.cbuffers);
+  declareHandles(step.samplers);
+  declareHandles(step.uavs);
+  declareHandles(step.inputs);
+  declareHandles(step.outputs);
+
+  if (auto r = ValidateCondition<typename std::decay_t<decltype(step)>::Results>(step.condition, ctx); !r) {
+    error = r.error();
+    return std::unexpected(error);
+  }
+  return {};
+}
+
+auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::string> {
+  auto cond = condition.Compile();
+  AddResourceStep step{};
+  step.name = name;
+  step.condition = cond;
+  step.required = required;
+
+  step.textures.reserve(textures.size());
+  for (const auto& d : textures) {
+    AddResourceStep::TextureDecl decl{};
+    decl.handle = d.handle;
+    decl.register_index = d.register_index;
+    if (d.dimension.has_value()) decl.dimension = *d.dimension;
+    step.textures.push_back(std::move(decl));
+  }
+  step.raw_resources.reserve(raw_resources.size());
+  for (const auto& d : raw_resources) {
+    AddResourceStep::RawResourceDecl decl{};
+    decl.handle = d.handle;
+    decl.register_index = d.register_index;
+    step.raw_resources.push_back(std::move(decl));
+  }
+  step.structured_resources.reserve(structured_resources.size());
+  for (const auto& d : structured_resources) {
+    if (d.stride == 0) {
+      return std::unexpected("structured resource '" + d.handle + "' stride must be non-zero");
+    }
+    AddResourceStep::StructuredResourceDecl decl{};
+    decl.handle = d.handle;
+    decl.register_index = d.register_index;
+    decl.structure_stride = d.stride;
+    step.structured_resources.push_back(std::move(decl));
+  }
+  step.cbuffers.reserve(cbuffers.size());
+  for (const auto& d : cbuffers) {
+    AddResourceStep::CBufferDecl decl{};
+    decl.handle = d.handle;
+    decl.register_index = d.register_index;
+    if (d.elements.has_value()) decl.elements = *d.elements;
+    step.cbuffers.push_back(std::move(decl));
+  }
+  step.samplers.reserve(samplers.size());
+  for (const auto& d : samplers) {
+    AddResourceStep::SamplerDecl decl{};
+    decl.handle = d.handle;
+    decl.register_index = d.register_index;
+    if (d.mode.has_value()) decl.mode = *d.mode;
+    step.samplers.push_back(std::move(decl));
+  }
+  step.uavs.reserve(uavs.size());
+  for (const auto& d : uavs) {
+    AddResourceStep::UavDecl decl{};
+    decl.handle = d.handle;
+    decl.register_index = d.register_index;
+    if (d.kind.has_value()) decl.kind = *d.kind;
+    if (d.globally_coherent.has_value()) decl.globally_coherent = *d.globally_coherent;
+    if (d.has_counter.has_value()) decl.has_order_preserving_counter = *d.has_counter;
+    step.uavs.push_back(std::move(decl));
+  }
+  step.inputs.reserve(inputs.size());
+  for (const auto& d : inputs) {
+    AddResourceStep::InputDecl decl{};
+    decl.handle = d.handle;
+    decl.register_index = d.register_index;
+    if (d.interpolation.has_value()) {
+      decl.interpolation_mode = static_cast<uint32_t>(*d.interpolation);
+    }
+    step.inputs.push_back(std::move(decl));
+  }
+  step.outputs.reserve(outputs.size());
+  for (const auto& d : outputs) {
+    AddResourceStep::OutputDecl decl{};
+    decl.handle = d.handle;
+    decl.register_index = d.register_index;
+    step.outputs.push_back(std::move(decl));
+  }
+  step.temps = temps;
+  return step;
+}
+
+std::string DescribeOutcome(const AddResourceStep&, const dxp::AddResourceResults& results,
+                            const ExecutionContext& /*ctx*/) {
+  std::vector<std::string> parts;
+  const auto add_part = [&parts](uint32_t count, std::string_view name) {
+    if (count > 0) parts.push_back(std::format("{} {}{}", count, name, count == 1 ? "" : "s"));
+  };
+  add_part(results.textures_added, "texture");
+  add_part(results.raw_resources_added, "raw resource");
+  add_part(results.structured_resources_added, "structured resource");
+  add_part(results.cbuffers_added, "cbuffer");
+  add_part(results.samplers_added, "sampler");
+  add_part(results.uavs_added, "uav");
+  add_part(results.inputs_added, "input");
+  add_part(results.outputs_added, "output");
+  add_part(results.temps_added, "temp");
+  if (parts.empty()) {
+    return "added nothing";
+  }
+  std::string message = "added ";
+  for (size_t i = 0; i < parts.size(); ++i) {
+    if (i > 0) message += (i + 1 == parts.size()) ? " and " : ", ";
+    message += parts[i];
+  }
+  return message;
+}
+
+static_assert(RecipeStep<AddResourceStep>);
+static_assert(ExecutableStep<AddResourceStep, ExecutionContext>);
+
+}  // namespace dxp::sm5::step

@@ -1,0 +1,23 @@
+version: 1
+steps:
+  - kind: apply_rule
+    name: mixed_immediate_variables
+    condition:
+      is: enable_noise_patch
+    rule:
+      match:
+        - opcode: mul
+          operands:
+            - capture: dst
+            - capture: src
+      emit:
+        - opcode: mov
+          operands:
+            - capture: dst
+            - type: immediate32
+              immediates_u32: [0x3F800000, frame_seed, 0]
+        - opcode: mov
+          operands:
+            - capture: dst
+            - type: immediate64
+              immediates_f64: [frame_double]

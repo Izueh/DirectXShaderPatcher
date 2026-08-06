@@ -1,0 +1,9 @@
+[submodule "external/DirectXShaderCompiler"]
+	path = external/DirectXShaderCompiler
+	url = https://github.com/microsoft/DirectXShaderCompiler.git
+[submodule "external/glaze"]
+	path = external/glaze
+	url = https://github.com/stephenberry/glaze.git
+[submodule "external/value_types"]
+	path = external/value_types
+	url = https://github.com/jbcoe/value_types
