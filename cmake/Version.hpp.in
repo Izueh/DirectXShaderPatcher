@@ -8,5 +8,5 @@
 #define DXP_VERSION_MINOR @PROJECT_VERSION_MINOR@
 #define DXP_VERSION_PATCH @PROJECT_VERSION_PATCH@
 
-/// Full version string, e.g. "0.1.0" (release) or "0.1.0+snapshot.a1b2c3d4".
+/// Full version string, e.g. "0.1.1" (release) or "0.1.1+snapshot.a1b2c3d4".
 #define DXP_VERSION_STRING "@DXP_VERSION_STRING@"

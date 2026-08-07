@@ -61,6 +61,13 @@ jobs:
       - name: Build (x64)
         run: cmake --build --preset ninja-x64-release --parallel
 
+      # Test gate: a commit that breaks the test suite must not update the
+      # rolling snapshot release. Failing tests abort the job, so the release
+      # step below never runs. Tests are x64-only (dxp_add_test returns early
+      # for x86), so one ctest run covers the suite.
+      - name: Test (x64 Release)
+        run: ctest --preset ninja-x64-release --output-on-failure
+
       - name: Build Debug (x64)
         run: cmake --build --preset ninja-x64-debug --parallel
 
@@ -134,6 +141,10 @@ jobs:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
           automatic_release_tag: ${{ env.RELEASE_TAG }}
           title: DirectXShaderPatcher ${{ env.ARTIFACT_VERSION }}
+          # Snapshots (main pushes) are pre-releases so the curated SemVer
+          # release stays "Latest" on the Releases page; tagged v* pushes are
+          # real releases.
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
           files: |
             githubrelease/*.zip
             githubrelease/SHA256SUMS
