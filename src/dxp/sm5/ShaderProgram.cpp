@@ -507,8 +507,7 @@ ShaderProgram::ShaderProgram(ShaderProgram&& other) noexcept
       temp_count(other.temp_count),
       indexable_temps(std::move(other.indexable_temps)),
       header(other.header),
-      chunks(std::move(other.chunks)),
-      raw_bytes_(std::move(other.raw_bytes_)) {
+      chunks(std::move(other.chunks)) {
   other.program_type = ProgramType::PixelShader;
   other.major_version = 0;
   other.minor_version = 0;
@@ -536,7 +535,6 @@ auto ShaderProgram::operator=(ShaderProgram&& other) noexcept -> ShaderProgram& 
   indexable_temps = std::move(other.indexable_temps);
   header = other.header;
   chunks = std::move(other.chunks);
-  raw_bytes_ = std::move(other.raw_bytes_);
   other.program_type = ProgramType::PixelShader;
   other.major_version = 0;
   other.minor_version = 0;
@@ -547,9 +545,8 @@ auto ShaderProgram::operator=(ShaderProgram&& other) noexcept -> ShaderProgram& 
   return *this;
 }
 
-auto ShaderProgram::ParseProgram(const uint8_t* data, uint32_t size, ShaderProgram& program) -> bool {
-  const std::span<const uint8_t> span_data(data, size);
-  return ParseProgramImpl(span_data, size, program);
+auto ShaderProgram::ParseProgram(std::span<const uint8_t> data, ShaderProgram& program) -> bool {
+  return ParseProgramImpl(data, static_cast<uint32_t>(data.size()), program);
 }
 
 auto ShaderProgram::SerializeBitcode() const -> std::vector<uint8_t> {
@@ -567,7 +564,7 @@ auto ShaderProgram::SerializeBitcode() const -> std::vector<uint8_t> {
   return out_bytes;
 }
 
-auto ShaderProgram::FromBytes(const std::vector<uint8_t>& bytes) -> std::expected<ShaderProgram, std::string> {
+auto ShaderProgram::FromBytes(std::span<const uint8_t> bytes) -> std::expected<ShaderProgram, std::string> {
   ShaderProgram prog;
   if (bytes.size() < 32) {
     return std::unexpected("[sm5] container too small to be a DXBC container");
@@ -640,8 +637,6 @@ auto ShaderProgram::FromBytes(const std::vector<uint8_t>& bytes) -> std::expecte
 
     prog.chunks.push_back(std::move(chunk));
   }
-
-  prog.raw_bytes_ = bytes;
 
   const auto* shader_chunk = prog.GetShaderChunk();
   if (shader_chunk == nullptr || shader_chunk->data.empty()) {

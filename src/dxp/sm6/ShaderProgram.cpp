@@ -663,15 +663,15 @@ void ShaderProgram::RestoreReflection() {
   dxil_module->RestoreResourceReflection(*ref_dxm);
 }
 
-auto ShaderProgram::FromBytes(const std::vector<uint8_t>& bytes, ShaderProgram& out, bool restore_reflection)
+auto ShaderProgram::FromBytes(std::span<const uint8_t> bytes, ShaderProgram& out, bool restore_reflection)
     -> std::expected<void, std::string> {
   return FromBytes(bytes, out, ThreadLocalContext(), restore_reflection);
 }
 
-auto ShaderProgram::FromBytes(const std::vector<uint8_t>& bytes, ShaderProgram& out, llvm::LLVMContext& external_context,
+auto ShaderProgram::FromBytes(std::span<const uint8_t> bytes, ShaderProgram& out, llvm::LLVMContext& external_context,
                               bool restore_reflection) -> std::expected<void, std::string> {
   out = ShaderProgram{};
-  out.input_bytes = bytes;
+  out.input_bytes.assign(bytes.begin(), bytes.end());
 
   DxilProgramBitcode dxil_bitcode;
   if (!out.ExtractBitcodeFromContainer(hlsl::DFCC_DXIL, dxil_bitcode)) {
@@ -970,7 +970,7 @@ auto ShaderProgram::SerializeBitcode() -> std::vector<uint8_t> {
   return {bitcode_bytes.begin(), bitcode_bytes.end()};
 }
 
-auto ShaderProgram::SerializeContainer(const std::vector<uint8_t>& bitcode, std::vector<uint8_t>& output_container)
+auto ShaderProgram::SerializeContainer(std::span<const uint8_t> bitcode, std::vector<uint8_t>& output_container)
     -> std::expected<void, std::string> {
   CComPtr<IMalloc> malloc_interface;
   if (DXC_FAILED(::CoGetMalloc(1, &malloc_interface)) || !malloc_interface) {
@@ -1029,7 +1029,7 @@ auto ShaderProgram::Serialize() -> std::expected<std::vector<uint8_t>, std::stri
   return container;
 }
 
-auto ShaderProgram::BuildContainerReport(const std::vector<uint8_t>& container_bytes,
+auto ShaderProgram::BuildContainerReport(std::span<const uint8_t> container_bytes,
                                          dxp::PatchContainerReport& report) -> std::expected<void, std::string> {
   if (container_bytes.size() < sizeof(hlsl::DxilContainerHeader)) {
     return std::unexpected("container too small to be a valid DXIL container");

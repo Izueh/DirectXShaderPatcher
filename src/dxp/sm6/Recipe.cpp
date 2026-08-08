@@ -56,7 +56,7 @@ std::expected<Recipe, std::string> Recipe::ParseFromText(const std::string& text
   return dxp::detail::ParseRecipeFromText<Recipe, RecipeData>(text, source_name);
 }
 
-auto Recipe::Execute(const std::vector<uint8_t>& input,
+auto Recipe::Execute(std::span<const uint8_t> input,
                      const PatchOptions& options) const -> std::expected<RecipeReport, std::string> {
   // ValidateRecipe owns the thread-safe lazy cache (atomic flag); concurrent
   // Execute calls on a shared recipe may all validate simultaneously — the
@@ -68,7 +68,7 @@ auto Recipe::Execute(const std::vector<uint8_t>& input,
 
   return dxp::detail::ExecuteSteps<ExecutionContext>(
       steps_, env_, input, options,
-      [](const std::vector<uint8_t>& bytes, const PatchOptions& options) -> std::expected<ExecutionContext, std::string> {
+      [](std::span<const uint8_t> bytes, const PatchOptions& options) -> std::expected<ExecutionContext, std::string> {
         ExecutionContext ctx;
         ctx.logger.sink = options.logger;
         ctx.logger.level = options.log_level;
@@ -87,7 +87,7 @@ auto Recipe::Execute(const std::vector<uint8_t>& input,
         }
         return ctx;
       },
-      [](ExecutionContext& ctx, const std::vector<uint8_t>& input_bytes)
+      [](ExecutionContext& ctx, std::span<const uint8_t> input_bytes)
           -> std::expected<dxp::detail::ExecutionOutput, std::string> {
         dxp::detail::ExecutionOutput output;
         const HRESULT kHr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
@@ -102,7 +102,7 @@ auto Recipe::Execute(const std::vector<uint8_t>& input,
           }
           output.output_bytes = std::move(*serialized);
         } else {
-          output.output_bytes = input_bytes;
+          output.output_bytes.assign(input_bytes.begin(), input_bytes.end());
         }
         if (kComShouldUninitialize) {
           CoUninitialize();

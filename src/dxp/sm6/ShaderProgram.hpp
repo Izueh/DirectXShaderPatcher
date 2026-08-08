@@ -4,6 +4,7 @@
 #include <expected>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -37,7 +38,7 @@ struct ShaderProgram {
   /// the same thread, matching DXC's thread-confined compilation model).
   /// ShaderProgram instances are therefore thread-affine: create, use, and
   /// destroy a program on the same thread.
-  static std::expected<void, std::string> FromBytes(const std::vector<uint8_t>& bytes, ShaderProgram& out,
+  static std::expected<void, std::string> FromBytes(std::span<const uint8_t> bytes, ShaderProgram& out,
                                                     bool restore_reflection = true);
 
   /// @brief Load using an externally-owned LLVMContext.
@@ -45,7 +46,7 @@ struct ShaderProgram {
   /// The caller must keep the context alive for at least as long as the
   /// ShaderProgram and must not use the context from another thread while the
   /// program is alive.
-  static std::expected<void, std::string> FromBytes(const std::vector<uint8_t>& bytes, ShaderProgram& out,
+  static std::expected<void, std::string> FromBytes(std::span<const uint8_t> bytes, ShaderProgram& out,
                                                     llvm::LLVMContext& external_context,
                                                     bool restore_reflection = true);
 
@@ -53,7 +54,7 @@ struct ShaderProgram {
   std::expected<void, std::string> Reload();
 
   /// @brief Build a DXIL container report.
-  static std::expected<void, std::string> BuildContainerReport(const std::vector<uint8_t>& container_bytes,
+  static std::expected<void, std::string> BuildContainerReport(std::span<const uint8_t> container_bytes,
                                                                dxp::PatchContainerReport& report);
 
   std::expected<void, std::string> AddCBuffer(const CBufferDesc& desc);
@@ -99,7 +100,7 @@ struct ShaderProgram {
     return dxil_module;
   }
   [[nodiscard]] llvm::Function* GetEntryFunction() const;
-  [[nodiscard]] const std::vector<uint8_t>& GetInputBytes() const {
+  [[nodiscard]] std::span<const uint8_t> GetInputBytes() const {
     return input_bytes;
   }
 
@@ -129,7 +130,7 @@ struct ShaderProgram {
   void RestoreReflection();
 
   std::vector<uint8_t> SerializeBitcode();
-  std::expected<void, std::string> SerializeContainer(const std::vector<uint8_t>& bitcode, std::vector<uint8_t>& output_container);
+  std::expected<void, std::string> SerializeContainer(std::span<const uint8_t> bitcode, std::vector<uint8_t>& output_container);
 
   template <typename TResource>
   unsigned FindNextAvailable(const std::vector<std::unique_ptr<TResource>>& resources, unsigned space,

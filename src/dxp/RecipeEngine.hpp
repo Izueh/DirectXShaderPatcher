@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <expected>
 #include <format>
+#include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -123,7 +124,7 @@ inline std::string UpperHex32(uint32_t value) {
 }
 
 /// @brief "; input hash 0x..." suffix (CRC32 of the input bytes).
-inline std::string InputHashSuffix(const std::vector<uint8_t>& bytes) {
+inline std::string InputHashSuffix(std::span<const uint8_t> bytes) {
   return "; input hash " + UpperHex32(dxp::utils::hash::ComputeCrc32(bytes));
 }
 
@@ -169,11 +170,14 @@ bool StepSucceeded(const Results& r, const Context& ctx) {
 /// program (backend-specific: DXBC vs DXIL container + COM init) and produces
 /// the final output. `ShouldExecute`/`Execute` are resolved by ADL from the
 /// step's namespace.
+///
+/// @param input Borrowed view of the input container bytes; the caller must
+///        keep the buffer alive for the duration of the call.
 template <typename Context, typename StepVariant, typename ContextFactory, typename ReportBuilder>
 std::expected<RecipeReport, std::string> ExecuteSteps(
     const std::vector<StepVariant>& steps,
     const std::unordered_map<std::string, PrimitiveValue>& env,
-    const std::vector<uint8_t>& input,
+    std::span<const uint8_t> input,
     const PatchOptions& options,
     ContextFactory&& make_context,
     ReportBuilder&& build_report) {

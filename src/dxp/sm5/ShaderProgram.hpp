@@ -4,6 +4,7 @@
 #include <cstring>
 #include <expected>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -161,7 +162,7 @@ struct ShaderProgram {
   static Instruction FinalizeInstruction(Instruction instruction);
   /// @brief Load from raw DXBC container bytes, returning the parsed program or
   /// a specific error message (no global streams are touched).
-  static std::expected<ShaderProgram, std::string> FromBytes(const std::vector<uint8_t>& bytes);
+  static std::expected<ShaderProgram, std::string> FromBytes(std::span<const uint8_t> bytes);
 
   /// @brief Serialize back to DXBC bytecode (rebuilds shader chunk, recomputes hash).
   /// @return Serialized bytes, or a specific error message.
@@ -179,7 +180,6 @@ struct ShaderProgram {
  private:
   DxbcContainerHeader header = {};
   std::vector<DxbcChunk> chunks;
-  std::vector<uint8_t> raw_bytes_;
 
   [[nodiscard]] const DxbcChunk* FindChunk(ChunkKind kind) const;
   DxbcChunk* FindChunk(ChunkKind kind);
@@ -190,7 +190,7 @@ struct ShaderProgram {
 
   [[nodiscard]] std::vector<uint8_t> SerializeBitcode() const;
 
-  static bool ParseProgram(const uint8_t* data, uint32_t size, ShaderProgram& program);
+  static bool ParseProgram(std::span<const uint8_t> data, ShaderProgram& program);
 };
 
 }  // namespace dxp::sm5

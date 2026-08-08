@@ -59,7 +59,7 @@ bool ReadBinaryFile(const std::string& path, std::vector<uint8_t>& data) {
   return !!file;
 }
 
-bool WriteBinaryFile(const std::string& path, const std::vector<uint8_t>& data) {
+bool WriteBinaryFile(const std::string& path, std::span<const uint8_t> data) {
   const std::filesystem::path output_path(path);
   const std::filesystem::path parent_path = output_path.parent_path();
   if (!parent_path.empty()) {

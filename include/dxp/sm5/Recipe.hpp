@@ -3,6 +3,7 @@
 #include <atomic>
 #include <concepts>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -131,11 +132,12 @@ struct Recipe {
 
   /**
    * @brief Execute the recipe on the given DXBC container bytes.
-   * @param input DXBC container bytes to patch.
+   * @param input DXBC container bytes to patch (borrowed view; the caller must
+   *        keep the buffer alive for the duration of the call).
    * @param options Optional patch options.
    * @return std::expected<RecipeReport, string> with results and serialized output.
    */
-  std::expected<RecipeReport, std::string> Execute(const std::vector<uint8_t>& input,
+  std::expected<RecipeReport, std::string> Execute(std::span<const uint8_t> input,
                                                    const PatchOptions& options = {}) const;
 
  private:
