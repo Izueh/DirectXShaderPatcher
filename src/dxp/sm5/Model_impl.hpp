@@ -1,27 +1,32 @@
 #pragma once
 
+#include <array>
+#include <cstdint>
+#include <variant>
+
 #include <dxp/sm5/Model.hpp>
 #include <glaze/glaze.hpp>
+#include "d3d11TokenizedProgramFormat.hpp"
 
 namespace glz {
 
 template <>
-struct meta<dxp::sm5::NumComponents> {
-  using T = dxp::sm5::NumComponents;
+struct meta<dxp::sm5::model::NumComponents> {
+  using T = dxp::sm5::model::NumComponents;
   static constexpr std::array keys = {"zero", "one", "four", "n"};
   static constexpr std::array value = {T::Zero, T::One, T::Four, T::N};
 };
 
 template <>
-struct meta<dxp::sm5::SelectionMode> {
-  using T = dxp::sm5::SelectionMode;
+struct meta<dxp::sm5::model::SelectionMode> {
+  using T = dxp::sm5::model::SelectionMode;
   static constexpr std::array keys = {"mask", "swizzle", "select"};
   static constexpr std::array value = {T::Mask, T::Swizzle, T::Select};
 };
 
 template <>
-struct meta<dxp::sm5::InterpolationMode> {
-  using T = dxp::sm5::InterpolationMode;
+struct meta<dxp::sm5::model::InterpolationMode> {
+  using T = dxp::sm5::model::InterpolationMode;
   static constexpr std::array keys = {"undefined",
                                       "constant",
                                       "linear",
@@ -41,22 +46,22 @@ struct meta<dxp::sm5::InterpolationMode> {
 };
 
 template <>
-struct meta<dxp::sm5::CbufferAccessPattern> {
-  using T = dxp::sm5::CbufferAccessPattern;
+struct meta<dxp::sm5::model::CbufferAccessPattern> {
+  using T = dxp::sm5::model::CbufferAccessPattern;
   static constexpr std::array keys = {"immediate_indexed", "dynamic_indexed"};
   static constexpr std::array value = {T::ImmediateIndexed, T::DynamicIndexed};
 };
 
 template <>
-struct meta<dxp::sm5::SamplerMode> {
-  using T = dxp::sm5::SamplerMode;
+struct meta<dxp::sm5::model::SamplerMode> {
+  using T = dxp::sm5::model::SamplerMode;
   static constexpr std::array keys = {"default", "comparison", "mono"};
   static constexpr std::array value = {T::Default, T::Comparison, T::Mono};
 };
 
 template <>
-struct meta<dxp::sm5::OperandType> {
-  using T = dxp::sm5::OperandType;
+struct meta<dxp::sm5::model::OperandType> {
+  using T = dxp::sm5::model::OperandType;
   static constexpr std::array keys = {
       "temp", "input", "output", "indexable_temp",
       "immediate32", "immediate64", "sampler", "resource",
@@ -98,15 +103,15 @@ struct meta<dxp::sm5::OperandType> {
 };
 
 template <>
-struct meta<dxp::sm5::OperandModifier> {
-  using T = dxp::sm5::OperandModifier;
+struct meta<dxp::sm5::model::OperandModifier> {
+  using T = dxp::sm5::model::OperandModifier;
   static constexpr std::array keys = {"none", "neg", "abs", "abs_neg"};
   static constexpr std::array value = {T::None, T::Neg, T::Abs, T::AbsNeg};
 };
 
 template <>
-struct meta<dxp::sm5::Opcode> {
-  using T = dxp::sm5::Opcode;
+struct meta<dxp::sm5::model::Opcode> {
+  using T = dxp::sm5::model::Opcode;
   static constexpr std::array keys = {
       "add", "and", "break", "breakc", "call", "callc", "case",
       "continue", "continuec", "cut", "default", "deriv_rtx",
@@ -232,3 +237,129 @@ struct meta<dxp::sm5::Opcode> {
 };
 
 }  // namespace glz
+
+namespace dxp::sm5::model {
+
+/// Extended-opcode token layout (D3D11 tokenized format).
+constexpr uint32_t kExtendedOpcodeTypeMask = 0x3FU;  ///< type bits [5:0].
+constexpr uint32_t kSampleControlOffsetBits = 4U;    ///< sample offsets are 4-bit 2's complement.
+
+// ld_raw/ld_structured declarations carry no return types; canonical is MIXED x4.
+constexpr uint32_t kPackedMixedReturnTypes = ENCODE_D3D10_SB_RESOURCE_RETURN_TYPE(D3D10_SB_RETURN_TYPE_MIXED, 0)
+                                             | ENCODE_D3D10_SB_RESOURCE_RETURN_TYPE(D3D10_SB_RETURN_TYPE_MIXED, 1)
+                                             | ENCODE_D3D10_SB_RESOURCE_RETURN_TYPE(D3D10_SB_RETURN_TYPE_MIXED, 2)
+                                             | ENCODE_D3D10_SB_RESOURCE_RETURN_TYPE(D3D10_SB_RETURN_TYPE_MIXED, 3);
+
+/// @brief Canonical extended-opcode chain per resource-access opcode
+/// (verified against the fxc corpus, see tests/sm5_extended_chain_table_test.cpp):
+/// ld/ld2dms/resinfo/sample/gather4 families carry ResourceDim + ResourceReturnType
+/// (sample/gather4 additionally SampleControls when offsets != 0); ld_raw/ld_structured
+/// carry a fixed RAW/STRUCTURED_BUFFER dim + MIXED return; everything else has none.
+enum class ExtendedChainKind : std::uint8_t {
+  None = 0,                   ///< no extended opcode tokens.
+  ResourcePair,               ///< ResourceDim + ResourceReturnType, both from the declaration.
+  ResourcePairFixed,          ///< ResourceDim + ResourceReturnType; dim/return types are fixed (ld_raw, ld_structured).
+  ResourcePairControls,       ///< SampleControls (when offsets != 0) + ResourceDim + ResourceReturnType.
+  ResourcePairControlsFixed,  ///< SampleControls (when offsets != 0) + ResourceDim + ResourceReturnType (fixed).
+};
+
+/// @brief Extended-opcode chain spec for one opcode.
+struct ExtendedChainSpec {
+  ExtendedChainKind kind = ExtendedChainKind::None;
+  uint32_t fixed_dimension = 0;    ///< D3D10_SB_RESOURCE_DIMENSION to emit for Fixed kinds.
+  uint32_t fixed_return_type = 0;  ///< Packed 4x4-bit return types to emit for Fixed kinds (e.g. MIXED x4).
+
+  /// @brief Whether the canonical chain includes the ResourceDim + ReturnType pair.
+  [[nodiscard]] bool RequiresResourcePair() const {
+    return kind == ExtendedChainKind::ResourcePair || kind == ExtendedChainKind::ResourcePairFixed
+           || kind == ExtendedChainKind::ResourcePairControls || kind == ExtendedChainKind::ResourcePairControlsFixed;
+  }
+
+  /// @brief Whether the return type is fixed rather than derived from a declaration.
+  [[nodiscard]] bool HasFixedMetadata() const {
+    return kind == ExtendedChainKind::ResourcePairFixed || kind == ExtendedChainKind::ResourcePairControlsFixed;
+  }
+};
+
+/// @brief Canonical extended-opcode chain for an SM5 opcode (see ExtendedChainKind).
+inline ExtendedChainSpec RequiredExtendedChainForOpcode(Opcode opcode) {
+  switch (opcode) {
+    case Opcode::Ld:
+    case Opcode::LdMs:
+    case Opcode::Resinfo:
+      return {.kind = ExtendedChainKind::ResourcePair};
+    case Opcode::LdRaw:
+      return {.kind = ExtendedChainKind::ResourcePairFixed,
+              .fixed_dimension = D3D11_SB_RESOURCE_DIMENSION_RAW_BUFFER,
+              .fixed_return_type = kPackedMixedReturnTypes};
+    case Opcode::LdStructured:
+      return {.kind = ExtendedChainKind::ResourcePairFixed,
+              .fixed_dimension = D3D11_SB_RESOURCE_DIMENSION_STRUCTURED_BUFFER,
+              .fixed_return_type = kPackedMixedReturnTypes};
+    case Opcode::Sample:
+    case Opcode::SampleB:
+    case Opcode::SampleC:
+    case Opcode::SampleCLz:
+    case Opcode::SampleD:
+    case Opcode::SampleL:
+    case Opcode::Gather4:
+    case Opcode::Gather4C:
+    case Opcode::Gather4PO:
+    case Opcode::Gather4POC:
+      return {.kind = ExtendedChainKind::ResourcePairControls};
+    default:
+      return {};
+  }
+}
+
+/// @brief Decoded extended-opcode payload; the uint32_t alternative is the raw
+/// token for unknown/future types (multi-dword payloads, reserved type codes)
+/// that we cannot model.
+using ExtendedOpcodePayload = std::variant<SampleControlsPayload, ResourceDimPayload,
+                                           ResourceReturnTypePayload, uint32_t>;
+
+struct DecodedExtendedOpcode {
+  ExtendedOpcodeType type = ExtendedOpcodeType::Empty;
+  ExtendedOpcodePayload payload;
+  bool chained = false;  ///< Bit 31: another extended opcode follows.
+};
+
+/// @brief 4-bit 2's-complement sign extension (the WDK's
+/// DECODE_IMMEDIATE_D3D10_SB_ADDRESS_OFFSET claims it but does not apply it).
+inline int32_t SignExtend4(uint32_t value) {
+  return static_cast<int32_t>(value | -(value & 0x8U));
+}
+
+/// @brief Decodes one extended-opcode token using the WDK layout macros.
+inline DecodedExtendedOpcode ParseExtendedOpcodeToken(uint32_t token) {
+  DecodedExtendedOpcode out;
+  out.type = static_cast<ExtendedOpcodeType>(token & kExtendedOpcodeTypeMask);
+  out.chained = (token & D3D10_SB_OPCODE_EXTENDED_MASK) != 0;
+  switch (out.type) {
+    case ExtendedOpcodeType::SampleControls:
+      out.payload = SampleControlsPayload{
+          .u = SignExtend4(DECODE_IMMEDIATE_D3D10_SB_ADDRESS_OFFSET(0, token)),
+          .v = SignExtend4(DECODE_IMMEDIATE_D3D10_SB_ADDRESS_OFFSET(1, token)),
+          .w = SignExtend4(DECODE_IMMEDIATE_D3D10_SB_ADDRESS_OFFSET(2, token))};
+      break;
+    case ExtendedOpcodeType::ResourceDim:
+      out.payload = ResourceDimPayload{
+          .dimension = static_cast<uint32_t>(DECODE_D3D11_SB_EXTENDED_RESOURCE_DIMENSION(token)),
+          .structure_stride =
+              static_cast<uint32_t>(DECODE_D3D11_SB_EXTENDED_RESOURCE_DIMENSION_STRUCTURE_STRIDE(token))};
+      break;
+    case ExtendedOpcodeType::ResourceType:
+      out.payload = ResourceReturnTypePayload{.component_types = {
+                                                  static_cast<uint32_t>(DECODE_D3D11_SB_EXTENDED_RESOURCE_RETURN_TYPE(token, 0)),
+                                                  static_cast<uint32_t>(DECODE_D3D11_SB_EXTENDED_RESOURCE_RETURN_TYPE(token, 1)),
+                                                  static_cast<uint32_t>(DECODE_D3D11_SB_EXTENDED_RESOURCE_RETURN_TYPE(token, 2)),
+                                                  static_cast<uint32_t>(DECODE_D3D11_SB_EXTENDED_RESOURCE_RETURN_TYPE(token, 3))}};
+      break;
+    default:
+      out.payload = token;  // Raw fallback: unknown/reserved type, keep exact bits.
+      break;
+  }
+  return out;
+}
+
+}  // namespace dxp::sm5::model

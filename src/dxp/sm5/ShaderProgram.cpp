@@ -9,15 +9,19 @@
 #include <cstring>
 #include <expected>
 #include <iostream>
+#include <optional>
 #include <span>
 #include <sstream>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include "d3d11TokenizedProgramFormat.hpp"
 #include "dxp/ExportTypes.hpp"
 #include "dxp/sm5/Model.hpp"
+#include "dxp/sm5/step/AddResourceStep.hpp"
 #include "dxp/utils/Hash.hpp"
 
 namespace {
@@ -153,6 +157,7 @@ auto DxbcHashToHex(const dxp::sm5::ShaderProgram::DxbcContainerHeader& header) -
 }  // anonymous namespace
 
 namespace dxp::sm5 {
+using namespace dxp::sm5::model;
 
 namespace {
 
@@ -228,6 +233,16 @@ auto ParseOpcodeControls(std::span<const uint8_t> data, uint32_t instruction_sta
   }
   if (kOpcode == D3D10_SB_OPCODE_DCL_RESOURCE) {
     controls.resource_dimension = DECODE_D3D10_SB_RESOURCE_DIMENSION(token0);
+    // Pack the four per-component resource return types (4 bits each) the same
+    // way the extended RESOURCE_RETURN_TYPE token and the DCL encode path do,
+    // so resource-access synthesis can reproduce the declaration's real types
+    // (not a silent float default).
+    uint32_t packed_return_types = 0;
+    for (uint32_t component = 0; component < 4; ++component) {
+      packed_return_types |= static_cast<uint32_t>(DECODE_D3D10_SB_RESOURCE_RETURN_TYPE(token0, component))
+                             << (component * D3D10_SB_RESOURCE_RETURN_TYPE_NUMBITS);
+    }
+    controls.resource_return_type = packed_return_types;
   }
   if (kOpcode == D3D10_SB_OPCODE_DCL_INPUT_PS || kOpcode == D3D10_SB_OPCODE_DCL_INPUT_PS_SIV) {
     controls.input_interpolation_mode = static_cast<uint32_t>(DECODE_D3D10_SB_INPUT_INTERPOLATION_MODE(token0));
@@ -804,4 +819,534 @@ auto ShaderProgram::GetShaderChunk() -> ShaderProgram::DxbcChunk* {
   return nullptr;
 }
 
+auto ShaderProgram::GetOpcodeCounts() const -> std::unordered_map<std::string, int32_t> {
+  std::unordered_map<std::string, int32_t> counts;
+  for (const auto& instr : instructions) {
+    const auto val = static_cast<uint32_t>(instr.opcode);
+    if (val < glz::meta<Opcode>::keys.size()) {
+      counts[glz::meta<Opcode>::keys.at(val)]++;
+    }
+  }
+  return counts;
+}
+
+auto ShaderProgram::GetInstructionOpcodes() const -> std::vector<Opcode> {
+  std::vector<Opcode> opcodes;
+  opcodes.reserve(instructions.size());
+  for (const auto& instr : instructions) {
+    opcodes.push_back(instr.opcode);
+  }
+  return opcodes;
+}
+
+auto ShaderProgram::FindNextAvailableTexture(unsigned preferred) const -> unsigned {
+  std::unordered_set<uint32_t> occupied;
+  for (const auto& r : resources) occupied.insert(r.register_bind_point);
+  unsigned bp = preferred;
+  while (occupied.contains(bp)) ++bp;
+  return bp;
+}
+
+auto ShaderProgram::FindNextAvailableSampler(unsigned preferred) const -> unsigned {
+  std::unordered_set<uint32_t> occupied;
+  for (const auto& s : samplers) occupied.insert(s.register_bind_point);
+  unsigned bp = preferred;
+  while (occupied.contains(bp)) ++bp;
+  return bp;
+}
+
+auto ShaderProgram::FindNextAvailableCBuffer(unsigned preferred) const -> unsigned {
+  std::unordered_set<uint32_t> occupied;
+  for (const auto& c : cbuffers) occupied.insert(c.register_bind_point);
+  unsigned bp = preferred;
+  while (occupied.contains(bp)) ++bp;
+  return bp;
+}
+
+auto ShaderProgram::FindNextAvailableUAV(unsigned preferred) const -> unsigned {
+  std::unordered_set<uint32_t> occupied;
+  for (const auto& r : resources) occupied.insert(r.register_bind_point);
+  unsigned bp = preferred;
+  while (occupied.contains(bp)) ++bp;
+  return bp;
+}
+
+namespace {
+
+/// @brief Collects input/output signature register indices from DCL instructions.
+void CollectSignatureRegisters(const std::vector<Instruction>& instructions,
+                               std::unordered_set<uint32_t>& occupied, bool inputs) {
+  for (const auto& instr : instructions) {
+    const auto op = instr.opcode;
+    const bool is_input = op == Opcode::DclInput || op == Opcode::DclInputPs || op == Opcode::DclInputPsSiv || op == Opcode::DclInputSgv || op == Opcode::DclInputSiv;
+    const bool is_output = op == Opcode::DclOutput || op == Opcode::DclOutputSgv || op == Opcode::DclOutputSiv;
+    if ((inputs && is_input) || (!inputs && is_output)) {
+      if (!instr.operands.empty() && !instr.operands.front().index_entries.empty()) {
+        const auto& idx = instr.operands.front().index_entries.front();
+        if (idx.immediate_lo.has_value()) occupied.insert(*idx.immediate_lo);
+      }
+    }
+  }
+}
+
+}  // namespace
+
+auto ShaderProgram::FindNextAvailableInput() const -> unsigned {
+  std::unordered_set<uint32_t> occupied;
+  CollectSignatureRegisters(instructions, occupied, /*inputs=*/true);
+  unsigned bp = 0;
+  while (occupied.contains(bp)) ++bp;
+  return bp;
+}
+
+auto ShaderProgram::FindNextAvailableOutput() const -> unsigned {
+  std::unordered_set<uint32_t> occupied;
+  CollectSignatureRegisters(instructions, occupied, /*inputs=*/false);
+  unsigned bp = 0;
+  while (occupied.contains(bp)) ++bp;
+  return bp;
+}
+
+auto ShaderProgram::EnsureTempDeclaration() -> void {
+  if (temp_count == 0) return;
+  bool found_dcl_temps = false;
+  for (auto& instruction : instructions) {
+    if (instruction.opcode == Opcode::DclTemps) {
+      instruction = BuildTempDeclaration(temp_count);
+      found_dcl_temps = true;
+      break;
+    }
+  }
+  if (!found_dcl_temps) {
+    uint32_t insert_index = 0;
+    for (uint32_t i = 0; i < instructions.size(); ++i) {
+      if (OpcodeIsDeclaration(instructions[i].opcode)) insert_index = i + 1;
+    }
+    instructions.insert(instructions.begin() + static_cast<ptrdiff_t>(insert_index),
+                        BuildTempDeclaration(temp_count));
+  }
+}
+
+auto ShaderProgram::MakeSelectComponentMode(uint32_t component) -> uint32_t {
+  return ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(D3D10_SB_OPERAND_4_COMPONENT_SELECT_1_MODE) | ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECT_1(static_cast<D3D10_SB_4_COMPONENT_NAME>(component));
+}
+
+auto ShaderProgram::MakeConstantBufferDeclarationOperand(uint32_t register_index, uint32_t element_count) -> Operand {
+  Operand operand;
+  operand.type = OperandType::CBuffer;
+  operand.components.num_components = NumComponents::Four;
+  operand.component_mode =
+      ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE) | (ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE(D3D10_SB_4_COMPONENT_X, D3D10_SB_4_COMPONENT_Y, D3D10_SB_4_COMPONENT_Z, D3D10_SB_4_COMPONENT_W) << 4);
+  Operand::Index bind_index;
+  bind_index.representation = Operand::IndexRepresentation::Immediate32;
+  bind_index.immediate_lo = register_index;
+  operand.index_entries.push_back(std::move(bind_index));
+  Operand::Index count_index;
+  count_index.representation = Operand::IndexRepresentation::Immediate32;
+  count_index.immediate_lo = element_count;
+  operand.index_entries.push_back(std::move(count_index));
+  return operand;
+}
+
+auto ShaderProgram::MakeSamplerOperand(uint32_t register_index) -> Operand {
+  Operand operand;
+  operand.type = OperandType::Sampler;
+  operand.components.num_components = NumComponents::Zero;
+  operand.component_mode = 0;
+  Operand::Index idx;
+  idx.representation = Operand::IndexRepresentation::Immediate32;
+  idx.immediate_lo = register_index;
+  operand.index_entries.push_back(std::move(idx));
+  return operand;
+}
+
+auto ShaderProgram::MakeResourceOperand(uint32_t register_index) -> Operand {
+  Operand operand;
+  operand.type = OperandType::Resource;
+  operand.components.num_components = NumComponents::Zero;
+  operand.component_mode = 0;
+  Operand::Index idx;
+  idx.representation = Operand::IndexRepresentation::Immediate32;
+  idx.immediate_lo = register_index;
+  operand.index_entries.push_back(std::move(idx));
+  return operand;
+}
+
+auto ShaderProgram::MakeInputOperand(uint32_t register_index) -> Operand {
+  Operand operand;
+  operand.type = OperandType::Input;
+  operand.components.num_components = NumComponents::Four;
+  operand.component_mode = ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE) | D3D10_SB_OPERAND_4_COMPONENT_MASK_ALL;
+  Operand::Index idx;
+  idx.representation = Operand::IndexRepresentation::Immediate32;
+  idx.immediate_lo = register_index;
+  operand.index_entries.push_back(std::move(idx));
+  return operand;
+}
+
+auto ShaderProgram::MakeOutputOperand(uint32_t register_index) -> Operand {
+  Operand operand;
+  operand.type = OperandType::Output;
+  operand.components.num_components = NumComponents::Four;
+  operand.component_mode = ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE) | D3D10_SB_OPERAND_4_COMPONENT_MASK_ALL;
+  Operand::Index idx;
+  idx.representation = Operand::IndexRepresentation::Immediate32;
+  idx.immediate_lo = register_index;
+  operand.index_entries.push_back(std::move(idx));
+  return operand;
+}
+
+auto ShaderProgram::MakeUavOperand(uint32_t register_index) -> Operand {
+  Operand operand;
+  operand.type = OperandType::UAV;
+  operand.components.num_components = NumComponents::Zero;
+  operand.component_mode = 0;
+  Operand::Index idx;
+  idx.representation = Operand::IndexRepresentation::Immediate32;
+  idx.immediate_lo = register_index;
+  operand.index_entries.push_back(std::move(idx));
+  return operand;
+}
+
+auto ShaderProgram::FindInsertAfterLastDeclaration(Opcode opcode) -> uint32_t {
+  uint32_t insert_index = 0;
+  for (uint32_t i = 0; i < instructions.size(); ++i) {
+    if (instructions[i].opcode == opcode) {
+      insert_index = i + 1;
+    }
+  }
+  return insert_index;
+}
+
+auto ShaderProgram::AllocateBindPoint(const std::unordered_set<uint32_t>& occupied, bool auto_bind,
+                                      uint32_t requested_register_index, uint32_t& resolved_register_index, std::string& error) -> bool {
+  if (!auto_bind) {
+    if (occupied.contains(requested_register_index)) {
+      error = "SM5 declaration register index already occupied: " + std::to_string(requested_register_index);
+      return false;
+    }
+    resolved_register_index = requested_register_index;
+    return true;
+  }
+
+  uint32_t candidate = requested_register_index;
+  while (occupied.contains(candidate)) {
+    if (candidate == std::numeric_limits<uint32_t>::max()) {
+      error = "SM5 declaration auto_bind exhausted available bind points";
+      return false;
+    }
+    ++candidate;
+  }
+  resolved_register_index = candidate;
+  return true;
+}
+
+auto ShaderProgram::RecordNamedBinding(std::unordered_map<std::string, uint32_t>& bindings, const std::string& handle,
+                                       uint32_t register_index, const char* resource_kind, std::string& error) -> bool {
+  if (handle.empty()) {
+    return true;
+  }
+  if (bindings.contains(handle)) {
+    error = std::string("duplicate SM5 ") + resource_kind + " declaration handle: " + handle;
+    return false;
+  }
+  bindings[handle] = register_index;
+  return true;
+}
+
+auto ShaderProgram::FinalizeInstruction(Instruction instruction) -> Instruction {
+  instruction.length_in_dwords = static_cast<uint32_t>(instruction.Encode().size());
+  return instruction;
+}
+
+auto ShaderProgram::BuildTempDeclaration(uint32_t temp_count) -> Instruction {
+  Instruction instruction;
+  instruction.opcode = Opcode::DclTemps;
+  Operand operand;
+  operand.type = OperandType::Temp;
+  operand.components.num_components = NumComponents::Zero;
+  operand.component_mode = 0;
+  Operand::Index idx;
+  idx.representation = Operand::IndexRepresentation::Immediate32;
+  idx.immediate_lo = temp_count;
+  operand.index_entries.push_back(std::move(idx));
+  instruction.operands.push_back(std::move(operand));
+  return FinalizeInstruction(std::move(instruction));
+}
+
+auto ShaderProgram::BuildConstantBufferDeclaration(const dxp::sm5::step::AddResourceStep::CBufferDecl& decl) -> Instruction {
+  Instruction instruction;
+  instruction.opcode = Opcode::DclConstantBuffer;
+  const uint32_t register_index = decl.register_index.value_or(0U);
+  instruction.operands.push_back(MakeConstantBufferDeclarationOperand(register_index, decl.elements));
+  instruction.controls.access_pattern = static_cast<uint32_t>(decl.access_pattern);
+  return instruction;
+}
+
+auto ShaderProgram::BuildTextureDeclaration(const dxp::sm5::step::AddResourceStep::TextureDecl& decl) -> Instruction {
+  Instruction instruction;
+  instruction.opcode = Opcode::DclResource;
+  const uint32_t register_index = decl.register_index.value_or(0U);
+  instruction.operands.push_back(MakeResourceOperand(register_index));
+  instruction.controls.resource_dimension = decl.dimension;
+  instruction.controls.resource_return_type = ENCODE_D3D10_SB_RESOURCE_RETURN_TYPE(D3D10_SB_RETURN_TYPE_FLOAT, 0) | ENCODE_D3D10_SB_RESOURCE_RETURN_TYPE(D3D10_SB_RETURN_TYPE_FLOAT, 1) | ENCODE_D3D10_SB_RESOURCE_RETURN_TYPE(D3D10_SB_RETURN_TYPE_FLOAT, 2) | ENCODE_D3D10_SB_RESOURCE_RETURN_TYPE(D3D10_SB_RETURN_TYPE_FLOAT, 3);
+  return instruction;
+}
+
+auto ShaderProgram::BuildInputDeclaration(const dxp::sm5::step::AddResourceStep::InputDecl& decl) -> Instruction {
+  Instruction instruction;
+  instruction.opcode = Opcode::DclInputPs;
+  instruction.controls.input_interpolation_mode = static_cast<uint32_t>(decl.interpolation_mode);
+  const uint32_t register_index = decl.register_index.value_or(0U);
+  instruction.operands.push_back(MakeInputOperand(register_index));
+  return instruction;
+}
+
+auto ShaderProgram::BuildOutputDeclaration(const dxp::sm5::step::AddResourceStep::OutputDecl& decl) -> Instruction {
+  Instruction instruction;
+  instruction.opcode = Opcode::DclOutput;
+  const uint32_t register_index = decl.register_index.value_or(0U);
+  instruction.operands.push_back(MakeOutputOperand(register_index));
+  return instruction;
+}
+
+auto ShaderProgram::BuildSamplerDeclaration(const dxp::sm5::step::AddResourceStep::SamplerDecl& decl) -> Instruction {
+  Instruction instruction;
+  instruction.opcode = Opcode::DclSampler;
+  const uint32_t register_index = decl.register_index.value_or(0U);
+  instruction.operands.push_back(MakeSamplerOperand(register_index));
+  instruction.sampler_mode = decl.mode;
+  return instruction;
+}
+
+auto ShaderProgram::BuildRawResourceDeclaration(const dxp::sm5::step::AddResourceStep::RawResourceDecl& decl) -> Instruction {
+  Instruction instruction;
+  instruction.opcode = Opcode::DclResourceRaw;
+  const uint32_t register_index = decl.register_index.value_or(0U);
+  instruction.operands.push_back(MakeResourceOperand(register_index));
+  return instruction;
+}
+
+auto ShaderProgram::BuildStructuredResourceDeclaration(const dxp::sm5::step::AddResourceStep::StructuredResourceDecl& decl) -> Instruction {
+  Instruction instruction;
+  instruction.opcode = Opcode::DclResourceStructured;
+  const uint32_t register_index = decl.register_index.value_or(0U);
+  instruction.operands.push_back(MakeResourceOperand(register_index));
+  instruction.controls.structure_stride = decl.structure_stride;
+  return instruction;
+}
+
+auto ShaderProgram::BuildUavDeclaration(const dxp::sm5::step::AddResourceStep::UavDecl& decl) -> Instruction {
+  Instruction instruction;
+  const uint32_t register_index = decl.register_index.value_or(0U);
+  if (decl.kind == step::AddResourceStep::UavKind::Raw) {
+    instruction.opcode = Opcode::DclUnorderedAccessViewRaw;
+    instruction.operands.push_back(MakeUavOperand(register_index));
+    instruction.controls.uav_flags = decl.globally_coherent ? D3D11_SB_GLOBALLY_COHERENT_ACCESS : 0;
+    return instruction;
+  }
+
+  if (decl.kind == step::AddResourceStep::UavKind::Structured) {
+    instruction.opcode = Opcode::DclUnorderedAccessViewStructured;
+    instruction.operands.push_back(MakeUavOperand(register_index));
+    uint32_t flags = decl.globally_coherent ? D3D11_SB_GLOBALLY_COHERENT_ACCESS : 0;
+    if (decl.has_order_preserving_counter) {
+      flags |= D3D11_SB_UAV_HAS_ORDER_PRESERVING_COUNTER;
+    }
+    instruction.controls.uav_flags = flags;
+    instruction.controls.structure_stride = decl.structure_stride;
+    return instruction;
+  }
+
+  instruction.opcode = Opcode::DclUnorderedAccessViewTyped;
+  instruction.operands.push_back(MakeUavOperand(register_index));
+  instruction.controls.resource_dimension = decl.dimension;
+  instruction.controls.resource_return_type = ENCODE_D3D10_SB_RESOURCE_RETURN_TYPE(D3D10_SB_RETURN_TYPE_FLOAT, 0) | ENCODE_D3D10_SB_RESOURCE_RETURN_TYPE(D3D10_SB_RETURN_TYPE_FLOAT, 1) | ENCODE_D3D10_SB_RESOURCE_RETURN_TYPE(D3D10_SB_RETURN_TYPE_FLOAT, 2) | ENCODE_D3D10_SB_RESOURCE_RETURN_TYPE(D3D10_SB_RETURN_TYPE_FLOAT, 3);
+  instruction.controls.uav_flags = decl.globally_coherent ? D3D11_SB_GLOBALLY_COHERENT_ACCESS : 0;
+  return instruction;
+}
+
+auto ShaderProgram::AddInputDeclaration(const dxp::sm5::step::AddResourceStep::InputDecl& decl, uint32_t& out_register_index, std::string& error) -> bool {
+  std::unordered_set<uint32_t> occupied;
+  uint32_t insert_index = 0;
+  for (uint32_t i = 0; i < instructions.size(); ++i) {
+    const auto opcode = instructions[i].opcode;
+    if ((opcode == Opcode::DclInput || opcode == Opcode::DclInputPs || opcode == Opcode::DclInputPsSiv || opcode == Opcode::DclInputPsSgv) && !instructions[i].operands.empty() && !instructions[i].operands.front().index_entries.empty()) {
+      occupied.insert(*instructions[i].operands.front().index_entries[0].immediate_lo);
+      insert_index = i + 1;
+    }
+  }
+
+  const bool is_auto = !decl.register_index.has_value();
+  const uint32_t requested = is_auto ? 0U : *decl.register_index;
+  if (!AllocateBindPoint(occupied, is_auto, requested, out_register_index, error)) {
+    return false;
+  }
+
+  step::AddResourceStep::InputDecl resolved_decl = decl;
+  resolved_decl.register_index = out_register_index;
+  instructions.insert(instructions.begin() + static_cast<ptrdiff_t>(insert_index),
+                      BuildInputDeclaration(resolved_decl));
+  return true;
+}
+
+auto ShaderProgram::AddOutputDeclaration(const dxp::sm5::step::AddResourceStep::OutputDecl& decl, uint32_t& out_register_index, std::string& error) -> bool {
+  std::unordered_set<uint32_t> occupied;
+  uint32_t insert_index = 0;
+  for (uint32_t i = 0; i < instructions.size(); ++i) {
+    const auto opcode = instructions[i].opcode;
+    if ((opcode == Opcode::DclOutput || opcode == Opcode::DclOutputSiv || opcode == Opcode::DclOutputSgv) && !instructions[i].operands.empty() && !instructions[i].operands.front().index_entries.empty()) {
+      occupied.insert(*instructions[i].operands.front().index_entries[0].immediate_lo);
+      insert_index = i + 1;
+    }
+  }
+
+  const bool is_auto = !decl.register_index.has_value();
+  const uint32_t requested = is_auto ? 0U : *decl.register_index;
+  if (!AllocateBindPoint(occupied, is_auto, requested, out_register_index, error)) {
+    return false;
+  }
+
+  step::AddResourceStep::OutputDecl resolved_decl = decl;
+  resolved_decl.register_index = out_register_index;
+  instructions.insert(instructions.begin() + static_cast<ptrdiff_t>(insert_index),
+                      BuildOutputDeclaration(resolved_decl));
+  return true;
+}
+
+auto ShaderProgram::AddTextureDeclaration(const dxp::sm5::step::AddResourceStep::TextureDecl& decl, uint32_t& out_register_index, std::string& error) -> bool {
+  std::unordered_set<uint32_t> occupied;
+  for (const auto& instruction : instructions) {
+    const auto opcode = instruction.opcode;
+    if ((opcode == Opcode::DclResource || opcode == Opcode::DclResourceRaw || opcode == Opcode::DclResourceStructured) && !instruction.operands.empty() && !instruction.operands.front().index_entries.empty()) {
+      occupied.insert(*instruction.operands.front().index_entries[0].immediate_lo);
+    }
+  }
+
+  const bool is_auto = !decl.register_index.has_value();
+  const uint32_t requested = is_auto ? 0U : *decl.register_index;
+  if (!AllocateBindPoint(occupied, is_auto, requested, out_register_index, error)) {
+    return false;
+  }
+
+  step::AddResourceStep::TextureDecl resolved_decl = decl;
+  resolved_decl.register_index = out_register_index;
+  const uint32_t insert_index = FindInsertAfterLastDeclaration(static_cast<Opcode>(D3D10_SB_OPCODE_DCL_RESOURCE));
+  instructions.insert(instructions.begin() + static_cast<ptrdiff_t>(insert_index),
+                      BuildTextureDeclaration(resolved_decl));
+  return true;
+}
+
+auto ShaderProgram::AddRawResourceDeclaration(const dxp::sm5::step::AddResourceStep::RawResourceDecl& decl, uint32_t& out_register_index,
+                                              std::string& error) -> bool {
+  std::unordered_set<uint32_t> occupied;
+  for (const auto& instruction : instructions) {
+    const auto opcode = instruction.opcode;
+    if ((opcode == Opcode::DclResource || opcode == Opcode::DclResourceRaw || opcode == Opcode::DclResourceStructured) && !instruction.operands.empty() && !instruction.operands.front().index_entries.empty()) {
+      occupied.insert(*instruction.operands.front().index_entries.front().immediate_lo);
+    }
+  }
+
+  const bool is_auto = !decl.register_index.has_value();
+  const uint32_t requested = is_auto ? 0U : *decl.register_index;
+  if (!AllocateBindPoint(occupied, is_auto, requested, out_register_index, error)) {
+    return false;
+  }
+
+  step::AddResourceStep::RawResourceDecl resolved_decl = decl;
+  resolved_decl.register_index = out_register_index;
+  const uint32_t insert_index = FindInsertAfterLastDeclaration(static_cast<Opcode>(D3D11_SB_OPCODE_DCL_RESOURCE_RAW));
+  instructions.insert(instructions.begin() + static_cast<ptrdiff_t>(insert_index),
+                      BuildRawResourceDeclaration(resolved_decl));
+  return true;
+}
+
+auto ShaderProgram::AddStructuredResourceDeclaration(const dxp::sm5::step::AddResourceStep::StructuredResourceDecl& decl, uint32_t& out_register_index,
+                                                     std::string& error) -> bool {
+  std::unordered_set<uint32_t> occupied;
+  for (const auto& instruction : instructions) {
+    const auto opcode = instruction.opcode;
+    if ((opcode == Opcode::DclResource || opcode == Opcode::DclResourceRaw || opcode == Opcode::DclResourceStructured) && !instruction.operands.empty() && !instruction.operands.front().index_entries.empty()) {
+      occupied.insert(*instruction.operands.front().index_entries.front().immediate_lo);
+    }
+  }
+
+  const bool is_auto = !decl.register_index.has_value();
+  const uint32_t requested = is_auto ? 0U : *decl.register_index;
+  if (!AllocateBindPoint(occupied, is_auto, requested, out_register_index, error)) {
+    return false;
+  }
+
+  step::AddResourceStep::StructuredResourceDecl resolved_decl = decl;
+  resolved_decl.register_index = out_register_index;
+  const uint32_t insert_index = FindInsertAfterLastDeclaration(static_cast<Opcode>(D3D11_SB_OPCODE_DCL_RESOURCE_STRUCTURED));
+  instructions.insert(instructions.begin() + static_cast<ptrdiff_t>(insert_index),
+                      BuildStructuredResourceDeclaration(resolved_decl));
+  return true;
+}
+
+auto ShaderProgram::AddCBufferDeclaration(const dxp::sm5::step::AddResourceStep::CBufferDecl& decl, uint32_t& out_register_index, std::string& error) -> bool {
+  std::unordered_set<uint32_t> occupied;
+  for (const auto& cbuffer : cbuffers) {
+    occupied.insert(cbuffer.register_bind_point);
+  }
+
+  const bool is_auto = !decl.register_index.has_value();
+  const uint32_t requested = is_auto ? 0U : *decl.register_index;
+  if (!AllocateBindPoint(occupied, is_auto, requested, out_register_index, error)) {
+    return false;
+  }
+
+  step::AddResourceStep::CBufferDecl resolved_decl = decl;
+  resolved_decl.register_index = out_register_index;
+  const uint32_t insert_index = FindInsertAfterLastDeclaration(static_cast<Opcode>(D3D10_SB_OPCODE_DCL_CONSTANT_BUFFER));
+  instructions.insert(instructions.begin() + static_cast<ptrdiff_t>(insert_index),
+                      BuildConstantBufferDeclaration(resolved_decl));
+  return true;
+}
+
+auto ShaderProgram::AddSamplerDeclaration(const dxp::sm5::step::AddResourceStep::SamplerDecl& decl, uint32_t& out_register_index, std::string& error) -> bool {
+  std::unordered_set<uint32_t> occupied;
+  for (const auto& instruction : instructions) {
+    const auto opcode = instruction.opcode;
+    if (opcode == Opcode::DclSampler && !instruction.operands.empty() && !instruction.operands.front().index_entries.empty()) {
+      occupied.insert(*instruction.operands.front().index_entries.front().immediate_lo);
+    }
+  }
+
+  const bool is_auto = !decl.register_index.has_value();
+  const uint32_t requested = is_auto ? 0U : *decl.register_index;
+  if (!AllocateBindPoint(occupied, is_auto, requested, out_register_index, error)) {
+    return false;
+  }
+
+  step::AddResourceStep::SamplerDecl resolved_decl = decl;
+  resolved_decl.register_index = out_register_index;
+  const uint32_t insert_index = FindInsertAfterLastDeclaration(static_cast<Opcode>(D3D10_SB_OPCODE_DCL_SAMPLER));
+  instructions.insert(instructions.begin() + static_cast<ptrdiff_t>(insert_index),
+                      BuildSamplerDeclaration(resolved_decl));
+  return true;
+}
+
+auto ShaderProgram::AddUavDeclaration(const dxp::sm5::step::AddResourceStep::UavDecl& decl, uint32_t& out_register_index, std::string& error) -> bool {
+  std::unordered_set<uint32_t> occupied;
+  for (const auto& instruction : instructions) {
+    const auto opcode = instruction.opcode;
+    if ((opcode == Opcode::DclUnorderedAccessViewTyped || opcode == Opcode::DclUnorderedAccessViewRaw || opcode == Opcode::DclUnorderedAccessViewStructured) && !instruction.operands.empty() && !instruction.operands.front().index_entries.empty()) {
+      occupied.insert(*instruction.operands.front().index_entries.front().immediate_lo);
+    }
+  }
+
+  const bool is_auto = !decl.register_index.has_value();
+  const uint32_t requested = is_auto ? 0U : *decl.register_index;
+  if (!AllocateBindPoint(occupied, is_auto, requested, out_register_index, error)) {
+    return false;
+  }
+
+  step::AddResourceStep::UavDecl resolved_decl = decl;
+  resolved_decl.register_index = out_register_index;
+  const uint32_t insert_index = FindInsertAfterLastDeclaration(static_cast<Opcode>(D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_TYPED));
+  instructions.insert(instructions.begin() + static_cast<ptrdiff_t>(insert_index), BuildUavDeclaration(resolved_decl));
+  return true;
+}
 }  // namespace dxp::sm5

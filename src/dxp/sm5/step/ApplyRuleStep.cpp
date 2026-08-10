@@ -3,9 +3,11 @@
 #include <algorithm>
 #include <dxp/sm5/step/ApplyRuleStep.hpp>
 #include <format>
+#include <iterator>
 #include "d3d11TokenizedProgramFormat.hpp"
 #include "dxp/Condition_impl.hpp"
 #include "dxp/ExportTypes.hpp"
+#include "dxp/Logging.hpp"
 #include "dxp/ResultFieldTraits.hpp"
 #include "dxp/sm5/ShaderProgram.hpp"
 #include "dxp/sm5/step/ApplyRuleStep_impl.hpp"
@@ -33,6 +35,7 @@
 #include "dxp/ValidationContext.hpp"
 
 namespace dxp::sm5::step {
+using namespace dxp::sm5::model;
 
 namespace {
 
@@ -736,6 +739,46 @@ auto RuleData::Compile() const -> std::expected<Rule, std::string> {
       }
       pattern.operands.push_back(std::move(*converted));
     }
+    if (match_item.extended_opcodes.has_value()) {
+      std::vector<ExtendedOpcodePattern> compiled_ext;
+      compiled_ext.reserve(match_item.extended_opcodes->size());
+      for (const auto& ext : *match_item.extended_opcodes) {
+        ExtendedOpcodePattern compiled;
+        const int kSpecCount = (ext.any ? 1 : 0) + (ext.type.has_value() ? 1 : 0) + (ext.raw.has_value() ? 1 : 0);
+        if (kSpecCount != 1) {
+          error = "SM5 extended_opcodes entries require exactly one of 'any', 'type', or 'raw'";
+          return std::unexpected(error);
+        }
+        if (ext.any) {
+          compiled.kind = ExtendedOpcodePattern::Kind::Any;
+        } else if (ext.raw.has_value()) {
+          compiled.kind = ExtendedOpcodePattern::Kind::Raw;
+          compiled.raw = *ext.raw;
+        } else {
+          compiled.kind = ExtendedOpcodePattern::Kind::Type;
+          compiled.type = *ext.type;
+          compiled.sample_controls = ext.sample_controls;
+          compiled.resource_dim = ext.resource_dim;
+          if (ext.resource_return_type.has_value()) {
+            compiled.resource_return_type = ResourceReturnTypePayload{*ext.resource_return_type};
+          }
+          if (compiled.sample_controls.has_value() && compiled.type != ExtendedOpcodeType::SampleControls) {
+            error = "SM5 extended_opcodes: 'sample_controls' payload requires type: sample_controls";
+            return std::unexpected(error);
+          }
+          if (compiled.resource_dim.has_value() && compiled.type != ExtendedOpcodeType::ResourceDim) {
+            error = "SM5 extended_opcodes: 'resource_dim' payload requires type: resource_dim";
+            return std::unexpected(error);
+          }
+          if (compiled.resource_return_type.has_value() && compiled.type != ExtendedOpcodeType::ResourceType) {
+            error = "SM5 extended_opcodes: 'resource_return_type' payload requires type: resource_type";
+            return std::unexpected(error);
+          }
+        }
+        compiled_ext.push_back(compiled);
+      }
+      pattern.extended_opcodes = std::move(compiled_ext);
+    }
     rule.match_patterns.push_back(std::move(pattern));
   }
 
@@ -768,6 +811,126 @@ auto RuleData::Compile() const -> std::expected<Rule, std::string> {
       }
       auto& operand_pattern = *operand_pattern_opt;
       tpl.operands.push_back(std::move(operand_pattern));
+    }
+    for (const auto& ext : emit_entry.extended_opcodes) {
+      ApplyRuleStep::EmitExtendedOpcode compiled;
+      const int kSpecCount = (ext.type.has_value() ? 1 : 0) + (ext.raw.has_value() ? 1 : 0);
+      if (kSpecCount != 1) {
+        error = "SM5 emit extended_opcodes entries require exactly one of 'type' or 'raw'";
+        return std::unexpected(error);
+      }
+      if (ext.raw.has_value()) {
+        compiled.kind = ApplyRuleStep::EmitExtendedOpcode::Kind::Raw;
+        compiled.raw = *ext.raw;
+      } else {
+        compiled.kind = ApplyRuleStep::EmitExtendedOpcode::Kind::Type;
+        compiled.type = *ext.type;
+        compiled.sample_controls = ext.sample_controls;
+        compiled.resource_dim = ext.resource_dim;
+        if (ext.resource_return_type.has_value()) {
+          compiled.resource_return_type = ResourceReturnTypePayload{*ext.resource_return_type};
+        }
+        const bool has_payload = compiled.sample_controls.has_value() || compiled.resource_dim.has_value()
+                                 || compiled.resource_return_type.has_value();
+        if (!has_payload) {
+          error = "SM5 emit extended_opcodes: 'type' entries require a structured payload";
+          return std::unexpected(error);
+        }
+        if (compiled.sample_controls.has_value() && compiled.type != ExtendedOpcodeType::SampleControls) {
+          error = "SM5 emit extended_opcodes: 'sample_controls' payload requires type: sample_controls";
+          return std::unexpected(error);
+        }
+        if (compiled.resource_dim.has_value() && compiled.type != ExtendedOpcodeType::ResourceDim) {
+          error = "SM5 emit extended_opcodes: 'resource_dim' payload requires type: resource_dim";
+          return std::unexpected(error);
+        }
+        if (compiled.resource_return_type.has_value() && compiled.type != ExtendedOpcodeType::ResourceType) {
+          error = "SM5 emit extended_opcodes: 'resource_return_type' payload requires type: resource_type";
+          return std::unexpected(error);
+        }
+        if (compiled.sample_controls.has_value()) {
+          const auto& sc = *compiled.sample_controls;
+          const int32_t kMinOffset = -(1 << (kSampleControlOffsetBits - 1));
+          const int32_t kMaxOffset = (1 << (kSampleControlOffsetBits - 1)) - 1;
+          if (sc.u < kMinOffset || sc.u > kMaxOffset || sc.v < kMinOffset || sc.v > kMaxOffset
+              || sc.w < kMinOffset || sc.w > kMaxOffset) {
+            error = "SM5 emit extended_opcodes: sample_controls offsets must fit 4-bit two's complement (-8..7)";
+            return std::unexpected(error);
+          }
+        }
+        if (compiled.resource_dim.has_value()) {
+          const uint32_t kDim = compiled.resource_dim->dimension;
+          if (kDim < D3D10_SB_RESOURCE_DIMENSION_BUFFER
+              || kDim > D3D11_SB_RESOURCE_DIMENSION_STRUCTURED_BUFFER) {
+            error = "SM5 emit extended_opcodes: resource_dim dimension must be a valid D3D10_SB_RESOURCE_DIMENSION";
+            return std::unexpected(error);
+          }
+        }
+        if (compiled.resource_return_type.has_value()) {
+          for (const uint32_t kType : compiled.resource_return_type->component_types) {
+            if (kType < D3D10_SB_RETURN_TYPE_UNORM || kType > D3D10_SB_RETURN_TYPE_MIXED) {
+              error = "SM5 emit extended_opcodes: resource_return_type components must be D3D10_SB_RESOURCE_RETURN_TYPE";
+              return std::unexpected(error);
+            }
+          }
+        }
+      }
+      tpl.extended_opcodes.push_back(compiled);
+    }
+    // Extended opcodes are only meaningful on opcodes whose canonical chain
+    // supports them (resource-access opcodes); everything else must stay bare.
+    if (!tpl.extended_opcodes.empty() && tpl.opcode.has_value()
+        && !RequiredExtendedChainForOpcode(*tpl.opcode).RequiresResourcePair()) {
+      error = "SM5 emit extended_opcodes are only supported on resource-access opcodes (ld, sample, gather4 families, resinfo)";
+      return std::unexpected(error);
+    }
+    // sample_controls only ride on the sample/gather4 families.
+    for (const auto& ext : tpl.extended_opcodes) {
+      if (ext.sample_controls.has_value() && tpl.opcode.has_value()) {
+        const auto kChain = RequiredExtendedChainForOpcode(*tpl.opcode);
+        if (kChain.kind != ExtendedChainKind::ResourcePairControls
+            && kChain.kind != ExtendedChainKind::ResourcePairControlsFixed) {
+          error = "SM5 emit extended_opcodes: sample_controls are only valid on sample/gather4-family opcodes";
+          return std::unexpected(error);
+        }
+      }
+    }
+    // Typed entries must form the canonical chain: at most one of each type,
+    // in canonical order (sample_controls, resource_dim, resource_return_type).
+    // Anything else would serialize a non-canonical chain.
+    {
+      int seen_types = 0;
+      int last_rank = -1;
+      for (const auto& ext : tpl.extended_opcodes) {
+        if (ext.kind != ApplyRuleStep::EmitExtendedOpcode::Kind::Type) {
+          continue;
+        }
+        int rank = -1;
+        if (ext.type == ExtendedOpcodeType::SampleControls) {
+          rank = 0;
+        } else if (ext.type == ExtendedOpcodeType::ResourceDim) {
+          rank = 1;
+        } else if (ext.type == ExtendedOpcodeType::ResourceType) {
+          rank = 2;
+        }
+        if (rank < 0) {
+          error = "SM5 emit extended_opcodes: unsupported extended-opcode type";
+          return std::unexpected(error);
+        }
+        const int kBit = 1 << rank;
+        if ((seen_types & kBit) != 0) {
+          error = "SM5 emit extended_opcodes: duplicate extended-opcode entry";
+          return std::unexpected(error);
+        }
+        if (rank < last_rank) {
+          error =
+              "SM5 emit extended_opcodes: entries must be in canonical order "
+              "(sample_controls, resource_dim, resource_return_type)";
+          return std::unexpected(error);
+        }
+        seen_types |= kBit;
+        last_rank = rank;
+      }
     }
     rule.emit_patterns.push_back(std::move(tpl));
   }
@@ -1096,6 +1259,112 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string
 
 namespace {
 
+void StampResourceAccessControls(ExecutionContext& context, Instruction& instr);
+
+// Builds the emitted extended-opcode chain: explicit entries verbatim, then the
+// canonical ResourceDim/ResourceReturnType pair completed from the declaration.
+// Unresolvable declarations are a hard error (no silent bare emits).
+bool BuildExtendedOpcodeChain(ExecutionContext& context, Instruction& instr,
+                              const std::vector<ApplyRuleStep::EmitExtendedOpcode>& entries,
+                              const std::string& path, std::string& error) {
+  const auto kChain = RequiredExtendedChainForOpcode(instr.opcode);
+  std::vector<uint32_t> tokens;
+  tokens.reserve(entries.size() + 2);
+  for (const auto& entry : entries) {
+    if (entry.kind == ApplyRuleStep::EmitExtendedOpcode::Kind::Raw) {
+      tokens.push_back(entry.raw & ~D3D10_SB_OPCODE_EXTENDED_MASK);
+    } else {
+      auto token = static_cast<uint32_t>(entry.type);
+      if (entry.sample_controls.has_value()) {
+        const auto& sc = *entry.sample_controls;
+        token |= ENCODE_IMMEDIATE_D3D10_SB_ADDRESS_OFFSET(0, sc.u);
+        token |= ENCODE_IMMEDIATE_D3D10_SB_ADDRESS_OFFSET(1, sc.v);
+        token |= ENCODE_IMMEDIATE_D3D10_SB_ADDRESS_OFFSET(2, sc.w);
+      } else if (entry.resource_dim.has_value()) {
+        token |= ENCODE_D3D11_SB_EXTENDED_RESOURCE_DIMENSION(entry.resource_dim->dimension);
+        token |= ENCODE_D3D11_SB_EXTENDED_RESOURCE_DIMENSION_STRUCTURE_STRIDE(entry.resource_dim->structure_stride);
+      } else if (entry.resource_return_type.has_value()) {
+        uint32_t component = 0;
+        for (const uint32_t return_type : entry.resource_return_type->component_types) {
+          token |= ENCODE_D3D11_SB_EXTENDED_RESOURCE_RETURN_TYPE(return_type, component);
+          ++component;
+        }
+      }
+      tokens.push_back(token);
+    }
+  }
+
+  if (kChain.RequiresResourcePair()) {
+    bool has_dim = false;
+    bool has_return = false;
+    size_t return_pos = tokens.size();
+    for (size_t i = 0; i < tokens.size(); ++i) {
+      const uint32_t type = tokens[i] & kExtendedOpcodeTypeMask;
+      if (type == static_cast<uint32_t>(ExtendedOpcodeType::ResourceDim)) has_dim = true;
+      if (type == static_cast<uint32_t>(ExtendedOpcodeType::ResourceType)) {
+        has_return = true;
+        return_pos = i;
+      }
+    }
+    if (!has_dim || !has_return) {
+      uint32_t dimension = 0;
+      uint32_t packed_return = 0;
+      if (kChain.HasFixedMetadata()) {
+        dimension = kChain.fixed_dimension;
+        packed_return = kChain.fixed_return_type;
+      } else {
+        StampResourceAccessControls(context, instr);
+        if (instr.controls.resource_dimension == 0) {
+          error = path
+                  +
+                  ": resource-access emit requires a declared resource to synthesize the canonical "
+                  "ResourceDim/ResourceReturnType extended pair (no silent bare emit)";
+          return false;
+        }
+        dimension = instr.controls.resource_dimension;
+        packed_return = instr.controls.resource_return_type;
+      }
+      // Insert the missing members at their canonical positions (dim before
+      // return), never after the return token.
+      if (!has_dim) {
+        auto token = static_cast<uint32_t>(ExtendedOpcodeType::ResourceDim);
+        token |= ENCODE_D3D11_SB_EXTENDED_RESOURCE_DIMENSION(dimension);
+        token |= ENCODE_D3D11_SB_EXTENDED_RESOURCE_DIMENSION_STRUCTURE_STRIDE(instr.controls.structure_stride);
+        auto insert_at = tokens.begin();
+        std::advance(insert_at, has_return ? return_pos : tokens.size());
+        tokens.insert(insert_at, token);
+        if (has_return) {
+          ++return_pos;
+        }
+      }
+      if (!has_return) {
+        auto token = static_cast<uint32_t>(ExtendedOpcodeType::ResourceType);
+        for (uint32_t component = 0; component < 4; ++component) {
+          const uint32_t return_type = (packed_return >> (4 * component)) & 0xF;
+          token |= ENCODE_D3D11_SB_EXTENDED_RESOURCE_RETURN_TYPE(
+              return_type != 0 ? return_type : D3D10_SB_RETURN_TYPE_FLOAT, component);
+        }
+        tokens.push_back(token);
+      }
+      context.logger.Log(LogLevel::Warning,
+                         "[Patch] synthesized ResourceDim/ResourceReturnType for emitted opcode "
+                             + std::to_string(static_cast<uint32_t>(instr.opcode)) + " (" + path + ")");
+    }
+  }
+
+  for (size_t i = 0; i < tokens.size(); ++i) {
+    if (i + 1 < tokens.size()) {
+      tokens[i] |= D3D10_SB_OPCODE_EXTENDED_MASK;
+    }
+  }
+  instr.controls.extended_op_codes.clear();
+  instr.controls.extended_op_codes.reserve(tokens.size());
+  for (const uint32_t token : tokens) {
+    instr.controls.extended_op_codes.emplace_back(token);
+  }
+  return true;
+}
+
 auto IndexValueForCapture(const Operand::Index& index) -> const uint32_t* {
   if (index.immediate_lo.has_value()) return &(*index.immediate_lo);
   if (index.immediate_hi.has_value()) return &(*index.immediate_hi);
@@ -1228,7 +1497,36 @@ auto ResolveEmit(const MatchResult& match, ExecutionContext& context, const Emit
       return {};
     }
   }
+  if (!BuildExtendedOpcodeChain(context, instr, emit.extended_opcodes, path, error)) {
+    return {};
+  }
   return ShaderProgram::FinalizeInstruction(std::move(instr));
+}
+
+// Stamps resource dimension/return type from the DclResource declaration so the
+// canonical extended pair can be synthesized. Parsed instructions are untouched.
+void StampResourceAccessControls(ExecutionContext& context, Instruction& instr) {
+  if (!instr.controls.extended_op_codes.empty() || !RequiredExtendedChainForOpcode(instr.opcode).RequiresResourcePair()) {
+    return;
+  }
+  for (const auto& operand : instr.operands) {
+    if (operand.type != OperandType::Resource || operand.index_entries.empty() || !operand.index_entries[0].immediate_lo.has_value()) {
+      continue;
+    }
+    const uint32_t register_index = *operand.index_entries[0].immediate_lo;
+    for (const auto& dcl : context.program.instructions) {
+      if (dcl.opcode != Opcode::DclResource || dcl.operands.empty() || dcl.operands[0].type != OperandType::Resource
+          || dcl.operands[0].index_entries.empty() || !dcl.operands[0].index_entries[0].immediate_lo.has_value()) {
+        continue;
+      }
+      if (*dcl.operands[0].index_entries[0].immediate_lo == register_index) {
+        instr.controls.resource_dimension = dcl.controls.resource_dimension;
+        instr.controls.resource_return_type = dcl.controls.resource_return_type;
+        return;
+      }
+    }
+    break;
+  }
 }
 
 auto MatchesInstruction(const Instruction& instr, std::unordered_map<std::string, Operand::Index>& captured_index_values, const InstructionPattern& pattern, const ExecutionContext& context) -> bool {
@@ -1239,16 +1537,54 @@ auto MatchesInstruction(const Instruction& instr, std::unordered_map<std::string
     if (instr.opcode != static_cast<uint32_t>(Opcode::DclInputPs) && instr.opcode != static_cast<uint32_t>(Opcode::DclInputPsSiv)) return false;
     if (instr.controls.input_interpolation_mode.has_value() && *instr.controls.input_interpolation_mode != static_cast<uint32_t>(*pattern.interpolation_mode)) return false;
   }
+  // Extended-opcode expectations: absent = wildcard (any chain, including
+  // none); present = exact full-chain match (count + per-entry rules).
   if (pattern.extended_opcodes.has_value()) {
     const auto& pattern_ext = *pattern.extended_opcodes;
     if (pattern_ext.size() != instr.controls.extended_op_codes.size()) return false;
     for (size_t i = 0; i < pattern_ext.size(); ++i) {
       const auto& pattern_val = pattern_ext[i];
       const auto& instr_val = instr.controls.extended_op_codes[i];
-      if (std::holds_alternative<dxp::sm5::ExtendedOpcodeType>(pattern_val)) {
-        if (static_cast<dxp::sm5::ExtendedOpcodeType>(instr_val.value & kExtendedOpcodeMask) != std::get<dxp::sm5::ExtendedOpcodeType>(pattern_val)) return false;
-      } else {
-        if (std::get<uint32_t>(pattern_val) != instr_val.value) return false;
+      switch (pattern_val.kind) {
+        case ApplyRuleStep::ExtendedOpcodePattern::Kind::Any:
+          break;
+        case ApplyRuleStep::ExtendedOpcodePattern::Kind::Raw:
+          if (pattern_val.raw != instr_val.value) return false;
+          break;
+        case ApplyRuleStep::ExtendedOpcodePattern::Kind::Type: {
+          if (static_cast<dxp::sm5::ExtendedOpcodeType>(instr_val.value & kExtendedOpcodeMask) != pattern_val.type) {
+            return false;
+          }
+          // Structured payload expectations compare the decoded token.
+          if (pattern_val.sample_controls.has_value() || pattern_val.resource_dim.has_value()
+              || pattern_val.resource_return_type.has_value()) {
+            const auto kDecoded = ParseExtendedOpcodeToken(instr_val.value);
+            if (pattern_val.sample_controls.has_value()) {
+              const auto* kPayload = std::get_if<SampleControlsPayload>(&kDecoded.payload);
+              if (kPayload == nullptr) return false;
+              if (kPayload->u != pattern_val.sample_controls->u || kPayload->v != pattern_val.sample_controls->v
+                  || kPayload->w != pattern_val.sample_controls->w) {
+                return false;
+              }
+            }
+            if (pattern_val.resource_dim.has_value()) {
+              const auto* kPayload = std::get_if<ResourceDimPayload>(&kDecoded.payload);
+              if (kPayload == nullptr) return false;
+              if (kPayload->dimension != pattern_val.resource_dim->dimension
+                  || kPayload->structure_stride != pattern_val.resource_dim->structure_stride) {
+                return false;
+              }
+            }
+            if (pattern_val.resource_return_type.has_value()) {
+              const auto* kPayload = std::get_if<ResourceReturnTypePayload>(&kDecoded.payload);
+              if (kPayload == nullptr) return false;
+              if (kPayload->component_types != pattern_val.resource_return_type->component_types) {
+                return false;
+              }
+            }
+          }
+          break;
+        }
       }
     }
   }
@@ -1342,6 +1678,15 @@ auto ResolveOperand(const MatchResult& match, ExecutionContext& context, const O
       Operand::Index ei = ResolveOperandIndex(match, context, op.element_index, path + ".element_index", error);
       if (!error.empty()) return {};
       operand.index_entries.push_back(std::move(ei));
+    } else if (*op.type == OperandType::CBuffer) {
+      // Canonical DXBC encodes cbuffer reads with two indices (register,
+      // element); the HLSL compiler always emits the element (0 when
+      // unqualified). Handle-resolved operands carry the register; default the
+      // element to 0 so the encoding round-trips (e.g. Flugan validation).
+      Operand::Index element_index;
+      element_index.representation = Operand::IndexRepresentation::Immediate32;
+      element_index.immediate_lo = 0U;
+      operand.index_entries.push_back(std::move(element_index));
     }
   }
   // Component selection: an explicit recipe spec overrides; a capture replay

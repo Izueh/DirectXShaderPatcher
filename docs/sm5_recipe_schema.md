@@ -199,6 +199,39 @@ Fields: `any`, `representation` (`immediate32` … `immediate64_plus_relative`),
 `relative`-style representation and cannot nest; it must use explicit `indices`
 (no shorthand arrays).
 
+### Extended opcodes (`extended_opcodes` on match and emit patterns)
+
+SM5 resource-access opcodes (`ld`, `sample` family, `gather4` family, `resinfo`,
+and `ld_raw`/`ld_structured`) canonically carry chained extended-opcode tokens
+(`sample_controls` offsets, `resource_dim`, `resource_return_type`). The engine
+keeps emitted chains canonical automatically; `extended_opcodes` lets recipes
+match and control them explicitly.
+
+**Match** (on `match` entries): absent = wildcard (any chain, including none);
+empty list = the instruction must carry no extended tokens; otherwise the list
+must match the instruction's chain exactly (count + per-entry rule). Entries:
+
+| entry | meaning |
+|---|---|
+| `- any: true` | position wildcard (matches any token at this position) |
+| `- raw: <uint32>` | exact 32-bit token |
+| `- type: sample_controls` | type-only match |
+| `- type: sample_controls` + `sample_controls: {u,v,w}` | type + offsets |
+| `- type: resource_dim` + `resource_dim: {dimension, structure_stride}` | type + dim/stride |
+| `- type: resource_type` + `resource_return_type: [t0,t1,t2,t3]` | type + return types |
+
+**Emit** (on `emit` entries): entries are verbatim (chain bit 31 is assigned by
+the engine from the final position). `raw: <uint32>` emits the token exactly;
+`type:` entries carry one of `sample_controls` / `resource_dim` /
+`resource_return_type` with the matching payload. Members of the canonical
+ResourceDim + ResourceReturnType pair omitted from the chain are synthesized
+from the resource declaration (or fixed metadata for `ld_raw`/`ld_structured`)
+in canonical order; a resource-access emit with no resolvable declaration is a
+hard error. Typed entries must be canonical-ordered and non-duplicated.
+`sample_controls` offsets are 4-bit two's complement (−8..7) and only valid on
+sample/gather4-family opcodes; extended opcodes are rejected on opcodes whose
+canonical chain carries none (e.g. `mov`, `store_raw`).
+
 ### Example
 
 ```yaml

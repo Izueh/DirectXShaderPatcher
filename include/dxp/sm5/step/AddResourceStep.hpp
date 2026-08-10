@@ -18,6 +18,8 @@ namespace dxp::sm5::step {
 struct AddResourceStep {
   static constexpr std::string_view kind = "add_resource";
   using Results = dxp::AddResourceResults;
+  using SamplerMode = dxp::sm5::model::SamplerMode;
+  using CbufferAccessPattern = dxp::sm5::model::CbufferAccessPattern;
 
   /// @brief Identifies the UAV kind requested by a recipe declaration.
   enum class UavKind : std::uint8_t {

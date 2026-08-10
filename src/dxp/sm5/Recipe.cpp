@@ -21,6 +21,7 @@
 #include "dxp/sm5/step/CheckShaderVersionStep_impl.hpp"
 
 namespace dxp::sm5 {
+using namespace dxp::sm5::model;
 
 std::expected<void, std::string> ValidateRecipe(const Recipe& recipe) {
   if (recipe.validated_.load(std::memory_order_acquire)) return {};

@@ -27,6 +27,7 @@
 #include "dxp/sm5/Model.hpp"
 
 namespace dxp::sm5 {
+using namespace dxp::sm5::model;
 
 using Role = OperandRole;
 

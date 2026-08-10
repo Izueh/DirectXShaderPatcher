@@ -10,6 +10,7 @@
 #include "dxp/sm5/step/CheckShaderVersionStep_impl.hpp"
 
 namespace dxp::sm5 {
+using namespace dxp::sm5::model;
 
 /// @brief Variant type for all SM5 recipe step data types.
 using StepDataVariant =

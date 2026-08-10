@@ -8,6 +8,7 @@
 #include "dxp/ValidationContext.hpp"
 
 namespace dxp::sm5::step {
+using namespace dxp::sm5::model;
 
 // Internal convenience aliases — the public pattern types live nested inside
 // ApplyRuleStep so the step namespace holds only the step structs.
@@ -67,6 +68,18 @@ struct OperandData {
   std::string match_capture;
 };
 
+/// @brief One extended-opcode expectation within a match entry's
+/// `extended_opcodes` list. Exactly one of `any` / `type` / `raw` must be set;
+/// structured payload fields refine a `type` expectation.
+struct ExtendedOpcodeMatchData {
+  bool any = false;                                             ///< `any: true` — position wildcard.
+  std::optional<ExtendedOpcodeType> type;                       ///< `type: sample_controls|resource_dim|resource_type`.
+  std::optional<uint32_t> raw;                                  ///< `raw: <token>` — exact 32-bit token.
+  std::optional<SampleControlsPayload> sample_controls;         ///< u/v/w offsets (type: sample_controls).
+  std::optional<ResourceDimPayload> resource_dim;               ///< dimension/stride (type: resource_dim).
+  std::optional<std::array<uint32_t, 4>> resource_return_type;  ///< per-component types (type: resource_type).
+};
+
 struct InstructionMatchData {
   std::optional<Opcode> opcode;
   std::string capture;
@@ -74,6 +87,19 @@ struct InstructionMatchData {
   std::optional<InterpolationMode> interpolation;
   int32_t test_boolean = -1;
   std::vector<OperandData> operands;
+  /// @brief Extended-opcode expectations; absent = wildcard (any chain),
+  /// empty list = the instruction must carry no extended tokens.
+  std::optional<std::vector<ExtendedOpcodeMatchData>> extended_opcodes;
+};
+
+/// @brief One extended-opcode emit entry. Exactly one of `type` / `raw` must be
+/// set; a `type` entry requires the matching structured payload key.
+struct EmitExtendedOpcodeData {
+  std::optional<ExtendedOpcodeType> type;                       ///< `type: sample_controls|resource_dim|resource_type`.
+  std::optional<uint32_t> raw;                                  ///< `raw: <token>` (bits 30:00).
+  std::optional<SampleControlsPayload> sample_controls;         ///< u/v/w offsets (type: sample_controls).
+  std::optional<ResourceDimPayload> resource_dim;               ///< dimension/stride (type: resource_dim).
+  std::optional<std::array<uint32_t, 4>> resource_return_type;  ///< per-component types (type: resource_type).
 };
 
 struct EmitInstructionData {
@@ -83,6 +109,7 @@ struct EmitInstructionData {
   int32_t test_boolean = -1;
   std::vector<OperandData> operands;
   std::string capture;
+  std::vector<EmitExtendedOpcodeData> extended_opcodes;
 };
 
 struct RuleData {

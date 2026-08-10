@@ -14,6 +14,7 @@ namespace dxp::sm5::step {
 struct CheckOpcodeCountStep {
   static constexpr std::string_view kind = "check_opcode_count";
   using Results = dxp::CheckOpcodeCountResults;
+  using Opcode = dxp::sm5::model::Opcode;
   std::string name;
   std::vector<Opcode> opcodes;
   bool required = true;

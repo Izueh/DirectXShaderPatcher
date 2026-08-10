@@ -9,6 +9,7 @@
 #include "dxp/ValidationContext.hpp"
 
 namespace dxp::sm5::step {
+using namespace dxp::sm5::model;
 
 /// @brief Execute the CheckResourceCountStep against the shader program.
 /// @param step The step to execute.

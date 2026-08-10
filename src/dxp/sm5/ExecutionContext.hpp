@@ -16,6 +16,7 @@
 #include "dxp/VariableStore.hpp"
 
 namespace dxp::sm5 {
+using namespace dxp::sm5::model;
 
 /// @brief Binding namespace for handle→register maps (one per resource kind).
 /// Keeps handle names separate per kind (a texture and a raw buffer may share

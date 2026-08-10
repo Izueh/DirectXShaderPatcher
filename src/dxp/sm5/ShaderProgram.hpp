@@ -14,6 +14,7 @@
 #include "dxp/sm5/step/AddResourceStep.hpp"
 
 namespace dxp::sm5 {
+using namespace dxp::sm5::model;
 
 /// @brief DXBC shader program type. Mirrors @c D3D10_SB_TOKENIZED_PROGRAM_TYPE.
 enum class ProgramType : std::uint32_t {

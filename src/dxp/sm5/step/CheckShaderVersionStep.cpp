@@ -17,6 +17,7 @@
 #include "dxp/sm5/ShaderProgram.hpp"
 
 namespace dxp::sm5::step {
+using namespace dxp::sm5::model;
 
 std::expected<dxp::CheckShaderVersionResults, std::string>
 Execute(const CheckShaderVersionStep& step, ExecutionContext& ctx) {

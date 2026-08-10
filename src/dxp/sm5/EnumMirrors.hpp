@@ -7,10 +7,15 @@
 #include "dxp/sm5/ShaderProgram.hpp"
 
 namespace dxp::sm5 {
+using namespace dxp::sm5::model;
 
-// --- Mirror-enum static asserts: dxp::sm5 ↔ D3D token format ---------------──
-// These enums are encoded into DXBC tokens via direct casts (or index the
-// instruction layout table); value drift would silently corrupt output.
+// --- Mirror-enum static asserts: model enums ↔ D3D token format ---
+// These enums are cast directly into DXBC tokens (or index the instruction
+// layout table); value drift would silently corrupt output.
+
+// --- Mirror-enum static asserts: model enums ↔ D3D token format ---
+// These enums are cast directly into DXBC tokens (or index the instruction
+// layout table); value drift would silently corrupt output.
 
 static_assert(static_cast<uint8_t>(NumComponents::Zero) == static_cast<uint8_t>(D3D10_SB_OPERAND_0_COMPONENT));
 static_assert(static_cast<uint8_t>(NumComponents::One) == static_cast<uint8_t>(D3D10_SB_OPERAND_1_COMPONENT));
@@ -339,5 +344,4 @@ static_assert(static_cast<uint32_t>(Opcode::SampleDClampFeedback) == static_cast
 static_assert(static_cast<uint32_t>(Opcode::SampleCClampFeedback) == static_cast<uint32_t>(D3DWDDM1_3_SB_OPCODE_SAMPLE_C_CLAMP_FEEDBACK));
 static_assert(static_cast<uint32_t>(Opcode::CheckAccessFullyMapped) == static_cast<uint32_t>(D3DWDDM1_3_SB_OPCODE_CHECK_ACCESS_FULLY_MAPPED));
 static_assert(static_cast<uint32_t>(Opcode::Reserved0235) == static_cast<uint32_t>(D3DWDDM1_3_SB_OPCODE_RESERVED0));
-
 }  // namespace dxp::sm5

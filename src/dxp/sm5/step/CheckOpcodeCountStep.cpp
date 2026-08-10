@@ -22,6 +22,7 @@
 #include "dxp/sm5/ShaderProgram.hpp"
 
 namespace dxp::sm5::step {
+using namespace dxp::sm5::model;
 
 std::expected<dxp::CheckOpcodeCountResults, std::string>
 Execute(const CheckOpcodeCountStep& step, ExecutionContext& ctx) {

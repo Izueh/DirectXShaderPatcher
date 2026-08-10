@@ -12,7 +12,7 @@
 
 #include "value_types/indirect.h"
 
-namespace dxp::sm5 {
+namespace dxp::sm5::model {
 
 /// @brief Number of components an operand uses.
 /// Mirrors @c D3D10_SB_OPERAND_NUM_COMPONENTS from the DXBC token format.
@@ -152,6 +152,7 @@ constexpr size_t MaxInstructionOperands = 8;
 constexpr size_t kOpcodeCount = 236;
 
 enum class Opcode : uint32_t {
+
   Add = 0,
   And = 1,
   Break = 2,
@@ -397,6 +398,25 @@ enum class Opcode : uint32_t {
   Unknown = 0xFFFFFFFFU,
 };
 
+/// @brief Structured payloads for the three known extended-opcode types
+/// (mirrors the D3D11 tokenized-format layout, same bit semantics as
+/// dxbc-spirv's SampleControlToken / ResourceDimToken / ResourceTypeToken,
+/// MIT, Copyright (c) 2025 Philip Rebohle).
+struct SampleControlsPayload {
+  int32_t u = 0;  ///< Immediate U offset (4-bit 2's complement).
+  int32_t v = 0;  ///< Immediate V offset (4-bit 2's complement).
+  int32_t w = 0;  ///< Immediate W offset (4-bit 2's complement).
+};
+
+struct ResourceDimPayload {
+  uint32_t dimension = 0;         ///< D3D10_SB_RESOURCE_DIMENSION.
+  uint32_t structure_stride = 0;  ///< Byte stride (structured buffer only).
+};
+
+struct ResourceReturnTypePayload {
+  std::array<uint32_t, 4> component_types{};  ///< D3D10_SB_RESOURCE_RETURN_TYPE per component.
+};
+
 inline Opcode OpcodeUnknown() {
   return Opcode::Unknown;
 }
@@ -514,7 +534,7 @@ struct Operand {
 };
 
 struct Instruction {
-  dxp::sm5::Opcode opcode = dxp::sm5::OpcodeUnknown();
+  Opcode opcode = OpcodeUnknown();
   OpcodeControls controls;
   uint32_t length_in_dwords = 0;
   std::vector<Operand> operands;
@@ -588,4 +608,4 @@ uint32_t GetExpectedOperandCount(Opcode opcode);
 /// @return the type, or @c OperandScalarType::Unknown when unconstrained/undefined.
 OperandScalarType GetExpectedOperandType(Opcode opcode, size_t operand_index);
 
-}  // namespace dxp::sm5
+}  // namespace dxp::sm5::model

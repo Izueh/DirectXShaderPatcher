@@ -24,14 +24,14 @@ dxp::sm5::RecipeParseResult ParseFixture(const std::filesystem::path& relative_p
 int main() {
   // Verify OpcodeUsesTestBoolean for known opcodes
   {
-    const auto discard_opcode = dxp::sm5::Opcode{D3D10_SB_OPCODE_DISCARD};
-    if (!dxp::sm5::OpcodeUsesTestBoolean(discard_opcode)) {
+    const auto discard_opcode = dxp::sm5::model::Opcode{D3D10_SB_OPCODE_DISCARD};
+    if (!dxp::sm5::model::OpcodeUsesTestBoolean(discard_opcode)) {
       std::cerr << "Expected DISCARD to use test_boolean.\n";
       return 1;
     }
 
-    const auto add_opcode = dxp::sm5::Opcode{D3D10_SB_OPCODE_ADD};
-    if (dxp::sm5::OpcodeUsesTestBoolean(add_opcode)) {
+    const auto add_opcode = dxp::sm5::model::Opcode{D3D10_SB_OPCODE_ADD};
+    if (dxp::sm5::model::OpcodeUsesTestBoolean(add_opcode)) {
       std::cerr << "Expected ADD not to use test_boolean.\n";
       return 1;
     }

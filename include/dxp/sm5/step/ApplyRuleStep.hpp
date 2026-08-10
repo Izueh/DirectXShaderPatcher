@@ -25,6 +25,17 @@ struct ApplyRuleStep {
   static constexpr std::string_view kind = "apply_rule";
   using Results = dxp::ApplyRuleResults;
 
+  // Model type aliases: discoverable from the step like its nested enums.
+  using Opcode = dxp::sm5::model::Opcode;
+  using OperandType = dxp::sm5::model::OperandType;
+  using OperandModifier = dxp::sm5::model::OperandModifier;
+  using Components = dxp::sm5::model::Components;
+  using InterpolationMode = dxp::sm5::model::InterpolationMode;
+  using ExtendedOpcodeType = dxp::sm5::model::ExtendedOpcodeType;
+  using SampleControlsPayload = dxp::sm5::model::SampleControlsPayload;
+  using ResourceDimPayload = dxp::sm5::model::ResourceDimPayload;
+  using ResourceReturnTypePayload = dxp::sm5::model::ResourceReturnTypePayload;
+
   /// @brief Controls which match is rewritten when a rule matches more than once.
   enum class MatchKind : std::uint8_t {
     First,
@@ -122,8 +133,26 @@ struct ApplyRuleStep {
     [[nodiscard]] std::vector<OperandIndexPattern> IndexPatterns() const;
   };
 
-  /// @brief Extended opcode match pattern — enum name or raw 32-bit token.
-  using ExtendedOpcodePattern = std::variant<ExtendedOpcodeType, uint32_t>;
+  /// @brief Extended-opcode match entry.
+  ///   - Any: position wildcard (matches any token at this position);
+  ///   - Raw: exact 32-bit token match;
+  ///   - Type: type-bits match, optionally refined by structured payload
+  ///     expectations (sample_controls offsets, resource dimension/stride,
+  ///     per-component return types) compared against the decoded token.
+  struct ExtendedOpcodePattern {
+    enum class Kind : std::uint8_t {
+      Any = 0,
+      Raw = 1,
+      Type = 2,
+    };
+
+    Kind kind = Kind::Any;
+    ExtendedOpcodeType type = ExtendedOpcodeType::Empty;   ///< Kind::Type.
+    uint32_t raw = 0;                                      ///< Kind::Raw.
+    std::optional<SampleControlsPayload> sample_controls;  ///< Type-kind payload expectations.
+    std::optional<ResourceDimPayload> resource_dim;
+    std::optional<ResourceReturnTypePayload> resource_return_type;
+  };
 
   /// @brief Describes one instruction pattern for rule matching.
   struct InstructionPattern {
@@ -136,6 +165,28 @@ struct ApplyRuleStep {
     std::optional<std::vector<ExtendedOpcodePattern>> extended_opcodes;
   };
 
+  /// @brief Extended-opcode emit entry.
+  ///   - Raw: exact token value (bits 30:00; the engine assigns the chaining
+  ///     bit 31 from the final chain position);
+  ///   - Type: typed token with structured payload. A type entry emits exactly
+  ///     the given payload verbatim; members of the canonical resource pair
+  ///     (ResourceDim + ResourceReturnType) that the entry chain omits are
+  ///     synthesized from the resource declaration (or fixed metadata for
+  ///     ld_raw/ld_structured) at emit time, in canonical order.
+  struct EmitExtendedOpcode {
+    enum class Kind : std::uint8_t {
+      Type = 0,
+      Raw = 1,
+    };
+
+    Kind kind = Kind::Type;
+    ExtendedOpcodeType type = ExtendedOpcodeType::Empty;   ///< Kind::Type.
+    uint32_t raw = 0;                                      ///< Kind::Raw.
+    std::optional<SampleControlsPayload> sample_controls;  ///< Kind::Type payloads.
+    std::optional<ResourceDimPayload> resource_dim;
+    std::optional<ResourceReturnTypePayload> resource_return_type;
+  };
+
   /// @brief Describes one instruction emitted by a rewrite rule.
   struct EmitPattern {
     std::optional<Opcode> opcode;
@@ -144,6 +195,7 @@ struct ApplyRuleStep {
     int32_t test_boolean = -1;
     std::vector<OperandPattern> operands;
     std::string capture;
+    std::vector<EmitExtendedOpcode> extended_opcodes;
   };
 
   /// @brief Describes one SM5 rewrite rule.
@@ -213,10 +265,10 @@ inline std::vector<ApplyRuleStep::OperandIndexPattern> ApplyRuleStep::OperandPat
 /// @brief The recipe index-representation vocabulary maps 1:1 onto the bytecode
 /// representation. Kept as separate enums (YAML surface vs DXBC token format);
 /// this assert guarantees they never drift.
-static_assert(static_cast<uint8_t>(::dxp::sm5::Operand::IndexRepresentation::Immediate32) == static_cast<uint8_t>(ApplyRuleStep::OperandIndexRepresentation::Immediate32));
-static_assert(static_cast<uint8_t>(::dxp::sm5::Operand::IndexRepresentation::Immediate64) == static_cast<uint8_t>(ApplyRuleStep::OperandIndexRepresentation::Immediate64));
-static_assert(static_cast<uint8_t>(::dxp::sm5::Operand::IndexRepresentation::Relative) == static_cast<uint8_t>(ApplyRuleStep::OperandIndexRepresentation::Relative));
-static_assert(static_cast<uint8_t>(::dxp::sm5::Operand::IndexRepresentation::Immediate32PlusRelative) == static_cast<uint8_t>(ApplyRuleStep::OperandIndexRepresentation::Immediate32PlusRelative));
-static_assert(static_cast<uint8_t>(::dxp::sm5::Operand::IndexRepresentation::Immediate64PlusRelative) == static_cast<uint8_t>(ApplyRuleStep::OperandIndexRepresentation::Immediate64PlusRelative));
+static_assert(static_cast<uint8_t>(::dxp::sm5::model::Operand::IndexRepresentation::Immediate32) == static_cast<uint8_t>(ApplyRuleStep::OperandIndexRepresentation::Immediate32));
+static_assert(static_cast<uint8_t>(::dxp::sm5::model::Operand::IndexRepresentation::Immediate64) == static_cast<uint8_t>(ApplyRuleStep::OperandIndexRepresentation::Immediate64));
+static_assert(static_cast<uint8_t>(::dxp::sm5::model::Operand::IndexRepresentation::Relative) == static_cast<uint8_t>(ApplyRuleStep::OperandIndexRepresentation::Relative));
+static_assert(static_cast<uint8_t>(::dxp::sm5::model::Operand::IndexRepresentation::Immediate32PlusRelative) == static_cast<uint8_t>(ApplyRuleStep::OperandIndexRepresentation::Immediate32PlusRelative));
+static_assert(static_cast<uint8_t>(::dxp::sm5::model::Operand::IndexRepresentation::Immediate64PlusRelative) == static_cast<uint8_t>(ApplyRuleStep::OperandIndexRepresentation::Immediate64PlusRelative));
 
 }  // namespace dxp::sm5::step

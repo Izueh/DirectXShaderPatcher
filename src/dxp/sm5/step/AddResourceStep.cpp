@@ -24,6 +24,7 @@
 #include "dxp/sm5/ShaderProgram.hpp"
 
 namespace dxp::sm5::step {
+using namespace dxp::sm5::model;
 
 constexpr uint32_t kMaxTextureBindPoint = 127;
 constexpr uint32_t kMaxCBufferBindPoint = 14;

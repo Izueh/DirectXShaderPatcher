@@ -90,10 +90,69 @@
                                     "capture": {
                                        "type": "string"
                                     },
+                                    "extended_opcodes": {
+                                       "type": "array",
+                                       "items": {
+                                          "type": "object",
+                                          "properties": {
+                                             "raw": {
+                                                "anyOf": [
+                                                   {
+                                                      "$ref": "#/$defs/uint32_t"
+                                                   },
+                                                   {
+                                                      "type": "null"
+                                                   }
+                                                ]
+                                             },
+                                             "resource_dim": {
+                                                "anyOf": [
+                                                   {
+                                                      "$ref": "#/$defs/dxp::sm5::model::ResourceDimPayload"
+                                                   },
+                                                   {
+                                                      "type": "null"
+                                                   }
+                                                ]
+                                             },
+                                             "resource_return_type": {
+                                                "anyOf": [
+                                                   {
+                                                      "$ref": "#/$defs/std::array<uint32_t,4>"
+                                                   },
+                                                   {
+                                                      "type": "null"
+                                                   }
+                                                ]
+                                             },
+                                             "sample_controls": {
+                                                "anyOf": [
+                                                   {
+                                                      "$ref": "#/$defs/dxp::sm5::model::SampleControlsPayload"
+                                                   },
+                                                   {
+                                                      "type": "null"
+                                                   }
+                                                ]
+                                             },
+                                             "type": {
+                                                "anyOf": [
+                                                   {
+                                                      "$ref": "#/$defs/dxp::sm5::model::ExtendedOpcodeType"
+                                                   },
+                                                   {
+                                                      "type": "null"
+                                                   }
+                                                ]
+                                             }
+                                          },
+                                          "additionalProperties": false
+                                       }
+                                    },
                                     "interpolation": {
                                        "anyOf": [
                                           {
-                                             "$ref": "#/$defs/dxp::sm5::InterpolationMode"
+                                             "$ref": "#/$defs/dxp::sm5::model::InterpolationMode"
                                           },
                                           {
                                              "type": "null"
@@ -103,7 +162,7 @@
                                     "opcode": {
                                        "anyOf": [
                                           {
-                                             "$ref": "#/$defs/dxp::sm5::Opcode"
+                                             "$ref": "#/$defs/dxp::sm5::model::Opcode"
                                           },
                                           {
                                              "type": "null"
@@ -137,10 +196,79 @@
                                     "capture": {
                                        "type": "string"
                                     },
+                                    "extended_opcodes": {
+                                       "anyOf": [
+                                          {
+                                             "type": "array",
+                                             "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                   "any": {
+                                                      "type": "boolean"
+                                                   },
+                                                   "raw": {
+                                                      "anyOf": [
+                                                         {
+                                                            "$ref": "#/$defs/uint32_t"
+                                                         },
+                                                         {
+                                                            "type": "null"
+                                                         }
+                                                      ]
+                                                   },
+                                                   "resource_dim": {
+                                                      "anyOf": [
+                                                         {
+                                                            "$ref": "#/$defs/dxp::sm5::model::ResourceDimPayload"
+                                                         },
+                                                         {
+                                                            "type": "null"
+                                                         }
+                                                      ]
+                                                   },
+                                                   "resource_return_type": {
+                                                      "anyOf": [
+                                                         {
+                                                            "$ref": "#/$defs/std::array<uint32_t,4>"
+                                                         },
+                                                         {
+                                                            "type": "null"
+                                                         }
+                                                      ]
+                                                   },
+                                                   "sample_controls": {
+                                                      "anyOf": [
+                                                         {
+                                                            "$ref": "#/$defs/dxp::sm5::model::SampleControlsPayload"
+                                                         },
+                                                         {
+                                                            "type": "null"
+                                                         }
+                                                      ]
+                                                   },
+                                                   "type": {
+                                                      "anyOf": [
+                                                         {
+                                                            "$ref": "#/$defs/dxp::sm5::model::ExtendedOpcodeType"
+                                                         },
+                                                         {
+                                                            "type": "null"
+                                                         }
+                                                      ]
+                                                   }
+                                                },
+                                                "additionalProperties": false
+                                             }
+                                          },
+                                          {
+                                             "type": "null"
+                                          }
+                                       ]
+                                    },
                                     "interpolation": {
                                        "anyOf": [
                                           {
-                                             "$ref": "#/$defs/dxp::sm5::InterpolationMode"
+                                             "$ref": "#/$defs/dxp::sm5::model::InterpolationMode"
                                           },
                                           {
                                              "type": "null"
@@ -150,7 +278,7 @@
                                     "opcode": {
                                        "anyOf": [
                                           {
-                                             "$ref": "#/$defs/dxp::sm5::Opcode"
+                                             "$ref": "#/$defs/dxp::sm5::model::Opcode"
                                           },
                                           {
                                              "type": "null"
@@ -234,7 +362,7 @@
                      "opcodes": {
                         "type": "array",
                         "items": {
-                           "$ref": "#/$defs/dxp::sm5::Opcode"
+                           "$ref": "#/$defs/dxp::sm5::model::Opcode"
                         }
                      },
                      "required": {
@@ -327,7 +455,7 @@
          },
          "additionalProperties": false
       },
-      "dxp::sm5::InterpolationMode": {
+      "dxp::sm5::model::ExtendedOpcodeType": {
          "type": [
             "number",
             "string",
@@ -337,7 +465,7 @@
             "null"
          ]
       },
-      "dxp::sm5::NumComponents": {
+      "dxp::sm5::model::InterpolationMode": {
          "type": [
             "number",
             "string",
@@ -347,7 +475,7 @@
             "null"
          ]
       },
-      "dxp::sm5::Opcode": {
+      "dxp::sm5::model::NumComponents": {
          "type": [
             "number",
             "string",
@@ -357,7 +485,7 @@
             "null"
          ]
       },
-      "dxp::sm5::OperandModifier": {
+      "dxp::sm5::model::Opcode": {
          "type": [
             "number",
             "string",
@@ -367,7 +495,7 @@
             "null"
          ]
       },
-      "dxp::sm5::OperandType": {
+      "dxp::sm5::model::OperandModifier": {
          "type": [
             "number",
             "string",
@@ -377,7 +505,7 @@
             "null"
          ]
       },
-      "dxp::sm5::SamplerMode": {
+      "dxp::sm5::model::OperandType": {
          "type": [
             "number",
             "string",
@@ -387,7 +515,44 @@
             "null"
          ]
       },
-      "dxp::sm5::SelectionMode": {
+      "dxp::sm5::model::ResourceDimPayload": {
+         "type": "object",
+         "properties": {
+            "dimension": {
+               "$ref": "#/$defs/uint32_t"
+            },
+            "structure_stride": {
+               "$ref": "#/$defs/uint32_t"
+            }
+         },
+         "additionalProperties": false
+      },
+      "dxp::sm5::model::SampleControlsPayload": {
+         "type": "object",
+         "properties": {
+            "u": {
+               "$ref": "#/$defs/int32_t"
+            },
+            "v": {
+               "$ref": "#/$defs/int32_t"
+            },
+            "w": {
+               "$ref": "#/$defs/int32_t"
+            }
+         },
+         "additionalProperties": false
+      },
+      "dxp::sm5::model::SamplerMode": {
+         "type": [
+            "number",
+            "string",
+            "boolean",
+            "object",
+            "array",
+            "null"
+         ]
+      },
+      "dxp::sm5::model::SelectionMode": {
          "type": [
             "number",
             "string",
@@ -450,10 +615,10 @@
                "type": "object",
                "properties": {
                   "num_components": {
-                     "$ref": "#/$defs/dxp::sm5::NumComponents"
+                     "$ref": "#/$defs/dxp::sm5::model::NumComponents"
                   },
                   "selection_mode": {
-                     "$ref": "#/$defs/dxp::sm5::SelectionMode"
+                     "$ref": "#/$defs/dxp::sm5::model::SelectionMode"
                   },
                   "value": {
                      "type": "string"
@@ -563,7 +728,7 @@
             "modifier": {
                "anyOf": [
                   {
-                     "$ref": "#/$defs/dxp::sm5::OperandModifier"
+                     "$ref": "#/$defs/dxp::sm5::model::OperandModifier"
                   },
                   {
                      "type": "null"
@@ -573,7 +738,7 @@
             "type": {
                "anyOf": [
                   {
-                     "$ref": "#/$defs/dxp::sm5::OperandType"
+                     "$ref": "#/$defs/dxp::sm5::model::OperandType"
                   },
                   {
                      "type": "null"
@@ -587,6 +752,13 @@
          "type": "integer",
          "minimum": -2147483648,
          "maximum": 2147483647
+      },
+      "std::array<uint32_t,4>": {
+         "type": "array",
+         "items": {
+            "$ref": "#/$defs/uint32_t"
+         },
+         "maxItems": 4
       },
       "std::variant<std::string,bool,int32_t,uint32_t,int64_t,uint64_t,double>": {
          "type": [
@@ -792,7 +964,7 @@
                "interpolation": {
                   "anyOf": [
                      {
-                        "$ref": "#/$defs/dxp::sm5::InterpolationMode"
+                        "$ref": "#/$defs/dxp::sm5::model::InterpolationMode"
                      },
                      {
                         "type": "null"
@@ -812,7 +984,7 @@
                "mode": {
                   "anyOf": [
                      {
-                        "$ref": "#/$defs/dxp::sm5::SamplerMode"
+                        "$ref": "#/$defs/dxp::sm5::model::SamplerMode"
                      },
                      {
                         "type": "null"
