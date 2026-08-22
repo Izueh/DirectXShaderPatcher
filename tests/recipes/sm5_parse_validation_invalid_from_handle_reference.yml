@@ -18,7 +18,7 @@ steps:
             - capture: dst
             - capture: coord
             - type: resource
-              handle: missing_texture
+              handle: { name: missing_texture }
             - type: sampler
               indices:
                 - immediate_lo: 0x00000000

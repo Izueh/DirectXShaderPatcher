@@ -33,11 +33,11 @@ steps:
               indices:
                 - immediate_lo: 0
             - type: resource
-              handle: raw_srv
+              handle: { name: raw_srv }
         - opcode: mov
           operands:
             - type: temp
               indices:
                 - immediate_lo: 1
             - type: unordered_access_view
-              handle: raw_uav
+              handle: { name: raw_uav }

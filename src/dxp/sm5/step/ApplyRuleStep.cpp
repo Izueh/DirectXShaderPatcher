@@ -662,8 +662,11 @@ auto RuleData::Compile() const -> std::expected<Rule, std::string> {
     if (operand_data.components.num_components != NumComponents::Four) {
       op_pattern.num_components = static_cast<int32_t>(operand_data.components.num_components);
     }
-    if (!operand_data.handle.empty()) {
-      op_pattern.from_handle = operand_data.handle;
+    if (operand_data.handle) {
+      op_pattern.handle = OperandPattern::Handle{
+          .name = operand_data.handle->name,
+          .element_index = operand_data.handle->element_index,
+      };
     }
     op_pattern.export_as = operand_data.export_as;
     if (operand_data.components.selection_mode == SelectionMode::Mask) {
@@ -706,6 +709,12 @@ auto RuleData::Compile() const -> std::expected<Rule, std::string> {
     op_pattern.immediates_i64 = operand_data.immediates_i64;
     op_pattern.immediates_f32 = operand_data.immediates_f32;
     op_pattern.immediates_f64 = operand_data.immediates_f64;
+    if (operand_data.handle) {
+      op_pattern.handle = OperandPattern::Handle{
+          .name = operand_data.handle->name,
+          .element_index = operand_data.handle->element_index,
+      };
+    }
     return op_pattern;
   };
 
@@ -999,8 +1008,8 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string
 
   auto checkHandleRefs = [&](const std::vector<OperandPattern>& operands) -> std::expected<void, std::string> {
     for (const auto& op : operands) {
-      if (!op.from_handle.empty() && !ctx.handles.contains(op.from_handle)) {
-        error = "unknown resource declaration handle '" + op.from_handle + "'";
+      if (op.handle && !ctx.handles.contains(op.handle->name)) {
+        error = "unknown resource declaration handle '" + op.handle->name + "'";
         return std::unexpected(std::move(error));
       }
     }
@@ -1492,7 +1501,7 @@ auto ResolveEmit(const MatchResult& match, ExecutionContext& context, const Emit
   for (size_t oi = 0; oi < emit.operands.size(); ++oi) {
     const auto& op = emit.operands[oi];
     const bool needs_idx = op.type.has_value() && (op.type == OperandType::Resource || op.type == OperandType::CBuffer || op.type == OperandType::Sampler || op.type == OperandType::UAV || op.type == OperandType::Stream);
-    if (instr.operands[oi].index_entries.empty() && op.capture.empty() && op.IndexPatterns().empty() && op.from_handle.empty() && needs_idx) {
+    if (instr.operands[oi].index_entries.empty() && op.capture.empty() && op.IndexPatterns().empty() && !op.handle && needs_idx) {
       error = path + ".operands[" + std::to_string(oi) + "]" + ": emit operand has no index_entries source";
       return {};
     }
@@ -1638,10 +1647,10 @@ auto ResolveOperand(const MatchResult& match, ExecutionContext& context, const O
       operand.index_entries.push_back(std::move(idx));
     }
   }
-  if (!op.from_handle.empty()) {
+  if (op.handle) {
     const auto lookup = [&](BindingKind kind) -> const uint32_t* {
       auto& m = context.Bindings(kind);
-      auto it = m.find(op.from_handle);
+      auto it = m.find(op.handle->name);
       return it != m.end() ? &it->second : nullptr;
     };
     const uint32_t* rbp = nullptr;
@@ -1666,23 +1675,19 @@ auto ResolveOperand(const MatchResult& match, ExecutionContext& context, const O
         return {};
     }
     if (rbp == nullptr) {
-      error = path + ": missing SM5 declaration handle binding '" + op.from_handle + "'";
+      error = path + ": missing SM5 declaration handle binding '" + op.handle->name + "'";
       return {};
     }
-    Operand::Index idx;
-    idx.representation = Operand::IndexRepresentation::Immediate32;
-    idx.immediate_lo = *rbp;
-    operand.index_entries.push_back(std::move(idx));
-    const bool eis = op.element_index.immediate_lo.has_value() || op.element_index.immediate_hi.has_value() || !op.element_index.capture.empty() || !op.element_index.match_capture.empty() || !op.element_index.immediate_lo_variable.empty() || !op.element_index.immediate_hi_variable.empty() || op.element_index.relative_operand;
-    if (eis) {
-      Operand::Index ei = ResolveOperandIndex(match, context, op.element_index, path + ".element_index", error);
-      if (!error.empty()) return {};
-      operand.index_entries.push_back(std::move(ei));
+    Operand::Index operand_index;
+    operand_index.representation = Operand::IndexRepresentation::Immediate32;
+    operand_index.immediate_lo = *rbp;
+    operand.index_entries.push_back(std::move(operand_index));
+    if (op.handle->element_index.has_value()) {
+      Operand::Index element_index;
+      element_index.representation = Operand::IndexRepresentation::Immediate32;
+      element_index.immediate_lo = *op.handle->element_index;
+      operand.index_entries.push_back(std::move(element_index));
     } else if (*op.type == OperandType::CBuffer) {
-      // Canonical DXBC encodes cbuffer reads with two indices (register,
-      // element); the HLSL compiler always emits the element (0 when
-      // unqualified). Handle-resolved operands carry the register; default the
-      // element to 0 so the encoding round-trips (e.g. Flugan validation).
       Operand::Index element_index;
       element_index.representation = Operand::IndexRepresentation::Immediate32;
       element_index.immediate_lo = 0U;
@@ -1763,20 +1768,6 @@ auto ResolveOperandIndex(const MatchResult& match, ExecutionContext& context, co
     }
     idx = it->second;
   }
-  // Variable-backed index: resolve the env variable to concrete bytes (typed by its immediates array).
-  if (!pattern.immediate_lo_variable.empty() || !pattern.immediate_hi_variable.empty()) {
-    const std::string vn = !pattern.immediate_lo_variable.empty() ? pattern.immediate_lo_variable : pattern.immediate_hi_variable;
-    uint32_t rl = 0;
-    uint32_t rh = 0;
-    bool rhhi = false;
-    if (!ResolveImmediateFromVariable(path, vn, context, pattern.immediate_family, rl, rh, rhhi, error)) return {};
-    if (!pattern.immediate_lo_variable.empty()) {
-      idx.immediate_lo = rl;
-    }
-    if (!pattern.immediate_hi_variable.empty() || rhhi) {
-      idx.immediate_hi = rh;
-    }
-  }
   if (pattern.relative_operand) {
     Operand ro = ResolveOperand(match, context, **pattern.relative_operand, path + ".relative_operand", error, 0);
     if (!error.empty()) return {};
@@ -1790,18 +1781,6 @@ auto MatchesOperandIndex(const Operand::Index& idx, const std::unordered_map<std
   if (static_cast<uint32_t>(idx.representation) != static_cast<uint32_t>(pattern.representation)) return false;
   if (pattern.immediate_lo.has_value() && idx.immediate_lo != pattern.immediate_lo) return false;
   if (pattern.immediate_hi.has_value() && idx.immediate_hi != pattern.immediate_hi) return false;
-  // Variable-backed index: resolve the env variable to bytes (typed by its immediates array) and compare.
-  if (!pattern.immediate_lo_variable.empty() || !pattern.immediate_hi_variable.empty()) {
-    const std::string vn = !pattern.immediate_lo_variable.empty() ? pattern.immediate_lo_variable : pattern.immediate_hi_variable;
-    uint32_t rl = 0;
-    uint32_t rh = 0;
-    bool rhhi = false;
-    std::string resolve_error;
-    if (!ResolveImmediateFromVariable("", vn, context, pattern.immediate_family, rl, rh, rhhi, resolve_error)) return false;
-    if (!pattern.immediate_lo_variable.empty() && (!idx.immediate_lo.has_value() || *idx.immediate_lo != rl)) return false;
-    if (!pattern.immediate_hi_variable.empty() && (!idx.immediate_hi.has_value() || *idx.immediate_hi != rh)) return false;
-    if (rhhi && (!idx.immediate_hi.has_value() || *idx.immediate_hi != rh)) return false;
-  }
   if (!pattern.match_capture.empty()) {
     // Same-match equality first (a value captured earlier in this match), then
     // the cross-step global store (captured by a prior step).

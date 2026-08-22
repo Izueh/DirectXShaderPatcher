@@ -114,8 +114,11 @@ struct ApplyRuleStep {
     std::vector<std::variant<std::string, int64_t>> immediates_i64;
     std::vector<std::variant<std::string, float>> immediates_f32;
     std::vector<std::variant<std::string, double>> immediates_f64;
-    std::string from_handle;
-    OperandIndexPattern element_index;
+    struct Handle {
+      std::string name;
+      std::optional<uint32_t> element_index;
+    };
+    std::optional<Handle> handle;
     std::string mask;
     std::string swizzle;
     std::string select;

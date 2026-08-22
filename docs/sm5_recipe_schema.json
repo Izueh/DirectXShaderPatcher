@@ -633,7 +633,30 @@
                ]
             },
             "handle": {
-               "type": "string"
+               "anyOf": [
+                  {
+                     "type": "object",
+                     "properties": {
+                        "element_index": {
+                           "anyOf": [
+                              {
+                                 "$ref": "#/$defs/uint32_t"
+                              },
+                              {
+                                 "type": "null"
+                              }
+                           ]
+                        },
+                        "name": {
+                           "type": "string"
+                        }
+                     },
+                     "additionalProperties": false
+                  },
+                  {
+                     "type": "null"
+                  }
+               ]
             },
             "immediates_f32": {
                "type": "array",

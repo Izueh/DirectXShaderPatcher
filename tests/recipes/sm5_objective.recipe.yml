@@ -29,7 +29,7 @@ steps:
         - opcode: mov
           operands:
             - type: temp
-              handle: ign_sample_coord
+              handle: { name: ign_sample_coord }
               components:
                 selection_mode: mask
                 value: xy
@@ -37,12 +37,12 @@ steps:
         - opcode: utof
           operands:
             - type: temp
-              handle: ign_sample_coord
+              handle: { name: ign_sample_coord }
               components:
                 selection_mode: mask
                 value: z
             - type: constant_buffer
-              handle: frame_constants
+              handle: { name: frame_constants }
               indices:
                 - immediate_lo: 0x00000000
               components:
@@ -52,17 +52,17 @@ steps:
           operands:
             - capture: ign_dst
             - type: temp
-              handle: ign_sample_coord
+              handle: { name: ign_sample_coord }
               components:
                 selection_mode: swizzle
                 value: xyzx
             - type: resource
-              handle: ign_blue_noise
+              handle: { name: ign_blue_noise }
               components:
                 selection_mode: swizzle
                 value: xyzw
             - type: sampler
-              handle: ign_sampler
+              handle: { name: ign_sampler }
             - type: immediate32
               indices:
                 - immediate_lo: 0x00000000

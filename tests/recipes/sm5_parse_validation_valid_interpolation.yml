@@ -19,7 +19,7 @@ steps:
           interpolation: linear
           operands:
             - type: input
-              handle: interpolated_input
+              handle: { name: interpolated_input }
               components:
                 selection_mode: mask
                 value: xyzw

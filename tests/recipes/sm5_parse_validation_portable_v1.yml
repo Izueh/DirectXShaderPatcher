@@ -25,9 +25,9 @@ steps:
             - capture: dst
             - capture: coord
             - type: resource
-              handle: tex0
+              handle: { name: tex0 }
             - type: sampler
-              handle: samp0
+              handle: { name: samp0 }
             - type: immediate32
               indices:
                 - immediate_lo: 0x00000000

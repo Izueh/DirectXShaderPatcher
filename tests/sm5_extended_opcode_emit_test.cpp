@@ -191,14 +191,14 @@ steps:
       emit:
         - opcode: and
           operands:
-            - {type: temp, handle: noise_uv, components: {selection_mode: mask, value: z}}
+            - {type: temp, handle: { name: noise_uv }, components: {selection_mode: mask, value: z}}
             - {type: immediate32, immediates_u32: [31]}
-            - {type: constant_buffer, handle: test_cb, components: {selection_mode: select, value: x}}
+            - {type: constant_buffer, handle: { name: test_cb }, components: {selection_mode: select, value: x}}
         - opcode: ld
           operands:
-            - {type: temp, handle: sampled_noise, components: {selection_mode: mask, value: x}}
-            - {type: temp, handle: noise_uv, components: {selection_mode: swizzle, value: xyzw}}
-            - {type: resource, handle: test_tex, components: {selection_mode: swizzle, value: xyzw}}
+            - {type: temp, handle: { name: sampled_noise }, components: {selection_mode: mask, value: x}}
+            - {type: temp, handle: { name: noise_uv }, components: {selection_mode: swizzle, value: xyzw}}
+            - {type: resource, handle: { name: test_tex }, components: {selection_mode: swizzle, value: xyzw}}
 )YAML";
 
   auto parse_result = dxp::sm5::Recipe::ParseFromText(yaml, "inline-extended-opcode-emit-test");

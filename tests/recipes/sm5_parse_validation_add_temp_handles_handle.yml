@@ -15,10 +15,10 @@ steps:
         - opcode: mov
           operands:
             - type: temp
-              handle: tmp0
+              handle: { name: tmp0 }
             - capture: src
         - opcode: mov
           operands:
             - type: temp
-              handle: tmp1
+              handle: { name: tmp1 }
             - capture: src

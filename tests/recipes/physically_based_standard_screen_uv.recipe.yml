@@ -27,23 +27,23 @@ steps:
       emit:
         - opcode: div
           operands:
-            - { type: temp, handle: screen_uv_temp, components: { selection_mode: mask, value: xy } }
-            - { type: input, handle: screen_uv_x, components: { selection_mode: swizzle, value: xyxx } }
-            - { type: input, handle: screen_uv_x, components: { selection_mode: swizzle, value: wwww } }
+            - { type: temp, handle: { name: screen_uv_temp }, components: { selection_mode: mask, value: xy } }
+            - { type: input, handle: { name: screen_uv_x }, components: { selection_mode: swizzle, value: xyxx } }
+            - { type: input, handle: { name: screen_uv_x }, components: { selection_mode: swizzle, value: wwww } }
         - opcode: div
           operands:
-            - { type: temp, handle: screen_uv_temp, components: { selection_mode: mask, value: zw } }
-            - { type: input, handle: screen_uv_y, components: { selection_mode: swizzle, value: xxxy } }
-            - { type: input, handle: screen_uv_y, components: { selection_mode: swizzle, value: wwww } }
+            - { type: temp, handle: { name: screen_uv_temp }, components: { selection_mode: mask, value: zw } }
+            - { type: input, handle: { name: screen_uv_y }, components: { selection_mode: swizzle, value: xxxy } }
+            - { type: input, handle: { name: screen_uv_y }, components: { selection_mode: swizzle, value: wwww } }
         - opcode: add
           operands:
-            - { type: temp, handle: screen_uv_temp, components: { selection_mode: mask, value: xy } }
-            - { type: temp, handle: screen_uv_temp, modifier: neg, components: { selection_mode: swizzle, value: zwzz } }
-            - { type: temp, handle: screen_uv_temp, components: { selection_mode: swizzle, value: xyxx } }
+            - { type: temp, handle: { name: screen_uv_temp }, components: { selection_mode: mask, value: xy } }
+            - { type: temp, handle: { name: screen_uv_temp }, modifier: neg, components: { selection_mode: swizzle, value: zwzz } }
+            - { type: temp, handle: { name: screen_uv_temp }, components: { selection_mode: swizzle, value: xyxx } }
         - opcode: mul
           operands:
-            - { type: output, handle: screen_uv_out, components: { selection_mode: mask, value: xy } }
-            - { type: temp, handle: screen_uv_temp, components: { selection_mode: swizzle, value: xyxx } }
+            - { type: output, handle: { name: screen_uv_out }, components: { selection_mode: mask, value: xy } }
+            - { type: temp, handle: { name: screen_uv_temp }, components: { selection_mode: swizzle, value: xyxx } }
             - type: immediate32
               indices:
                 - { immediate_lo: 0x3F000000 }

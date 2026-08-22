@@ -35,16 +35,16 @@ steps:
         - opcode: mov
           operands:
             - type: temp
-              handle: raw_probe
+              handle: { name: raw_probe }
               components: { selection_mode: mask, value: xyzw }
             - type: resource
-              handle: injected_raw_srv
+              handle: { name: injected_raw_srv }
               components: { selection_mode: swizzle, value: xyzw }
         - opcode: mov
           operands:
             - type: temp
-              handle: uav_probe
+              handle: { name: uav_probe }
               components: { selection_mode: mask, value: xyzw }
             - type: unordered_access_view
-              handle: injected_raw_uav
+              handle: { name: injected_raw_uav }
               components: { selection_mode: swizzle, value: xyzw }
