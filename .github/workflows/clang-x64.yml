@@ -63,6 +63,14 @@ jobs:
       - name: Install CLI (x64 Debug)
         run: cmake --install out/build/clang-x64 --config Debug --component DirectXShaderPatcherCLI --prefix out/install/clang-x64
 
+      - name: Upload artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clang-x64
+          path: out/install/clang-x64/
+          retention-days: 7
+
       - name: Show sccache stats
         if: always()
         run: sccache --show-stats

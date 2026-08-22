@@ -3,24 +3,18 @@ name: Snapshot
 on:
   workflow_dispatch:
   push:
-    branches: [main]
     tags: ['v*']
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - ".github/workflows/**"
 
 permissions:
   contents: write
 
 jobs:
-  build:
+  build-or-release:
     runs-on: windows-latest
     env:
       SCCACHE_GHA_ENABLED: "true"
       SCCACHE_CACHE_SIZE: "5G"
       SCCACHE_C_CUSTOM_CACHE_BUSTER: "${{ github.workflow }}"
-      DXP_IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
 
     steps:
       - uses: actions/checkout@v4
@@ -33,99 +27,223 @@ jobs:
       - name: Install ninja-build tool
         uses: seanmiddleditch/gha-setup-ninja@v5
 
-      # Version identity: tagged pushes (v*) are releases named by the tag;
-      # main pushes are snapshots carrying their commit SHA in the version
-      # string (<ver>+snapshot.<sha>, SemVer build metadata) and artifact names.
+      # Compute release identity
       - name: Compute version identity
         shell: bash
         run: |
-          if [ "$DXP_IS_RELEASE" == "true" ]; then
-            SNAPSHA=""
-            echo "ARTIFACT_VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
-            echo "RELEASE_TAG=${GITHUB_REF_NAME}" >> $GITHUB_ENV
-          else
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             SNAPSHA=$(git rev-parse --short=8 HEAD)
             echo "ARTIFACT_VERSION=snapshot-$SNAPSHA" >> $GITHUB_ENV
             echo "RELEASE_TAG=snapshot" >> $GITHUB_ENV
+            echo "IS_PRERELEASE=true" >> $GITHUB_ENV
+          else
+            echo "ARTIFACT_VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+            echo "RELEASE_TAG=${GITHUB_REF_NAME}" >> $GITHUB_ENV
+            echo "IS_PRERELEASE=false" >> $GITHUB_ENV
           fi
-          echo "SNAPSHA=$SNAPSHA" >> $GITHUB_ENV
 
+      # Check if CI artifacts exist for this commit
+      - name: Check for existing CI artifacts
+        id: check-artifacts
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const commitSha = context.payload.commits?.[0]?.id
+              || await github.rest.repos.getCommit({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: context.ref
+                }).then(r => r.data.sha);
+
+            const workflows = ['ninja-x64', 'ninja-x86', 'clang-x64', 'clang-x86'];
+            const runIds = {};
+            let allFound = true;
+
+            for (const wf of workflows) {
+              const runs = await github.rest.actions.listWorkflowRuns({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: wf + '.yml',
+                head_sha: commitSha,
+                status: 'success',
+                per_page: 1
+              });
+              if (runs.data.workflow_runs.length > 0) {
+                runIds[wf] = runs.data.workflow_runs[0].id;
+              } else {
+                allFound = false;
+              }
+            }
+
+            core.setOutput('exists', allFound);
+            core.setOutput('runIds', JSON.stringify(runIds));
+            core.info(`Artifacts exist: ${allFound}`);
+
+      # ── PATH A: Download existing CI artifacts ──
+      - name: Download ninja-x64 artifacts
+        if: steps.check-artifacts.outputs.exists == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: ninja-x64
+          path: out/install/ninja-x64/
+          run-id: ${{ fromJSON(steps.check-artifacts.outputs.runIds)['ninja-x64'] }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download ninja-x86 artifacts
+        if: steps.check-artifacts.outputs.exists == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: ninja-x86
+          path: out/install/ninja-x86/
+          run-id: ${{ fromJSON(steps.check-artifacts.outputs.runIds)['ninja-x86'] }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download clang-x64 artifacts
+        if: steps.check-artifacts.outputs.exists == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: clang-x64
+          path: out/install/clang-x64/
+          run-id: ${{ fromJSON(steps.check-artifacts.outputs.runIds)['clang-x64'] }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download clang-x86 artifacts
+        if: steps.check-artifacts.outputs.exists == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: clang-x86
+          path: out/install/clang-x86/
+          run-id: ${{ fromJSON(steps.check-artifacts.outputs.runIds)['clang-x86'] }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── PATH B: Build all 4 targets from scratch ──
       - name: Configure build for amd64
+        if: steps.check-artifacts.outputs.exists != 'true'
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: amd64
 
       - name: Configure CMake (x64)
-        run: cmake --preset ninja-x64 -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DDXP_SNAPSHOT_SHA=${{ env.SNAPSHA }}
+        if: steps.check-artifacts.outputs.exists != 'true'
+        run: cmake --preset ninja-x64 -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Build (x64)
+        if: steps.check-artifacts.outputs.exists != 'true'
         run: cmake --build --preset ninja-x64-release --parallel
 
-      # Test gate: a commit that breaks the test suite must not update the
-      # rolling snapshot release. Failing tests abort the job, so the release
-      # step below never runs. Tests are x64-only (dxp_add_test returns early
-      # for x86), so one ctest run covers the suite.
       - name: Test (x64 Release)
+        if: steps.check-artifacts.outputs.exists != 'true'
         run: ctest --preset ninja-x64-release --output-on-failure
 
       - name: Build Debug (x64)
+        if: steps.check-artifacts.outputs.exists != 'true'
         run: cmake --build --preset ninja-x64-debug --parallel
 
       - name: Configure build for x86
+        if: steps.check-artifacts.outputs.exists != 'true'
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: amd64_x86
 
       - name: Configure CMake (x86)
-        run: cmake --preset ninja-x86 -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DDXP_SNAPSHOT_SHA=${{ env.SNAPSHA }}
+        if: steps.check-artifacts.outputs.exists != 'true'
+        run: cmake --preset ninja-x86 -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Build (x86)
+        if: steps.check-artifacts.outputs.exists != 'true'
         run: cmake --build --preset ninja-x86-release --parallel
 
       - name: Build Debug (x86)
+        if: steps.check-artifacts.outputs.exists != 'true'
         run: cmake --build --preset ninja-x86-debug --parallel
 
+      - name: Configure CMake (clang-x64)
+        if: steps.check-artifacts.outputs.exists != 'true'
+        run: cmake --preset clang-x64 -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+
+      - name: Build (clang-x64)
+        if: steps.check-artifacts.outputs.exists != 'true'
+        run: cmake --build --preset clang-x64-release --parallel
+
+      - name: Build Debug (clang-x64)
+        if: steps.check-artifacts.outputs.exists != 'true'
+        run: cmake --build --preset clang-x64-debug --parallel
+
       - name: Configure CMake (clang-x86)
-        run: cmake --preset clang-x86 -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DDXP_SNAPSHOT_SHA=${{ env.SNAPSHA }}
+        if: steps.check-artifacts.outputs.exists != 'true'
+        run: cmake --preset clang-x86 -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Build (clang-x86)
+        if: steps.check-artifacts.outputs.exists != 'true'
         run: cmake --build --preset clang-x86-release --parallel
 
       - name: Build Debug (clang-x86)
+        if: steps.check-artifacts.outputs.exists != 'true'
         run: cmake --build --preset clang-x86-debug --parallel
 
       - name: Show sccache stats
-        if: always()
+        if: steps.check-artifacts.outputs.exists != 'true'
         run: sccache --show-stats
 
+      # ── Common: package and release ──
       - name: Prepare Release folder
         run: md githubrelease
 
+      # Install from build (PATH B)
       - name: Install SDK (x64 Release)
+        if: steps.check-artifacts.outputs.exists != 'true'
         run: cmake --install out/build/ninja-x64 --config Release --component DirectXShaderPatcherSDK --prefix githubrelease/x64
       - name: Install SDK (x64 Debug)
+        if: steps.check-artifacts.outputs.exists != 'true'
         run: cmake --install out/build/ninja-x64 --config Debug --component DirectXShaderPatcherSDK --prefix githubrelease/x64
       - name: Install CLI (x64 Release)
+        if: steps.check-artifacts.outputs.exists != 'true'
         run: cmake --install out/build/ninja-x64 --config Release --component DirectXShaderPatcherCLI --prefix githubrelease/x64
       - name: Install CLI (x64 Debug)
+        if: steps.check-artifacts.outputs.exists != 'true'
         run: cmake --install out/build/ninja-x64 --config Debug --component DirectXShaderPatcherCLI --prefix githubrelease/x64
 
       - name: Install SDK (x86 Release)
+        if: steps.check-artifacts.outputs.exists != 'true'
         run: cmake --install out/build32/ninja-x86 --config Release --component DirectXShaderPatcherSDK --prefix githubrelease/x86
       - name: Install SDK (x86 Debug)
+        if: steps.check-artifacts.outputs.exists != 'true'
         run: cmake --install out/build32/ninja-x86 --config Debug --component DirectXShaderPatcherSDK --prefix githubrelease/x86
 
+      - name: Install SDK (clang-x64 Release)
+        if: steps.check-artifacts.outputs.exists != 'true'
+        run: cmake --install out/build/clang-x64 --config Release --component DirectXShaderPatcherSDK --prefix githubrelease/clang-x64
+      - name: Install SDK (clang-x64 Debug)
+        if: steps.check-artifacts.outputs.exists != 'true'
+        run: cmake --install out/build/clang-x64 --config Debug --component DirectXShaderPatcherSDK --prefix githubrelease/clang-x64
+      - name: Install CLI (clang-x64 Release)
+        if: steps.check-artifacts.outputs.exists != 'true'
+        run: cmake --install out/build/clang-x64 --config Release --component DirectXShaderPatcherCLI --prefix githubrelease/clang-x64
+      - name: Install CLI (clang-x64 Debug)
+        if: steps.check-artifacts.outputs.exists != 'true'
+        run: cmake --install out/build/clang-x64 --config Debug --component DirectXShaderPatcherCLI --prefix githubrelease/clang-x64
+
       - name: Install SDK (clang-x86 Release)
+        if: steps.check-artifacts.outputs.exists != 'true'
         run: cmake --install out/build32/clang-x86 --config Release --component DirectXShaderPatcherSDK --prefix githubrelease/clang-x86
       - name: Install SDK (clang-x86 Debug)
+        if: steps.check-artifacts.outputs.exists != 'true'
         run: cmake --install out/build32/clang-x86 --config Debug --component DirectXShaderPatcherSDK --prefix githubrelease/clang-x86
+
+      # Copy from downloaded artifacts (PATH A)
+      - name: Prepare githubrelease from artifacts
+        if: steps.check-artifacts.outputs.exists == 'true'
+        run: |
+          xcopy /E /I /Y out\install\ninja-x64 githubrelease\x64
+          xcopy /E /I /Y out\install\ninja-x86 githubrelease\x86
+          xcopy /E /I /Y out\install\clang-x64 githubrelease\clang-x64
+          xcopy /E /I /Y out\install\clang-x86 githubrelease\clang-x86
 
       - name: Package artifacts
         shell: powershell
         run: |
           $v = $env:ARTIFACT_VERSION
-          # Toolchain-qualified zip names: ninja (MSVC) x64/x86 and clang x86.
-          $archToLabel = @{ 'x64' = 'ninja-x64'; 'x86' = 'ninja-x86'; 'clang-x86' = 'clang-x86' }
+          $archToLabel = @{ 'x64' = 'ninja-x64'; 'x86' = 'ninja-x86'; 'clang-x64' = 'clang-x64'; 'clang-x86' = 'clang-x86' }
           foreach ($entry in $archToLabel.GetEnumerator()) {
             $arch = $entry.Key
             $label = $entry.Value
@@ -141,10 +259,7 @@ jobs:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
           automatic_release_tag: ${{ env.RELEASE_TAG }}
           title: DirectXShaderPatcher ${{ env.ARTIFACT_VERSION }}
-          # Snapshots (main pushes) are pre-releases so the curated SemVer
-          # release stays "Latest" on the Releases page; tagged v* pushes are
-          # real releases.
-          prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+          prerelease: ${{ env.IS_PRERELEASE }}
           files: |
             githubrelease/*.zip
             githubrelease/SHA256SUMS
