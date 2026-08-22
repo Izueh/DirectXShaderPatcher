@@ -31,6 +31,7 @@ struct AddResourceStep {
   /// @brief Declares a texture binding to add or reference in a recipe.
   struct TextureDecl {
     std::optional<uint32_t> register_index;  ///< Binding register index. Empty for next available, or a number for explicit.
+    std::optional<bool> reverse_bind;              ///< Auto-bind reverse order: take the HIGHEST free slot (scan down from the max) instead of the lowest.
     uint32_t dimension = 3U;
     std::string handle;
   };
@@ -43,6 +44,7 @@ struct AddResourceStep {
   /// @brief Input signature binding declaration.
   struct InputDecl {
     std::optional<uint32_t> register_index;  ///< Binding register index. Empty for next available, or a number for explicit.
+    std::optional<bool> reverse_bind;              ///< Auto-bind reverse order: take the HIGHEST free slot (scan down from the max) instead of the lowest.
     uint32_t interpolation_mode = 2U;
     std::string handle;
   };
@@ -50,12 +52,14 @@ struct AddResourceStep {
   /// @brief Output signature binding declaration.
   struct OutputDecl {
     std::optional<uint32_t> register_index;  ///< Binding register index. Empty for next available, or a number for explicit.
+    std::optional<bool> reverse_bind;              ///< Auto-bind reverse order: take the HIGHEST free slot (scan down from the max) instead of the lowest.
     std::string handle;
   };
 
   /// @brief Constant buffer binding declaration.
   struct CBufferDecl {
     std::optional<uint32_t> register_index;  ///< Binding register index. Empty for next available, or a number for explicit.
+    std::optional<bool> reverse_bind;              ///< Auto-bind reverse order: take the HIGHEST free slot (scan down from the max) instead of the lowest.
     uint32_t elements = 1;
     CbufferAccessPattern access_pattern = CbufferAccessPattern::ImmediateIndexed;
     std::string handle;
@@ -64,6 +68,7 @@ struct AddResourceStep {
   /// @brief Sampler binding declaration.
   struct SamplerDecl {
     std::optional<uint32_t> register_index;  ///< Binding register index. Empty for next available, or a number for explicit.
+    std::optional<bool> reverse_bind;              ///< Auto-bind reverse order: take the HIGHEST free slot (scan down from the max) instead of the lowest.
     SamplerMode mode = SamplerMode::Default;
     std::string handle;
   };
@@ -71,12 +76,14 @@ struct AddResourceStep {
   /// @brief Raw resource binding declaration.
   struct RawResourceDecl {
     std::optional<uint32_t> register_index;  ///< Binding register index. Empty for next available, or a number for explicit.
+    std::optional<bool> reverse_bind;              ///< Auto-bind reverse order: take the HIGHEST free slot (scan down from the max) instead of the lowest.
     std::string handle;
   };
 
   /// @brief Structured resource binding declaration.
   struct StructuredResourceDecl {
     std::optional<uint32_t> register_index;  ///< Binding register index. Empty for next available, or a number for explicit.
+    std::optional<bool> reverse_bind;              ///< Auto-bind reverse order: take the HIGHEST free slot (scan down from the max) instead of the lowest.
     uint32_t structure_stride;               ///< Required: byte stride of structured buffer elements
     std::string handle;
   };
@@ -84,6 +91,7 @@ struct AddResourceStep {
   /// @brief UAV binding declaration.
   struct UavDecl {
     std::optional<uint32_t> register_index;  ///< Binding register index. Empty for next available, or a number for explicit.
+    std::optional<bool> reverse_bind;              ///< Auto-bind reverse order: take the HIGHEST free slot (scan down from the max) instead of the lowest.
     UavKind kind = UavKind::Typed;
     uint32_t dimension = 3U;
     uint32_t structure_stride = 0;  ///< 0 = skip stride token, DXBC loader uses its default

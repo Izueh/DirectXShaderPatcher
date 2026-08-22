@@ -106,6 +106,7 @@ are honored per declaration type:
 |---|---|---|
 | `handle` | all | unique identifier; referenced by `apply_rule` emit operands via `handle` |
 | `register_index` | all | explicit bind point, or omitted for auto-assign |
+| `reverse_bind` | all | auto-assign in reverse order: take the **highest** free slot (scan down from the max) instead of the lowest. Game shaders commonly occupy the low registers, so taking the lowest free slot can collide with the game's own bindings (and those overrides are never restored) — reverse order lands the patched resource far from the game's usage (e.g. t127 for textures). |
 | `elements` | cbuffers | number of 16-byte elements |
 | `interpolation` | inputs | `InterpolationMode` key (`linear`, `constant`, …) |
 | `mode` | samplers | `SamplerMode` key (`default`, `comparison`, `mono`) |

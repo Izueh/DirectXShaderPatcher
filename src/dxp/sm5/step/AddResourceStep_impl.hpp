@@ -31,6 +31,7 @@ std::string DescribeOutcome(const AddResourceStep& step, const dxp::AddResourceR
 struct AddResourceDeclData {
   std::string handle;
   std::optional<uint32_t> register_index;
+  std::optional<bool> reverse_bind;            ///< Auto-bind reverse order: take the HIGHEST free slot instead of the lowest.
 
   std::optional<uint32_t> elements;
   std::optional<InterpolationMode> interpolation;

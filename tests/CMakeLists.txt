@@ -179,6 +179,7 @@ dxp_add_test(sm6_recipe_logging_test "sm6_recipe_logging_test.cpp" "${CMAKE_CURR
 dxp_add_test(sm5_recipe_required_no_match_test "sm5_recipe_required_no_match_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x7AFF256C.ps_5_0.cso")
 dxp_add_test(sm6_recipe_required_no_match_test "sm6_recipe_required_no_match_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x56C468C3.cs_6_6.cso")
 dxp_add_test(sm5_recipe_add_resource_tolerance_test "sm5_recipe_add_resource_tolerance_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x7AFF256C.ps_5_0.cso")
+dxp_add_test(sm5_reverse_bind_test "sm5_reverse_bind_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x7AFF256C.ps_5_0.cso")
 dxp_add_test(sm6_recipe_error_contract_test "sm6_recipe_error_contract_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x56C468C3.cs_6_6.cso")
 dxp_add_test(sm6_recipe_match_captured_test "sm6_recipe_match_captured_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x56C468C3.cs_6_6.cso")
 

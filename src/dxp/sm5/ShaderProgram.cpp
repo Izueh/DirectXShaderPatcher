@@ -839,35 +839,51 @@ auto ShaderProgram::GetInstructionOpcodes() const -> std::vector<Opcode> {
   return opcodes;
 }
 
-auto ShaderProgram::FindNextAvailableTexture(unsigned preferred) const -> unsigned {
+auto ShaderProgram::FindNextAvailableTexture(unsigned preferred, bool from_high) const -> unsigned {
   std::unordered_set<uint32_t> occupied;
   for (const auto& r : resources) occupied.insert(r.register_bind_point);
   unsigned bp = preferred;
-  while (occupied.contains(bp)) ++bp;
+  if (from_high) {
+    while (occupied.contains(bp)) --bp;
+  } else {
+    while (occupied.contains(bp)) ++bp;
+  }
   return bp;
 }
 
-auto ShaderProgram::FindNextAvailableSampler(unsigned preferred) const -> unsigned {
+auto ShaderProgram::FindNextAvailableSampler(unsigned preferred, bool from_high) const -> unsigned {
   std::unordered_set<uint32_t> occupied;
   for (const auto& s : samplers) occupied.insert(s.register_bind_point);
   unsigned bp = preferred;
-  while (occupied.contains(bp)) ++bp;
+  if (from_high) {
+    while (occupied.contains(bp)) --bp;
+  } else {
+    while (occupied.contains(bp)) ++bp;
+  }
   return bp;
 }
 
-auto ShaderProgram::FindNextAvailableCBuffer(unsigned preferred) const -> unsigned {
+auto ShaderProgram::FindNextAvailableCBuffer(unsigned preferred, bool from_high) const -> unsigned {
   std::unordered_set<uint32_t> occupied;
   for (const auto& c : cbuffers) occupied.insert(c.register_bind_point);
   unsigned bp = preferred;
-  while (occupied.contains(bp)) ++bp;
+  if (from_high) {
+    while (occupied.contains(bp)) --bp;
+  } else {
+    while (occupied.contains(bp)) ++bp;
+  }
   return bp;
 }
 
-auto ShaderProgram::FindNextAvailableUAV(unsigned preferred) const -> unsigned {
+auto ShaderProgram::FindNextAvailableUAV(unsigned preferred, bool from_high) const -> unsigned {
   std::unordered_set<uint32_t> occupied;
   for (const auto& r : resources) occupied.insert(r.register_bind_point);
   unsigned bp = preferred;
-  while (occupied.contains(bp)) ++bp;
+  if (from_high) {
+    while (occupied.contains(bp)) --bp;
+  } else {
+    while (occupied.contains(bp)) ++bp;
+  }
   return bp;
 }
 
@@ -891,19 +907,27 @@ void CollectSignatureRegisters(const std::vector<Instruction>& instructions,
 
 }  // namespace
 
-auto ShaderProgram::FindNextAvailableInput() const -> unsigned {
+auto ShaderProgram::FindNextAvailableInput(unsigned preferred, bool from_high) const -> unsigned {
   std::unordered_set<uint32_t> occupied;
   CollectSignatureRegisters(instructions, occupied, /*inputs=*/true);
-  unsigned bp = 0;
-  while (occupied.contains(bp)) ++bp;
+  unsigned bp = preferred;
+  if (from_high) {
+    while (occupied.contains(bp)) --bp;
+  } else {
+    while (occupied.contains(bp)) ++bp;
+  }
   return bp;
 }
 
-auto ShaderProgram::FindNextAvailableOutput() const -> unsigned {
+auto ShaderProgram::FindNextAvailableOutput(unsigned preferred, bool from_high) const -> unsigned {
   std::unordered_set<uint32_t> occupied;
   CollectSignatureRegisters(instructions, occupied, /*inputs=*/false);
-  unsigned bp = 0;
-  while (occupied.contains(bp)) ++bp;
+  unsigned bp = preferred;
+  if (from_high) {
+    while (occupied.contains(bp)) --bp;
+  } else {
+    while (occupied.contains(bp)) ++bp;
+  }
   return bp;
 }
 
@@ -1019,7 +1043,8 @@ auto ShaderProgram::FindInsertAfterLastDeclaration(Opcode opcode) -> uint32_t {
 }
 
 auto ShaderProgram::AllocateBindPoint(const std::unordered_set<uint32_t>& occupied, bool auto_bind,
-                                      uint32_t requested_register_index, uint32_t& resolved_register_index, std::string& error) -> bool {
+                                      uint32_t requested_register_index, bool reverse,
+                                      uint32_t& resolved_register_index, std::string& error) -> bool {
   if (!auto_bind) {
     if (occupied.contains(requested_register_index)) {
       error = "SM5 declaration register index already occupied: " + std::to_string(requested_register_index);
@@ -1029,13 +1054,23 @@ auto ShaderProgram::AllocateBindPoint(const std::unordered_set<uint32_t>& occupi
     return true;
   }
 
+  // Reverse order: take the HIGHEST free slot (requested = the max) so the
+  // patched resource lands away from the game's low-register bindings.
   uint32_t candidate = requested_register_index;
   while (occupied.contains(candidate)) {
-    if (candidate == std::numeric_limits<uint32_t>::max()) {
-      error = "SM5 declaration auto_bind exhausted available bind points";
-      return false;
+    if (reverse) {
+      if (candidate == 0) {
+        error = "SM5 declaration auto_bind exhausted available bind points";
+        return false;
+      }
+      --candidate;
+    } else {
+      if (candidate == std::numeric_limits<uint32_t>::max()) {
+        error = "SM5 declaration auto_bind exhausted available bind points";
+        return false;
+      }
+      ++candidate;
     }
-    ++candidate;
   }
   resolved_register_index = candidate;
   return true;
@@ -1166,7 +1201,7 @@ auto ShaderProgram::BuildUavDeclaration(const dxp::sm5::step::AddResourceStep::U
   return instruction;
 }
 
-auto ShaderProgram::AddInputDeclaration(const dxp::sm5::step::AddResourceStep::InputDecl& decl, uint32_t& out_register_index, std::string& error) -> bool {
+auto ShaderProgram::AddInputDeclaration(const dxp::sm5::step::AddResourceStep::InputDecl& decl, uint32_t& out_register_index, uint32_t max_bind_point, std::string& error) -> bool {
   std::unordered_set<uint32_t> occupied;
   uint32_t insert_index = 0;
   for (uint32_t i = 0; i < instructions.size(); ++i) {
@@ -1178,8 +1213,9 @@ auto ShaderProgram::AddInputDeclaration(const dxp::sm5::step::AddResourceStep::I
   }
 
   const bool is_auto = !decl.register_index.has_value();
-  const uint32_t requested = is_auto ? 0U : *decl.register_index;
-  if (!AllocateBindPoint(occupied, is_auto, requested, out_register_index, error)) {
+  const bool reverse = decl.reverse_bind.value_or(false);
+  const uint32_t requested = is_auto ? (reverse ? max_bind_point : 0U) : *decl.register_index;
+  if (!AllocateBindPoint(occupied, is_auto, requested, reverse, out_register_index, error)) {
     return false;
   }
 
@@ -1190,7 +1226,7 @@ auto ShaderProgram::AddInputDeclaration(const dxp::sm5::step::AddResourceStep::I
   return true;
 }
 
-auto ShaderProgram::AddOutputDeclaration(const dxp::sm5::step::AddResourceStep::OutputDecl& decl, uint32_t& out_register_index, std::string& error) -> bool {
+auto ShaderProgram::AddOutputDeclaration(const dxp::sm5::step::AddResourceStep::OutputDecl& decl, uint32_t& out_register_index, uint32_t max_bind_point, std::string& error) -> bool {
   std::unordered_set<uint32_t> occupied;
   uint32_t insert_index = 0;
   for (uint32_t i = 0; i < instructions.size(); ++i) {
@@ -1202,8 +1238,9 @@ auto ShaderProgram::AddOutputDeclaration(const dxp::sm5::step::AddResourceStep::
   }
 
   const bool is_auto = !decl.register_index.has_value();
-  const uint32_t requested = is_auto ? 0U : *decl.register_index;
-  if (!AllocateBindPoint(occupied, is_auto, requested, out_register_index, error)) {
+  const bool reverse = decl.reverse_bind.value_or(false);
+  const uint32_t requested = is_auto ? (reverse ? max_bind_point : 0U) : *decl.register_index;
+  if (!AllocateBindPoint(occupied, is_auto, requested, reverse, out_register_index, error)) {
     return false;
   }
 
@@ -1214,7 +1251,7 @@ auto ShaderProgram::AddOutputDeclaration(const dxp::sm5::step::AddResourceStep::
   return true;
 }
 
-auto ShaderProgram::AddTextureDeclaration(const dxp::sm5::step::AddResourceStep::TextureDecl& decl, uint32_t& out_register_index, std::string& error) -> bool {
+auto ShaderProgram::AddTextureDeclaration(const dxp::sm5::step::AddResourceStep::TextureDecl& decl, uint32_t& out_register_index, uint32_t max_bind_point, std::string& error) -> bool {
   std::unordered_set<uint32_t> occupied;
   for (const auto& instruction : instructions) {
     const auto opcode = instruction.opcode;
@@ -1224,8 +1261,9 @@ auto ShaderProgram::AddTextureDeclaration(const dxp::sm5::step::AddResourceStep:
   }
 
   const bool is_auto = !decl.register_index.has_value();
-  const uint32_t requested = is_auto ? 0U : *decl.register_index;
-  if (!AllocateBindPoint(occupied, is_auto, requested, out_register_index, error)) {
+  const bool reverse = decl.reverse_bind.value_or(false);
+  const uint32_t requested = is_auto ? (reverse ? max_bind_point : 0U) : *decl.register_index;
+  if (!AllocateBindPoint(occupied, is_auto, requested, reverse, out_register_index, error)) {
     return false;
   }
 
@@ -1237,8 +1275,7 @@ auto ShaderProgram::AddTextureDeclaration(const dxp::sm5::step::AddResourceStep:
   return true;
 }
 
-auto ShaderProgram::AddRawResourceDeclaration(const dxp::sm5::step::AddResourceStep::RawResourceDecl& decl, uint32_t& out_register_index,
-                                              std::string& error) -> bool {
+auto ShaderProgram::AddRawResourceDeclaration(const dxp::sm5::step::AddResourceStep::RawResourceDecl& decl, uint32_t& out_register_index, uint32_t max_bind_point, std::string& error) -> bool {
   std::unordered_set<uint32_t> occupied;
   for (const auto& instruction : instructions) {
     const auto opcode = instruction.opcode;
@@ -1248,8 +1285,9 @@ auto ShaderProgram::AddRawResourceDeclaration(const dxp::sm5::step::AddResourceS
   }
 
   const bool is_auto = !decl.register_index.has_value();
-  const uint32_t requested = is_auto ? 0U : *decl.register_index;
-  if (!AllocateBindPoint(occupied, is_auto, requested, out_register_index, error)) {
+  const bool reverse = decl.reverse_bind.value_or(false);
+  const uint32_t requested = is_auto ? (reverse ? max_bind_point : 0U) : *decl.register_index;
+  if (!AllocateBindPoint(occupied, is_auto, requested, reverse, out_register_index, error)) {
     return false;
   }
 
@@ -1261,8 +1299,7 @@ auto ShaderProgram::AddRawResourceDeclaration(const dxp::sm5::step::AddResourceS
   return true;
 }
 
-auto ShaderProgram::AddStructuredResourceDeclaration(const dxp::sm5::step::AddResourceStep::StructuredResourceDecl& decl, uint32_t& out_register_index,
-                                                     std::string& error) -> bool {
+auto ShaderProgram::AddStructuredResourceDeclaration(const dxp::sm5::step::AddResourceStep::StructuredResourceDecl& decl, uint32_t& out_register_index, uint32_t max_bind_point, std::string& error) -> bool {
   std::unordered_set<uint32_t> occupied;
   for (const auto& instruction : instructions) {
     const auto opcode = instruction.opcode;
@@ -1272,8 +1309,9 @@ auto ShaderProgram::AddStructuredResourceDeclaration(const dxp::sm5::step::AddRe
   }
 
   const bool is_auto = !decl.register_index.has_value();
-  const uint32_t requested = is_auto ? 0U : *decl.register_index;
-  if (!AllocateBindPoint(occupied, is_auto, requested, out_register_index, error)) {
+  const bool reverse = decl.reverse_bind.value_or(false);
+  const uint32_t requested = is_auto ? (reverse ? max_bind_point : 0U) : *decl.register_index;
+  if (!AllocateBindPoint(occupied, is_auto, requested, reverse, out_register_index, error)) {
     return false;
   }
 
@@ -1285,15 +1323,16 @@ auto ShaderProgram::AddStructuredResourceDeclaration(const dxp::sm5::step::AddRe
   return true;
 }
 
-auto ShaderProgram::AddCBufferDeclaration(const dxp::sm5::step::AddResourceStep::CBufferDecl& decl, uint32_t& out_register_index, std::string& error) -> bool {
+auto ShaderProgram::AddCBufferDeclaration(const dxp::sm5::step::AddResourceStep::CBufferDecl& decl, uint32_t& out_register_index, uint32_t max_bind_point, std::string& error) -> bool {
   std::unordered_set<uint32_t> occupied;
   for (const auto& cbuffer : cbuffers) {
     occupied.insert(cbuffer.register_bind_point);
   }
 
   const bool is_auto = !decl.register_index.has_value();
-  const uint32_t requested = is_auto ? 0U : *decl.register_index;
-  if (!AllocateBindPoint(occupied, is_auto, requested, out_register_index, error)) {
+  const bool reverse = decl.reverse_bind.value_or(false);
+  const uint32_t requested = is_auto ? (reverse ? max_bind_point : 0U) : *decl.register_index;
+  if (!AllocateBindPoint(occupied, is_auto, requested, reverse, out_register_index, error)) {
     return false;
   }
 
@@ -1305,7 +1344,7 @@ auto ShaderProgram::AddCBufferDeclaration(const dxp::sm5::step::AddResourceStep:
   return true;
 }
 
-auto ShaderProgram::AddSamplerDeclaration(const dxp::sm5::step::AddResourceStep::SamplerDecl& decl, uint32_t& out_register_index, std::string& error) -> bool {
+auto ShaderProgram::AddSamplerDeclaration(const dxp::sm5::step::AddResourceStep::SamplerDecl& decl, uint32_t& out_register_index, uint32_t max_bind_point, std::string& error) -> bool {
   std::unordered_set<uint32_t> occupied;
   for (const auto& instruction : instructions) {
     const auto opcode = instruction.opcode;
@@ -1315,8 +1354,9 @@ auto ShaderProgram::AddSamplerDeclaration(const dxp::sm5::step::AddResourceStep:
   }
 
   const bool is_auto = !decl.register_index.has_value();
-  const uint32_t requested = is_auto ? 0U : *decl.register_index;
-  if (!AllocateBindPoint(occupied, is_auto, requested, out_register_index, error)) {
+  const bool reverse = decl.reverse_bind.value_or(false);
+  const uint32_t requested = is_auto ? (reverse ? max_bind_point : 0U) : *decl.register_index;
+  if (!AllocateBindPoint(occupied, is_auto, requested, reverse, out_register_index, error)) {
     return false;
   }
 
@@ -1328,7 +1368,7 @@ auto ShaderProgram::AddSamplerDeclaration(const dxp::sm5::step::AddResourceStep:
   return true;
 }
 
-auto ShaderProgram::AddUavDeclaration(const dxp::sm5::step::AddResourceStep::UavDecl& decl, uint32_t& out_register_index, std::string& error) -> bool {
+auto ShaderProgram::AddUavDeclaration(const dxp::sm5::step::AddResourceStep::UavDecl& decl, uint32_t& out_register_index, uint32_t max_bind_point, std::string& error) -> bool {
   std::unordered_set<uint32_t> occupied;
   for (const auto& instruction : instructions) {
     const auto opcode = instruction.opcode;
@@ -1338,8 +1378,9 @@ auto ShaderProgram::AddUavDeclaration(const dxp::sm5::step::AddResourceStep::Uav
   }
 
   const bool is_auto = !decl.register_index.has_value();
-  const uint32_t requested = is_auto ? 0U : *decl.register_index;
-  if (!AllocateBindPoint(occupied, is_auto, requested, out_register_index, error)) {
+  const bool reverse = decl.reverse_bind.value_or(false);
+  const uint32_t requested = is_auto ? (reverse ? max_bind_point : 0U) : *decl.register_index;
+  if (!AllocateBindPoint(occupied, is_auto, requested, reverse, out_register_index, error)) {
     return false;
   }
 

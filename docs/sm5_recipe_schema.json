@@ -1001,6 +1001,12 @@
                      }
                   ]
                },
+               "reverse_bind": {
+                  "type": [
+                     "boolean",
+                     "null"
+                  ]
+               },
                "stride": {
                   "$ref": "#/$defs/uint32_t"
                }

@@ -65,7 +65,12 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
           continue;
         }
       } else {
-        bind_point = find_next(ctx.program);
+        // Auto-bind: default takes the lowest free slot, but game shaders
+        // commonly occupy the low registers, so that can collide with the game's
+        // own bindings. reverse_bind takes the HIGHEST free slot (scan down
+        // from the max) instead.
+        const bool reverse = decl.reverse_bind.value_or(false);
+        bind_point = reverse ? find_next(ctx.program, max_bind_point, true) : find_next(ctx.program, 0U, false);
         if (bind_point > max_bind_point) {
           const std::string message = std::string("add_resource: auto-bind exhausted for '") + kind_name + std::string("' — maximum bind point ") + std::to_string(max_bind_point);
           if (!fail_or_warn(message)) return std::unexpected(message);
@@ -73,7 +78,7 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
         }
       }
       std::string decl_error;
-      if (!add_decl(decl, bind_point, decl_error)) {
+      if (!add_decl(decl, bind_point, max_bind_point, decl_error)) {
         const std::string message = std::string("add_resource: ") + kind_name + std::string(" '") + decl.handle + "': " + decl_error;
         if (!fail_or_warn(message)) return std::unexpected(message);
         continue;
@@ -87,22 +92,22 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
     return {};
   };
 
-  if (auto r = resolve_and_add(step.textures, [&](const auto& d, uint32_t bp, std::string& e) { return ctx.program.AddTextureDeclaration(d, bp, e); }, [&](const auto& p) { return p.FindNextAvailableTexture(); }, ctx.Bindings(BindingKind::Texture), dxp::ResourceKind::Texture, kMaxTextureBindPoint, "texture", &result.textures_added); !r) {
+  if (auto r = resolve_and_add(step.textures, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddTextureDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableTexture(preferred, from_high); }, ctx.Bindings(BindingKind::Texture), dxp::ResourceKind::Texture, kMaxTextureBindPoint, "texture", &result.textures_added); !r) {
     return std::unexpected(std::move(r.error()));
   }
-  if (auto r = resolve_and_add(step.raw_resources, [&](const auto& d, uint32_t bp, std::string& e) { return ctx.program.AddRawResourceDeclaration(d, bp, e); }, [&](const auto& p) { return p.FindNextAvailableTexture(); }, ctx.Bindings(BindingKind::RawResource), dxp::ResourceKind::RawResource, kMaxTextureBindPoint, "raw_resource", &result.raw_resources_added); !r) {
+  if (auto r = resolve_and_add(step.raw_resources, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddRawResourceDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableTexture(preferred, from_high); }, ctx.Bindings(BindingKind::RawResource), dxp::ResourceKind::RawResource, kMaxTextureBindPoint, "raw_resource", &result.raw_resources_added); !r) {
     return std::unexpected(std::move(r.error()));
   }
-  if (auto r = resolve_and_add(step.structured_resources, [&](const auto& d, uint32_t bp, std::string& e) { return ctx.program.AddStructuredResourceDeclaration(d, bp, e); }, [&](const auto& p) { return p.FindNextAvailableTexture(); }, ctx.Bindings(BindingKind::StructuredResource), dxp::ResourceKind::StructuredResource, kMaxTextureBindPoint, "structured_resource", &result.structured_resources_added); !r) {
+  if (auto r = resolve_and_add(step.structured_resources, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddStructuredResourceDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableTexture(preferred, from_high); }, ctx.Bindings(BindingKind::StructuredResource), dxp::ResourceKind::StructuredResource, kMaxTextureBindPoint, "structured_resource", &result.structured_resources_added); !r) {
     return std::unexpected(std::move(r.error()));
   }
-  if (auto r = resolve_and_add(step.cbuffers, [&](const auto& d, uint32_t bp, std::string& e) { return ctx.program.AddCBufferDeclaration(d, bp, e); }, [&](const auto& p) { return p.FindNextAvailableCBuffer(); }, ctx.Bindings(BindingKind::CBuffer), dxp::ResourceKind::CBuffer, kMaxCBufferBindPoint, "cbuffer", &result.cbuffers_added); !r) {
+  if (auto r = resolve_and_add(step.cbuffers, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddCBufferDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableCBuffer(preferred, from_high); }, ctx.Bindings(BindingKind::CBuffer), dxp::ResourceKind::CBuffer, kMaxCBufferBindPoint, "cbuffer", &result.cbuffers_added); !r) {
     return std::unexpected(std::move(r.error()));
   }
-  if (auto r = resolve_and_add(step.samplers, [&](const auto& d, uint32_t bp, std::string& e) { return ctx.program.AddSamplerDeclaration(d, bp, e); }, [&](const auto& p) { return p.FindNextAvailableSampler(); }, ctx.Bindings(BindingKind::Sampler), dxp::ResourceKind::Sampler, kMaxSamplerBindPoint, "sampler", &result.samplers_added); !r) {
+  if (auto r = resolve_and_add(step.samplers, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddSamplerDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableSampler(preferred, from_high); }, ctx.Bindings(BindingKind::Sampler), dxp::ResourceKind::Sampler, kMaxSamplerBindPoint, "sampler", &result.samplers_added); !r) {
     return std::unexpected(std::move(r.error()));
   }
-  if (auto r = resolve_and_add(step.uavs, [&](const auto& d, uint32_t bp, std::string& e) { return ctx.program.AddUavDeclaration(d, bp, e); }, [&](const auto& p) { return p.FindNextAvailableUAV(); }, ctx.Bindings(BindingKind::Uav), dxp::ResourceKind::Uav, kMaxUavBindPoint, "uav", &result.uavs_added); !r) {
+  if (auto r = resolve_and_add(step.uavs, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddUavDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableUAV(preferred, from_high); }, ctx.Bindings(BindingKind::Uav), dxp::ResourceKind::Uav, kMaxUavBindPoint, "uav", &result.uavs_added); !r) {
     return std::unexpected(std::move(r.error()));
   }
 
@@ -117,7 +122,8 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
           continue;
         }
       } else {
-        bind_point = ctx.program.FindNextAvailableInput();
+        const bool reverse = decl.reverse_bind.value_or(false);
+        bind_point = reverse ? ctx.program.FindNextAvailableInput(kMaxInputBindPoint, true) : ctx.program.FindNextAvailableInput(0U, false);
         if (bind_point > kMaxInputBindPoint) {
           const std::string message = "add_resource: auto-bind exhausted for 'input'";
           if (!fail_or_warn(message)) return std::unexpected(message);
@@ -125,7 +131,7 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
         }
       }
       std::string decl_error;
-      if (!ctx.program.AddInputDeclaration(decl, bind_point, decl_error)) {
+      if (!ctx.program.AddInputDeclaration(decl, bind_point, kMaxInputBindPoint, decl_error)) {
         const std::string message = "add_resource: input '" + decl.handle + "': " + decl_error;
         if (!fail_or_warn(message)) return std::unexpected(message);
         continue;
@@ -148,7 +154,8 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
           continue;
         }
       } else {
-        bind_point = ctx.program.FindNextAvailableOutput();
+        const bool reverse = decl.reverse_bind.value_or(false);
+        bind_point = reverse ? ctx.program.FindNextAvailableOutput(kMaxOutputBindPoint, true) : ctx.program.FindNextAvailableOutput(0U, false);
         if (bind_point > kMaxOutputBindPoint) {
           const std::string message = "add_resource: auto-bind exhausted for 'output'";
           if (!fail_or_warn(message)) return std::unexpected(message);
@@ -156,7 +163,7 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
         }
       }
       std::string decl_error;
-      if (!ctx.program.AddOutputDeclaration(decl, bind_point, decl_error)) {
+      if (!ctx.program.AddOutputDeclaration(decl, bind_point, kMaxOutputBindPoint, decl_error)) {
         const std::string message = "add_resource: output '" + decl.handle + "': " + decl_error;
         if (!fail_or_warn(message)) return std::unexpected(message);
         continue;
@@ -251,6 +258,7 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     AddResourceStep::TextureDecl decl{};
     decl.handle = d.handle;
     decl.register_index = d.register_index;
+    decl.reverse_bind = d.reverse_bind;
     if (d.dimension.has_value()) decl.dimension = *d.dimension;
     step.textures.push_back(std::move(decl));
   }
@@ -259,6 +267,7 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     AddResourceStep::RawResourceDecl decl{};
     decl.handle = d.handle;
     decl.register_index = d.register_index;
+    decl.reverse_bind = d.reverse_bind;
     step.raw_resources.push_back(std::move(decl));
   }
   step.structured_resources.reserve(structured_resources.size());
@@ -269,6 +278,7 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     AddResourceStep::StructuredResourceDecl decl{};
     decl.handle = d.handle;
     decl.register_index = d.register_index;
+    decl.reverse_bind = d.reverse_bind;
     decl.structure_stride = d.stride;
     step.structured_resources.push_back(std::move(decl));
   }
@@ -277,6 +287,7 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     AddResourceStep::CBufferDecl decl{};
     decl.handle = d.handle;
     decl.register_index = d.register_index;
+    decl.reverse_bind = d.reverse_bind;
     if (d.elements.has_value()) decl.elements = *d.elements;
     step.cbuffers.push_back(std::move(decl));
   }
@@ -285,6 +296,7 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     AddResourceStep::SamplerDecl decl{};
     decl.handle = d.handle;
     decl.register_index = d.register_index;
+    decl.reverse_bind = d.reverse_bind;
     if (d.mode.has_value()) decl.mode = *d.mode;
     step.samplers.push_back(std::move(decl));
   }
@@ -293,6 +305,7 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     AddResourceStep::UavDecl decl{};
     decl.handle = d.handle;
     decl.register_index = d.register_index;
+    decl.reverse_bind = d.reverse_bind;
     if (d.kind.has_value()) decl.kind = *d.kind;
     if (d.globally_coherent.has_value()) decl.globally_coherent = *d.globally_coherent;
     if (d.has_counter.has_value()) decl.has_order_preserving_counter = *d.has_counter;
@@ -303,6 +316,7 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     AddResourceStep::InputDecl decl{};
     decl.handle = d.handle;
     decl.register_index = d.register_index;
+    decl.reverse_bind = d.reverse_bind;
     if (d.interpolation.has_value()) {
       decl.interpolation_mode = static_cast<uint32_t>(*d.interpolation);
     }
@@ -313,6 +327,7 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     AddResourceStep::OutputDecl decl{};
     decl.handle = d.handle;
     decl.register_index = d.register_index;
+    decl.reverse_bind = d.reverse_bind;
     step.outputs.push_back(std::move(decl));
   }
   step.temps = temps;

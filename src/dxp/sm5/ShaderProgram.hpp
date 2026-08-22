@@ -85,42 +85,41 @@ struct ShaderProgram {
   std::vector<uint32_t> indexable_temps;
 
   /// @brief Adds an input signature declaration.
-  bool AddInputDeclaration(const step::AddResourceStep::InputDecl& decl, uint32_t& out_register_index, std::string& error);
+  bool AddInputDeclaration(const step::AddResourceStep::InputDecl& decl, uint32_t& out_register_index, uint32_t max_bind_point, std::string& error);
   /// @brief Adds an output signature declaration.
-  bool AddOutputDeclaration(const step::AddResourceStep::OutputDecl& decl, uint32_t& out_register_index, std::string& error);
+  bool AddOutputDeclaration(const step::AddResourceStep::OutputDecl& decl, uint32_t& out_register_index, uint32_t max_bind_point, std::string& error);
   /// @brief Adds a texture resource declaration.
-  bool AddTextureDeclaration(const step::AddResourceStep::TextureDecl& decl, uint32_t& out_register_index, std::string& error);
+  bool AddTextureDeclaration(const step::AddResourceStep::TextureDecl& decl, uint32_t& out_register_index, uint32_t max_bind_point, std::string& error);
   /// @brief Adds a raw resource declaration.
-  bool AddRawResourceDeclaration(const step::AddResourceStep::RawResourceDecl& decl, uint32_t& out_register_index, std::string& error);
+  bool AddRawResourceDeclaration(const step::AddResourceStep::RawResourceDecl& decl, uint32_t& out_register_index, uint32_t max_bind_point, std::string& error);
   /// @brief Adds a structured resource declaration.
-  bool AddStructuredResourceDeclaration(const step::AddResourceStep::StructuredResourceDecl& decl, uint32_t& out_register_index,
-                                        std::string& error);
+  bool AddStructuredResourceDeclaration(const step::AddResourceStep::StructuredResourceDecl& decl, uint32_t& out_register_index, uint32_t max_bind_point, std::string& error);
   /// @brief Adds a constant buffer declaration.
-  bool AddCBufferDeclaration(const step::AddResourceStep::CBufferDecl& decl, uint32_t& out_register_index, std::string& error);
+  bool AddCBufferDeclaration(const step::AddResourceStep::CBufferDecl& decl, uint32_t& out_register_index, uint32_t max_bind_point, std::string& error);
   /// @brief Adds a sampler declaration.
-  bool AddSamplerDeclaration(const step::AddResourceStep::SamplerDecl& decl, uint32_t& out_register_index, std::string& error);
+  bool AddSamplerDeclaration(const step::AddResourceStep::SamplerDecl& decl, uint32_t& out_register_index, uint32_t max_bind_point, std::string& error);
   /// @brief Adds a UAV declaration.
-  bool AddUavDeclaration(const step::AddResourceStep::UavDecl& decl, uint32_t& out_register_index, std::string& error);
+  bool AddUavDeclaration(const step::AddResourceStep::UavDecl& decl, uint32_t& out_register_index, uint32_t max_bind_point, std::string& error);
 
   /// @brief Finds the next available bind point for textures.
-  [[nodiscard]] unsigned FindNextAvailableTexture(unsigned preferred = 0) const;
+  [[nodiscard]] unsigned FindNextAvailableTexture(unsigned preferred = 0, bool from_high = false) const;
   /// @brief Finds the next available bind point for samplers.
-  [[nodiscard]] unsigned FindNextAvailableSampler(unsigned preferred = 0) const;
+  [[nodiscard]] unsigned FindNextAvailableSampler(unsigned preferred = 0, bool from_high = false) const;
   /// @brief Finds the next available bind point for constant buffers.
-  [[nodiscard]] unsigned FindNextAvailableCBuffer(unsigned preferred = 0) const;
+  [[nodiscard]] unsigned FindNextAvailableCBuffer(unsigned preferred = 0, bool from_high = false) const;
   /// @brief Finds the next available bind point for UAVs.
-  [[nodiscard]] unsigned FindNextAvailableUAV(unsigned preferred = 0) const;
+  [[nodiscard]] unsigned FindNextAvailableUAV(unsigned preferred = 0, bool from_high = false) const;
   /// @brief Finds the next available bind point for input signature registers.
-  [[nodiscard]] unsigned FindNextAvailableInput() const;
+  [[nodiscard]] unsigned FindNextAvailableInput(unsigned preferred = 0, bool from_high = false) const;
   /// @brief Finds the next available bind point for output signature registers.
-  [[nodiscard]] unsigned FindNextAvailableOutput() const;
+  [[nodiscard]] unsigned FindNextAvailableOutput(unsigned preferred = 0, bool from_high = false) const;
 
   /// @brief Ensures a DCL_TEMPS declaration matching the current temp_count exists
   /// (updates an existing one, or inserts one after the last declaration).
   void EnsureTempDeclaration();
 
   /// @brief Allocates a bind point, optionally auto-assigning to the next available slot.
-  static bool AllocateBindPoint(const std::unordered_set<uint32_t>& occupied, bool auto_bind, uint32_t requested,
+  static bool AllocateBindPoint(const std::unordered_set<uint32_t>& occupied, bool auto_bind, uint32_t requested, bool reverse,
                                 uint32_t& resolved_register_index, std::string& error);
   /// @brief Records a named binding and checks for duplicates.
   static bool RecordNamedBinding(std::unordered_map<std::string, uint32_t>& bindings, const std::string& handle,
