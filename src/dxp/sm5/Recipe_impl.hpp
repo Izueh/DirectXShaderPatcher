@@ -20,10 +20,9 @@ using StepDataVariant =
 /// @brief Top-level SM5 recipe data structure.
 struct RecipeData {
   uint32_t version = 1;
+  std::unordered_map<std::string, PrimitiveValue> env;
   std::vector<StepDataVariant> steps;
 };
-
-std::pair<Recipe, std::string> ConvertRecipe(const RecipeData& data);
 
 }  // namespace dxp::sm5
 
@@ -44,7 +43,7 @@ struct meta<dxp::sm5::StepDataVariant> {
 template <>
 struct meta<dxp::sm5::RecipeData> {
   using T = dxp::sm5::RecipeData;
-  static constexpr auto value = object("version", &T::version, "steps", &T::steps);
+  static constexpr auto value = object("version", &T::version, "env", &T::env, "steps", &T::steps);
   static constexpr auto validate = [](const dxp::sm5::RecipeData& self, std::string& error) {
     if (self.version != 1) {
       error = "unsupported recipe schema version";

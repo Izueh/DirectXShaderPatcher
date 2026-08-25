@@ -33,10 +33,6 @@ std::expected<void, std::string> ValidateRecipe(const Recipe& recipe) {
   return {};
 }
 
-std::pair<Recipe, std::string> ConvertRecipe(const RecipeData& data) {
-  return dxp::detail::ConvertRecipeData<Recipe>(data.steps);
-}
-
 size_t Recipe::GetStepCount() const {
   return steps_.size();
 }

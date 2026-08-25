@@ -366,8 +366,7 @@ auto SelectMatchIndices(const std::vector<MatchResult>& matches,
   return selected;
 }
 
-auto ResolveInsertAnchorIndex([[maybe_unused]] RewriteKind rewrite_mode, const MatchResult& match, const std::string& rewrite_path,
-                              uint32_t& insert_idx, std::string& error) -> bool {
+auto ResolveInsertAnchorIndex(const MatchResult& match, const std::string& rewrite_path, int32_t insert_idx, std::string& error) -> bool {
   if (insert_idx < 0) {
     error = rewrite_path + ": before/after rewrites require non-negative insert index";
     return false;
@@ -379,12 +378,11 @@ auto ResolveInsertAnchorIndex([[maybe_unused]] RewriteKind rewrite_mode, const M
     return false;
   }
   const uint32_t kWindowLength = kWindowEnd - kWindowStart + 1;
-  const auto kRelativeIndex = insert_idx;
+  const auto kRelativeIndex = static_cast<uint32_t>(insert_idx);
   if (kRelativeIndex >= kWindowLength) {
     error = rewrite_path + ": relative_index is out of match window bounds";
     return false;
   }
-  insert_idx = kWindowStart + kRelativeIndex;
   return true;
 }
 
@@ -428,7 +426,7 @@ auto ResolveReplacementRange(RewriteKind rewrite_mode, int32_t range_start_offse
   return true;
 }
 
-auto ResolveRangeReplacement(RewriteKind rewrite_mode, int32_t range_start_offset, int32_t range_end_offset, const MatchResult& match, const std::string& rewrite_path,
+auto ResolveRangeReplacement(RewriteKind rewrite_mode, int32_t range_start_offset, int32_t range_end_offset, int32_t insert_index, const MatchResult& match, const std::string& rewrite_path,
                              RewriteAction& action, std::string& error) -> bool {
   if (rewrite_mode == RewriteKind::Replace) {
     uint32_t range_start = 0;
@@ -444,22 +442,23 @@ auto ResolveRangeReplacement(RewriteKind rewrite_mode, int32_t range_start_offse
   }
 
   if (rewrite_mode == RewriteKind::Before) {
-    uint32_t insert_index = 0;
-    if (!ResolveInsertAnchorIndex(rewrite_mode, match, rewrite_path, insert_index, error)) {
+    if (!ResolveInsertAnchorIndex(match, rewrite_path, insert_index, error)) {
       return false;
     }
     action.type = RewriteActionType::InsertBefore;
-    action.insert_position = insert_index;
+    action.insert_position = static_cast<uint32_t>(insert_index);
     return true;
   }
 
   if (rewrite_mode == RewriteKind::After) {
-    uint32_t insert_index = 0;
-    if (!ResolveInsertAnchorIndex(rewrite_mode, match, rewrite_path, insert_index, error)) {
+    if (insert_index < 0) {
+      insert_index = static_cast<int32_t>(match.range_end_index);
+    }
+    if (!ResolveInsertAnchorIndex(match, rewrite_path, insert_index, error)) {
       return false;
     }
     action.type = RewriteActionType::InsertBefore;
-    action.insert_position = insert_index + 1;
+    action.insert_position = static_cast<uint32_t>(insert_index) + 1;
     return true;
   }
 
@@ -480,14 +479,15 @@ auto ResolveRangeReplacement(RewriteKind rewrite_mode, int32_t range_start_offse
   return false;
 }
 
-auto EvaluateRuleRewriteCallback(RewriteKind rewrite_mode, const Rule& rule, [[maybe_unused]] const std::string& step_name, [[maybe_unused]] bool required,
+auto EvaluateRuleRewriteCallback(RewriteKind rewrite_mode, const Rule& rule, int32_t range_start_offset, int32_t range_end_offset, int32_t insert_index,
+                                 [[maybe_unused]] const std::string& step_name, [[maybe_unused]] bool required,
                                  [[maybe_unused]] const dxp::sm5::ShaderProgram& program, const MatchResult& match,
                                  const std::string& rewrite_path, ExecutionContext& ctx,
                                  std::vector<RewriteAction>& actions, std::string& error) -> bool {
   error.clear();
   actions.clear();
   RewriteAction action;
-  if (!ResolveRangeReplacement(rewrite_mode, rule.range_start_offset, rule.range_end_offset, match, rewrite_path, action, error)) {
+  if (!ResolveRangeReplacement(rewrite_mode, range_start_offset, range_end_offset, insert_index, match, rewrite_path, action, error)) {
     return false;
   }
 
@@ -505,6 +505,7 @@ auto EvaluateRuleRewriteCallback(RewriteKind rewrite_mode, const Rule& rule, [[m
 auto ExecuteSingleRuleImpl(dxp::sm5::ShaderProgram& program, const std::string& step_name,
                            const Rule& rule_model, MatchKind mode,
                            bool required, RewriteKind rewrite_mode,
+                           int32_t insert_index, int32_t range_start_offset, int32_t range_end_offset,
                            ExecutionContext& ctx) -> std::expected<dxp::ApplyRuleResults, std::string> {
   dxp::ApplyRuleResults result;
 
@@ -601,7 +602,7 @@ auto ExecuteSingleRuleImpl(dxp::sm5::ShaderProgram& program, const std::string& 
     std::vector<RewriteAction> local_actions;
     std::string error;
     const std::string kRewritePath = "step[" + step_name + "].match[" + std::to_string(selected_index) + "]";
-    if (!EvaluateRuleRewriteCallback(rewrite_mode, rule_model, step_name, required, program, match, kRewritePath, ctx,
+    if (!EvaluateRuleRewriteCallback(rewrite_mode, rule_model, range_start_offset, range_end_offset, insert_index, step_name, required, program, match, kRewritePath, ctx,
                                      local_actions, error)) {
       return std::unexpected(std::move(error));
     }
@@ -635,10 +636,6 @@ auto ExecuteSingleRuleImpl(dxp::sm5::ShaderProgram& program, const std::string& 
 auto RuleData::Compile() const -> std::expected<Rule, std::string> {
   std::string error;
   Rule rule{};
-
-  rule.range_start_offset = range_start_offset;
-  rule.range_end_offset = range_end_offset;
-  rule.insert_relative_index = insert_index;
 
   auto convert_operand = [&](auto&& self, const OperandData& operand_data, bool is_emit_operand = false) -> std::expected<OperandPattern, std::string> {
     auto convert = [&self](const OperandData& d, bool e) {
@@ -953,11 +950,19 @@ auto ApplyRuleData::Compile() const -> std::expected<ApplyRuleStep, std::string>
   if (!compiled) {
     return std::unexpected(name + ": " + compiled.error());
   }
-  return ApplyRuleStep{name, required, rewrite_mode, cond, std::move(*compiled), match_mode};
+  ApplyRuleStep step{name, required, rewrite_mode, cond, std::move(*compiled), match_mode};
+  int32_t resolved_insert = insert_index;
+  if (rewrite_mode == RewriteKind::Before && resolved_insert < 0) {
+    resolved_insert = 0;
+  }
+  step.insert_index = resolved_insert;
+  step.range_start_offset = range_start_offset;
+  step.range_end_offset = range_end_offset;
+  return step;
 }
 
 std::expected<dxp::ApplyRuleResults, std::string> Execute(const ApplyRuleStep& step, ExecutionContext& ctx) {
-  return ExecuteSingleRuleImpl(ctx.program, step.name, step.rule, step.match_mode, step.required, step.rewrite_mode, ctx);
+  return ExecuteSingleRuleImpl(ctx.program, step.name, step.rule, step.match_mode, step.required, step.rewrite_mode, step.insert_index, step.range_start_offset, step.range_end_offset, ctx);
 }
 
 std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string& error, dxp::ValidationContext& ctx) {
@@ -1031,12 +1036,8 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string
     }
   }
 
-  if ((step.rewrite_mode == RewriteKind::Before || step.rewrite_mode == RewriteKind::After) && step.rule.insert_relative_index < 0) {
-    error = "SM5 before/after rewrites require match.insert_index";
-    return std::unexpected(std::move(error));
-  }
-  if (step.rule.insert_relative_index >= 0 && step.rewrite_mode != RewriteKind::Before && step.rewrite_mode != RewriteKind::After) {
-    error = "SM5 match.insert_index requires mode: before or after";
+  if ((step.rewrite_mode == RewriteKind::Before || step.rewrite_mode == RewriteKind::After) && step.insert_index < 0) {
+    error = "SM5 before/after rewrites require insert_index >= 0";
     return std::unexpected(std::move(error));
   }
 
@@ -1683,9 +1684,25 @@ auto ResolveOperand(const MatchResult& match, ExecutionContext& context, const O
     operand_index.immediate_lo = *rbp;
     operand.index_entries.push_back(std::move(operand_index));
     if (op.handle->element_index.has_value()) {
+      uint32_t resolved_element = 0;
+      const auto& elem_idx = *op.handle->element_index;
+      if (std::holds_alternative<std::string>(elem_idx)) {
+        if (const auto* var = context.FindVariable(std::get<std::string>(elem_idx))) {
+          std::visit(
+              [&resolved_element](const auto& v) {
+                using T = std::decay_t<decltype(v)>;
+                if constexpr (std::is_integral_v<T> || std::is_floating_point_v<T>) {
+                  resolved_element = static_cast<uint32_t>(v);
+                }
+              },
+              *var);
+        }
+      } else {
+        resolved_element = std::get<uint32_t>(elem_idx);
+      }
       Operand::Index element_index;
       element_index.representation = Operand::IndexRepresentation::Immediate32;
-      element_index.immediate_lo = *op.handle->element_index;
+      element_index.immediate_lo = resolved_element;
       operand.index_entries.push_back(std::move(element_index));
     } else if (*op.type == OperandType::CBuffer) {
       Operand::Index element_index;

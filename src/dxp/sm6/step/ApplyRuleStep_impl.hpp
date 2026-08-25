@@ -92,9 +92,6 @@ struct RuleData {
   std::string name;
   std::vector<MatchInstructionPatternData> match;
   std::vector<EmitPatternData> emit;
-  int32_t range_start_offset = 0;
-  int32_t range_end_offset = -1;
-  int32_t insert_index = -1;
   bool prune = false;
 
   /**
@@ -108,10 +105,13 @@ struct RuleData {
 struct ApplyRuleData {
   std::string name;
   RewriteKind rewrite_mode = RewriteKind::Replace;
-  RuleData rule;
   MatchKind match_mode = MatchKind::First;
   bool required = true;
   ::dxp::ConditionData condition;
+  int32_t insert_index = -1;
+  int32_t range_start_offset = 0;
+  int32_t range_end_offset = -1;
+  RuleData rule;
 
   /**
    * @brief Compile this YAML data into an ApplyRuleStep.
@@ -126,25 +126,17 @@ namespace glz {
 
 template <>
 struct meta<dxp::sm6::step::RewriteKind> {
-  using T = dxp::sm6::step::RewriteKind;
-  static constexpr auto keys = std::array{"none", "replace", "before", "after", "replace_range"};
-  static constexpr auto value = std::array{dxp::sm6::step::RewriteKind::None, dxp::sm6::step::RewriteKind::Replace,
-                                           dxp::sm6::step::RewriteKind::Before, dxp::sm6::step::RewriteKind::After,
-                                           dxp::sm6::step::RewriteKind::ReplaceRange};
+  static constexpr auto value = enumerate("none", dxp::sm6::step::RewriteKind::None, "replace", dxp::sm6::step::RewriteKind::Replace, "before", dxp::sm6::step::RewriteKind::Before, "after", dxp::sm6::step::RewriteKind::After, "replace_range", dxp::sm6::step::RewriteKind::ReplaceRange);
 };
 
 template <>
 struct meta<dxp::sm6::step::MatchKind> {
-  using T = dxp::sm6::step::MatchKind;
-  static constexpr auto keys = std::array{"first", "last", "match_all"};
-  static constexpr auto value = std::array{dxp::sm6::step::MatchKind::First, dxp::sm6::step::MatchKind::Last, dxp::sm6::step::MatchKind::MatchAll};
+  static constexpr auto value = enumerate("first", dxp::sm6::step::MatchKind::First, "last", dxp::sm6::step::MatchKind::Last, "match_all", dxp::sm6::step::MatchKind::MatchAll);
 };
 
 template <>
 struct meta<dxp::sm6::step::OperandKind> {
-  using T = dxp::sm6::step::OperandKind;
-  static constexpr std::array keys = {"undefined", "call", "constant", "resource"};
-  static constexpr std::array value = {T::Undefined, T::Call, T::Constant, T::Resource};
+  static constexpr auto value = enumerate("undefined", dxp::sm6::step::OperandKind::Undefined, "call", dxp::sm6::step::OperandKind::Call, "constant", dxp::sm6::step::OperandKind::Constant, "resource", dxp::sm6::step::OperandKind::Resource);
 };
 
 template <>

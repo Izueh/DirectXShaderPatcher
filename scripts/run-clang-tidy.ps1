@@ -22,6 +22,7 @@ param (
     [switch]$Quiet,
     [string]$Files,
     [switch]$Changed,
+    [switch]$Diff,
     [string]$Base = "HEAD",
     [int]$Jobs = 16,
     [switch]$Help
@@ -35,6 +36,7 @@ if ($Help) {
     Write-Host "Options:" -ForegroundColor Yellow
     Write-Host "  -Files <regexes>   Comma-separated regexes to scope which TUs run"
     Write-Host "  -Changed           Only lint TUs changed since -Base (default HEAD)"
+    Write-Host "  -Diff              Only lint TUs in the current working tree diff"
     Write-Host "  -Base <ref>        Git ref for -Changed"
     Write-Host "  -Fix               Apply automatic fixes (and format)"
     Write-Host "  -Quiet             Suppress per-TU clang-tidy noise"
@@ -120,19 +122,24 @@ $runnerArgs = @(
     "-clang-tidy-binary", $clangTidy
     "-j", $Jobs.ToString()
     "-header-filter=$rootName[\\/](src|include|tests|tools)[\\/]"
-    "-exclude-header-filter=external[\\/]|out[\\/]build"
+    "-exclude-header-filter=external[\\/]|out[\\/]build|DirectXShaderCompiler[\\/]"
     # Project TUs only: must live under src|tests|tools|include and not external/.
     "-source-filter=^(?!.*[\\/]external[\\/])(?=.*[\\/](src|tests|tools|include)[\\/]).*$"
 )
-if ($Quiet) { $runnerArgs += "-quiet" }
-if ($Fix) { $runnerArgs += "-fix"; $runnerArgs += "-format" }
 
 # --- Compute TU scope: positional REGEXES (slash-agnostic) for the runner ---
 # The LLVM runner matches positional args as regexes against absolute compile-DB
 # paths (backslash separators on Windows), so bare names match anywhere and
 # forward slashes are made separator-agnostic.
-if ($Changed) {
-    $changedFiles = @(& git diff --name-only --relative "$Base" -- src tests tools include 2>$null)
+if ($Diff) {
+    $diffFiles = @(& git -C $repoRoot diff --name-only -- src tests tools include 2>$null)
+    Write-Host "Diff TUs (working tree): $($diffFiles.Count)" -ForegroundColor Gray
+    foreach ($f in $diffFiles) {
+        $escaped = [regex]::Escape($f.Replace('\', '/'))
+        $runnerArgs += $escaped.Replace('/', '[/\\]')
+    }
+} elseif ($Changed) {
+    $changedFiles = @(& git -C $repoRoot diff --name-only "$Base" -- src tests tools include 2>$null)
     Write-Host "Changed TUs since $Base : $($changedFiles.Count)" -ForegroundColor Gray
     foreach ($f in $changedFiles) {
         $escaped = [regex]::Escape($f.Replace('\', '/'))
@@ -143,6 +150,8 @@ if ($Changed) {
         $runnerArgs += $pattern.Replace('/', '[/\\]')
     }
 }
+if ($Quiet) { $runnerArgs += "-quiet" }
+if ($Fix) { $runnerArgs += "-fix"; $runnerArgs += "-format" }
 
 Write-Host "`nRunning clang-tidy..." -ForegroundColor Cyan
 Write-Host "  Runner: $runner" -ForegroundColor Gray

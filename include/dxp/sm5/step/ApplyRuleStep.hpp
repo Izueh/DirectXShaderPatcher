@@ -116,7 +116,7 @@ struct ApplyRuleStep {
     std::vector<std::variant<std::string, double>> immediates_f64;
     struct Handle {
       std::string name;
-      std::optional<uint32_t> element_index;
+      std::optional<std::variant<std::string, uint32_t>> element_index;
     };
     std::optional<Handle> handle;
     std::string mask;
@@ -205,9 +205,6 @@ struct ApplyRuleStep {
   struct Rule {
     std::vector<InstructionPattern> match_patterns;
     std::vector<EmitPattern> emit_patterns;
-    int32_t range_start_offset = 0;
-    int32_t range_end_offset = -1;
-    int32_t insert_relative_index = -1;
   };
 
   std::string name;
@@ -216,6 +213,9 @@ struct ApplyRuleStep {
   std::optional<ConditionNode> condition;
   Rule rule;
   MatchKind match_mode = MatchKind::First;
+  int32_t insert_index = -1;
+  int32_t range_start_offset = 0;
+  int32_t range_end_offset = -1;
 
   ApplyRuleStep(std::string name_val, bool required, RewriteKind rewrite_mode_val, std::optional<ConditionNode> condition_val, Rule rule_val, MatchKind match_kind = MatchKind::First)
       : name(std::move(name_val)), required(required), rewrite_mode(rewrite_mode_val), condition(std::move(condition_val)), rule(std::move(rule_val)), match_mode(match_kind) {}

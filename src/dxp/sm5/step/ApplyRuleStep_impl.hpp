@@ -63,7 +63,7 @@ struct OperandData {
   std::vector<std::variant<std::string, double>> immediates_f64;
   struct FromHandleData {
     std::string name;
-    std::optional<uint32_t> element_index;
+    std::optional<std::variant<std::string, uint32_t>> element_index;  ///< Variable name (string) or literal uint32_t value.
   };
   std::optional<FromHandleData> handle;
   Components components;
@@ -118,9 +118,6 @@ struct EmitInstructionData {
 
 struct RuleData {
   std::vector<InstructionMatchData> match;
-  int32_t range_start_offset = 0;
-  int32_t range_end_offset = -1;
-  int32_t insert_index = -1;
   std::vector<EmitInstructionData> emit;
 
   /**
@@ -133,10 +130,13 @@ struct RuleData {
 struct ApplyRuleData {
   std::string name;
   RewriteKind rewrite_mode = RewriteKind::Replace;
-  RuleData rule;
   MatchKind match_mode = MatchKind::First;
   bool required = true;
   dxp::ConditionData condition;
+  int32_t insert_index = -1;
+  int32_t range_start_offset = 0;
+  int32_t range_end_offset = -1;
+  RuleData rule;
 
   /**
    * @brief Compile this YAML data into an ApplyRuleStep.
@@ -151,32 +151,22 @@ namespace glz {
 
 template <>
 struct meta<dxp::sm5::step::ApplyRuleStep::MatchKind> {
-  using enum dxp::sm5::step::ApplyRuleStep::MatchKind;
-  static constexpr std::array keys{"first", "last", "match_all"};
-  static constexpr std::array value{First, Last, MatchAll};
+  static constexpr auto value = enumerate("first", dxp::sm5::step::ApplyRuleStep::MatchKind::First, "last", dxp::sm5::step::ApplyRuleStep::MatchKind::Last, "match_all", dxp::sm5::step::ApplyRuleStep::MatchKind::MatchAll);
 };
 
 template <>
 struct meta<dxp::sm5::step::ApplyRuleStep::RewriteKind> {
-  using enum dxp::sm5::step::ApplyRuleStep::RewriteKind;
-  static constexpr std::array keys{"none", "replace", "before", "after", "replace_range"};
-  static constexpr std::array value{None, Replace, Before, After, ReplaceRange};
+  static constexpr auto value = enumerate("none", dxp::sm5::step::ApplyRuleStep::RewriteKind::None, "replace", dxp::sm5::step::ApplyRuleStep::RewriteKind::Replace, "before", dxp::sm5::step::ApplyRuleStep::RewriteKind::Before, "after", dxp::sm5::step::ApplyRuleStep::RewriteKind::After, "replace_range", dxp::sm5::step::ApplyRuleStep::RewriteKind::ReplaceRange);
 };
 
 template <>
 struct meta<dxp::sm5::step::ApplyRuleStep::OperandIndexRepresentation> {
-  using enum dxp::sm5::step::ApplyRuleStep::OperandIndexRepresentation;
-  static constexpr std::array keys{"immediate32", "immediate64", "relative", "immediate32_plus_relative",
-                                   "immediate64_plus_relative"};
-  static constexpr std::array value{Immediate32, Immediate64, Relative, Immediate32PlusRelative,
-                                    Immediate64PlusRelative};
+  static constexpr auto value = enumerate("immediate32", dxp::sm5::step::ApplyRuleStep::OperandIndexRepresentation::Immediate32, "immediate64", dxp::sm5::step::ApplyRuleStep::OperandIndexRepresentation::Immediate64, "relative", dxp::sm5::step::ApplyRuleStep::OperandIndexRepresentation::Relative, "immediate32_plus_relative", dxp::sm5::step::ApplyRuleStep::OperandIndexRepresentation::Immediate32PlusRelative, "immediate64_plus_relative", dxp::sm5::step::ApplyRuleStep::OperandIndexRepresentation::Immediate64PlusRelative);
 };
 
 template <>
 struct meta<dxp::sm5::ExtendedOpcodeType> {
-  using enum dxp::sm5::ExtendedOpcodeType;
-  static constexpr std::array keys{"empty", "sample_controls", "resource_dim", "resource_type"};
-  static constexpr std::array value{Empty, SampleControls, ResourceDim, ResourceType};
+  static constexpr auto value = enumerate("empty", dxp::sm5::ExtendedOpcodeType::Empty, "sample_controls", dxp::sm5::ExtendedOpcodeType::SampleControls, "resource_dim", dxp::sm5::ExtendedOpcodeType::ResourceDim, "resource_type", dxp::sm5::ExtendedOpcodeType::ResourceType);
 };
 
 }  // namespace glz

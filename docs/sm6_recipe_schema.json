@@ -1,6 +1,12 @@
 {
    "type": "object",
    "properties": {
+      "env": {
+         "type": "object",
+         "additionalProperties": {
+            "$ref": "#/$defs/std::variant<bool,int32_t,uint32_t,int64_t,uint64_t,double>"
+         }
+      },
       "steps": {
          "type": "array",
          "items": {
@@ -111,20 +117,65 @@
                      "condition": {
                         "$ref": "#/$defs/dxp::ConditionData"
                      },
+                     "insert_index": {
+                        "$ref": "#/$defs/int32_t"
+                     },
                      "kind": {
                         "const": "apply_rule"
                      },
                      "match_mode": {
-                        "$ref": "#/$defs/dxp::sm6::step::MatchKind"
+                        "type": "string",
+                        "oneOf": [
+                           {
+                              "title": "first",
+                              "const": "first"
+                           },
+                           {
+                              "title": "last",
+                              "const": "last"
+                           },
+                           {
+                              "title": "match_all",
+                              "const": "match_all"
+                           }
+                        ]
                      },
                      "name": {
                         "type": "string"
+                     },
+                     "range_end_offset": {
+                        "$ref": "#/$defs/int32_t"
+                     },
+                     "range_start_offset": {
+                        "$ref": "#/$defs/int32_t"
                      },
                      "required": {
                         "type": "boolean"
                      },
                      "rewrite_mode": {
-                        "$ref": "#/$defs/dxp::sm6::step::RewriteKind"
+                        "type": "string",
+                        "oneOf": [
+                           {
+                              "title": "none",
+                              "const": "none"
+                           },
+                           {
+                              "title": "replace",
+                              "const": "replace"
+                           },
+                           {
+                              "title": "before",
+                              "const": "before"
+                           },
+                           {
+                              "title": "after",
+                              "const": "after"
+                           },
+                           {
+                              "title": "replace_range",
+                              "const": "replace_range"
+                           }
+                        ]
                      },
                      "rule": {
                         "type": "object",
@@ -226,9 +277,6 @@
                                  "additionalProperties": false
                               }
                            },
-                           "insert_index": {
-                              "$ref": "#/$defs/int32_t"
-                           },
                            "match": {
                               "type": "array",
                               "items": {
@@ -240,12 +288,6 @@
                            },
                            "prune": {
                               "type": "boolean"
-                           },
-                           "range_end_offset": {
-                              "$ref": "#/$defs/int32_t"
-                           },
-                           "range_start_offset": {
-                              "$ref": "#/$defs/int32_t"
                            }
                         },
                         "additionalProperties": false
@@ -561,34 +603,25 @@
          },
          "additionalProperties": false
       },
-      "dxp::sm6::step::MatchKind": {
-         "type": [
-            "number",
-            "string",
-            "boolean",
-            "object",
-            "array",
-            "null"
-         ]
-      },
       "dxp::sm6::step::OperandKind": {
-         "type": [
-            "number",
-            "string",
-            "boolean",
-            "object",
-            "array",
-            "null"
-         ]
-      },
-      "dxp::sm6::step::RewriteKind": {
-         "type": [
-            "number",
-            "string",
-            "boolean",
-            "object",
-            "array",
-            "null"
+         "type": "string",
+         "oneOf": [
+            {
+               "title": "undefined",
+               "const": "undefined"
+            },
+            {
+               "title": "call",
+               "const": "call"
+            },
+            {
+               "title": "constant",
+               "const": "constant"
+            },
+            {
+               "title": "resource",
+               "const": "resource"
+            }
          ]
       },
       "int32_t": {
@@ -600,6 +633,48 @@
          "type": "integer",
          "minimum": -9.223372036854776E18,
          "maximum": 9.223372036854776E18
+      },
+      "std::variant<bool,int32_t,uint32_t,int64_t,uint64_t,double>": {
+         "type": [
+            "number",
+            "boolean"
+         ],
+         "oneOf": [
+            {
+               "type": "boolean",
+               "title": "bool"
+            },
+            {
+               "type": "integer",
+               "title": "int32_t",
+               "minimum": -2147483648,
+               "maximum": 2147483647
+            },
+            {
+               "type": "integer",
+               "title": "uint32_t",
+               "minimum": 0,
+               "maximum": 4294967295
+            },
+            {
+               "type": "integer",
+               "title": "int64_t",
+               "minimum": -9.223372036854776E18,
+               "maximum": 9.223372036854776E18
+            },
+            {
+               "type": "integer",
+               "title": "uint64_t",
+               "minimum": 0,
+               "maximum": 1.8446744073709552E19
+            },
+            {
+               "type": "number",
+               "title": "double",
+               "minimum": -1.7976931348623157E308,
+               "maximum": 1.7976931348623157E308
+            }
+         ]
       },
       "std::variant<std::string,bool,int32_t,uint32_t,int64_t,uint64_t,double>": {
          "type": [

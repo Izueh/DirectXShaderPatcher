@@ -18,6 +18,7 @@
 #include <any>
 #include <cstddef>
 #include <cstdint>
+#include <dxp/ExportTypes.hpp>
 #include <dxp/sm6/Recipe.hpp>
 #include <expected>
 #include <string>
@@ -38,10 +39,6 @@ std::expected<void, std::string> ValidateRecipe(const Recipe& recipe) {
 
   recipe.validated_.store(true, std::memory_order_release);
   return {};
-}
-
-std::pair<Recipe, std::string> ConvertRecipe(const RecipeData& data) {
-  return dxp::detail::ConvertRecipeData<Recipe>(data.steps);
 }
 
 size_t Recipe::GetStepCount() const {

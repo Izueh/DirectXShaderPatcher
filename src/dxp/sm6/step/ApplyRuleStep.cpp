@@ -61,10 +61,10 @@ struct MatchResult {
   std::unordered_map<std::string, llvm::Value*> captures;
   std::vector<llvm::Instruction*> instructions;
 
-  llvm::Instruction* ResolveAnchor(RewriteKind rewrite_mode, const Rule& rule,
+  llvm::Instruction* ResolveAnchor(RewriteKind rewrite_mode, int32_t insert_index,
                                    llvm::Instruction* range_start,
                                    llvm::Instruction* range_end) const;
-  bool ApplyRule(RewriteKind rewrite_mode, const Rule& rule, llvm::IRBuilder<>& builder,
+  bool ApplyRule(RewriteKind rewrite_mode, const Rule& rule, int32_t insert_index, int32_t range_start_offset, int32_t range_end_offset, llvm::IRBuilder<>& builder,
                  llvm::Module& module, hlsl::DxilModule& dxil_module,
                  sm6::ExecutionContext* ctx = nullptr);
 
@@ -295,7 +295,7 @@ auto ResolveInstructionAtOffset(llvm::Instruction* base, uint32_t offset, llvm::
   return true;
 }
 
-auto ResolveReplacementRange(RewriteKind rewrite_mode, const Rule& rule, llvm::Instruction* replacement_target,
+auto ResolveReplacementRange(RewriteKind rewrite_mode, int32_t range_start_offset, int32_t range_end_offset, llvm::Instruction* replacement_target,
                              llvm::Instruction*& range_start, llvm::Instruction*& range_end) -> bool {
   range_start = nullptr;
   range_end = nullptr;
@@ -303,9 +303,9 @@ auto ResolveReplacementRange(RewriteKind rewrite_mode, const Rule& rule, llvm::I
   // Replace swaps the entire matched window; only ReplaceRange (custom
   // sub-range via offsets) reaches this function.
   if (rewrite_mode != RewriteKind::ReplaceRange) return false;
-  if (rule.range_start_offset < 0 || rule.range_end_offset < -1) return false;
-  const auto start_offset = static_cast<uint32_t>(rule.range_start_offset);
-  const uint32_t end_offset = rule.range_end_offset < 0 ? start_offset : static_cast<uint32_t>(rule.range_end_offset);
+  if (range_start_offset < 0 || range_end_offset < -1) return false;
+  const auto start_offset = static_cast<uint32_t>(range_start_offset);
+  const uint32_t end_offset = range_end_offset < 0 ? start_offset : static_cast<uint32_t>(range_end_offset);
   if (start_offset > end_offset) return false;
   if (!ResolveInstructionAtOffset(replacement_target, start_offset, range_start)) return false;
   if (!ResolveInstructionAtOffset(replacement_target, end_offset, range_end)) return false;
@@ -831,6 +831,7 @@ void CollectAllMatches(llvm::Function& function, const InstructionPattern& patte
 
 bool ApplyDxilRewriteRules(llvm::Function& function, llvm::Module& module, hlsl::DxilModule& dxil_module,
                            const Rule& rule, MatchKind match_mode, RewriteKind rewrite_mode,
+                           int32_t insert_index, int32_t range_start_offset, int32_t range_end_offset,
                            unsigned* applied_rule_count, unsigned* mutated_rule_count,
                            [[maybe_unused]] const std::unordered_map<std::string, llvm::Value*>& captures,
                            ::dxp::ApplyRuleResults* export_results,
@@ -943,7 +944,7 @@ bool ApplyDxilRewriteRules(llvm::Function& function, llvm::Module& module, hlsl:
       }
     }
     llvm::IRBuilder<> builder(match.instructions.front());
-    if (!match.ApplyRule(rewrite_mode, rule, builder, module, dxil_module, ctx)) return false;
+    if (!match.ApplyRule(rewrite_mode, rule, insert_index, range_start_offset, range_end_offset, builder, module, dxil_module, ctx)) return false;
     ++applied_count;
     ++mutation_count;
     return true;
@@ -1097,15 +1098,19 @@ void PruneCandidateInstructions(const std::vector<llvm::WeakTrackingVH>& candida
   }
 }
 
-llvm::Instruction* MatchResult::ResolveAnchor(RewriteKind rewrite_mode, const Rule& rule,
+llvm::Instruction* MatchResult::ResolveAnchor(RewriteKind rewrite_mode, int32_t insert_index,
                                               [[maybe_unused]] llvm::Instruction* range_start,
                                               [[maybe_unused]] llvm::Instruction* range_end) const {
-  if (rule.insert_relative_index >= 0 && std::cmp_less(rule.insert_relative_index, instructions.size())) {
-    return instructions[rule.insert_relative_index];
+  if (insert_index < 0 && rewrite_mode == RewriteKind::After) {
+    insert_index = static_cast<int32_t>(instructions.size()) - 1;
+  }
+  if (insert_index >= 0 && static_cast<uint32_t>(insert_index) < instructions.size()) {
+    return instructions[static_cast<size_t>(insert_index)];
   }
   switch (rewrite_mode) {
     case RewriteKind::Replace:
     case RewriteKind::ReplaceRange:
+      return instructions.empty() ? rootCall : instructions.back();
     case RewriteKind::After:
       return instructions.empty() ? rootCall : instructions.back();
     case RewriteKind::Before:
@@ -1116,7 +1121,7 @@ llvm::Instruction* MatchResult::ResolveAnchor(RewriteKind rewrite_mode, const Ru
   return rootCall;
 }
 
-bool MatchResult::ApplyRule(RewriteKind rewrite_mode, const Rule& rule, llvm::IRBuilder<>& builder,
+bool MatchResult::ApplyRule(RewriteKind rewrite_mode, const Rule& rule, int32_t insert_index, int32_t range_start_offset, int32_t range_end_offset, llvm::IRBuilder<>& builder,
                             llvm::Module& module, hlsl::DxilModule& dxil_module,
                             sm6::ExecutionContext* ctx) {
   if (rewrite_mode == RewriteKind::None) return true;
@@ -1141,9 +1146,9 @@ bool MatchResult::ApplyRule(RewriteKind rewrite_mode, const Rule& rule, llvm::IR
   llvm::Instruction* range_start = nullptr;
   llvm::Instruction* range_end = nullptr;
   if (rewrite_mode == RewriteKind::ReplaceRange) {
-    if (!ResolveReplacementRange(rewrite_mode, rule, range_target, range_start, range_end)) return false;
+    if (!ResolveReplacementRange(rewrite_mode, range_start_offset, range_end_offset, range_target, range_start, range_end)) return false;
   }
-  llvm::Instruction* anchor = this->ResolveAnchor(rewrite_mode, rule, range_start, range_end);
+  llvm::Instruction* anchor = this->ResolveAnchor(rewrite_mode, insert_index, range_start, range_end);
   if (anchor == nullptr) return false;
 
   const bool has_replace_captured =
@@ -1284,9 +1289,6 @@ auto EmitOperandPatternData::Compile() const -> std::expected<EmitOperand, std::
 
 auto RuleData::Compile() const -> std::expected<Rule, std::string> {
   Rule result;
-  result.range_start_offset = range_start_offset;
-  result.range_end_offset = range_end_offset;
-  result.insert_relative_index = insert_index;
   result.prune_dead_instructions = prune;
   for (const auto& m : match) {
     auto compiled = m.Compile();
@@ -1304,7 +1306,11 @@ auto RuleData::Compile() const -> std::expected<Rule, std::string> {
 auto ApplyRuleData::Compile() const -> std::expected<ApplyRuleStep, std::string> {
   auto rule = this->rule.Compile();
   if (!rule) return std::unexpected(std::move(rule.error()));
-  return ApplyRuleStep{name, required, rewrite_mode, {}, std::move(*rule), match_mode};
+  ApplyRuleStep step{name, required, rewrite_mode, {}, std::move(*rule), match_mode};
+  step.insert_index = insert_index;
+  step.range_start_offset = range_start_offset;
+  step.range_end_offset = range_end_offset;
+  return step;
 }
 
 auto MatchInstructionPatternData::Compile() const -> std::expected<InstructionPattern, std::string> {
@@ -1391,7 +1397,7 @@ std::expected<::dxp::ApplyRuleResults, std::string> Execute(const ApplyRuleStep&
   unsigned total_matches = 0;
   unsigned total_mutations = 0;
   ::dxp::ApplyRuleResults result;
-  ApplyDxilRewriteRules(*entry, *mod, *dxil, step.rule, step.match_mode, step.rewrite_mode, &total_matches, &total_mutations,
+  ApplyDxilRewriteRules(*entry, *mod, *dxil, step.rule, step.match_mode, step.rewrite_mode, step.insert_index, step.range_start_offset, step.range_end_offset, &total_matches, &total_mutations,
                         ctx.captures.values, &result, &ctx);
   result.match_count = total_matches;
   result.applied_count = total_mutations;

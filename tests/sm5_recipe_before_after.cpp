@@ -35,8 +35,8 @@ steps:
   - kind: apply_rule
     name: before_replacement
     rewrite_mode: before
+    insert_index: 0
     rule:
-        insert_index: 0
         match:
           - opcode: mul
             capture: target_mul

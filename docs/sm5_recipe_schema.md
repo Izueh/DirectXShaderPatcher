@@ -142,6 +142,8 @@ steps:
 | `required` | optional, default `true` — stop-fast on no-match; the step is reported failed (success=false) and remaining steps do not run |
 | `match_mode` | optional: `first`, `last`, `match_all` (default `first`) |
 | `rewrite_mode` | optional: `none`, `replace`, `before`, `after`, `replace_range` (default `replace`). `replace` swaps the **entire matched sequence** with the emit block; `replace_range` replaces a custom sub-range via `range_start_offset`/`range_end_offset` (default end `-1` = whole window); `before`/`after` insert the emit relative to `insert_index` without erasing |
+| `insert_index` | insertion position (used with `before`/`after`; defaults to `0` for `before`, last match for `after`) |
+| `range_start_offset` / `range_end_offset` | rewrite sub-range for `rewrite_mode: replace_range`, relative to the first matched instruction; `range_end_offset: -1` (default) extends to the last matched instruction |
 | `rule` | required — the rule object |
 | `condition` | optional guard |
 
@@ -151,8 +153,6 @@ steps:
 |---|---|
 | `match` | required, non-empty list of instruction match patterns |
 | `emit` | optional list of emit instruction patterns |
-| `range_start_offset` / `range_end_offset` | rewrite sub-range for `rewrite_mode: replace_range`, relative to the first matched instruction; `range_end_offset: -1` (default) extends to the last matched instruction |
-| `insert_index` | insertion position (used with `before`/`after`) |
 
 ### Match instruction pattern
 

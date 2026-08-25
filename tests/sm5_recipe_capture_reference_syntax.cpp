@@ -27,8 +27,8 @@ steps:
   - kind: apply_rule
     name: capture_reference_syntax
     rewrite_mode: before
+    insert_index: 0
     rule:
-        insert_index: 0
         match:
           - opcode: mul
             capture: inst
