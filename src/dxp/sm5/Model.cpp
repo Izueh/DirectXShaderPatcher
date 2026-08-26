@@ -131,13 +131,43 @@ auto EncodeResourceDeclaration(const Instruction& instruction) -> std::vector<ui
     return {};
   }
 
-  // Preserve the parsed dimension (the original's token0 dimension bits) and
-  // the parsed return-type token; the builder populates both for new decls.
-  const uint32_t dimension =
-      instruction.controls.resource_dimension != 0 ? instruction.controls.resource_dimension : static_cast<uint32_t>(D3D10_SB_RESOURCE_DIMENSION_TEXTURE2D);
-  const uint32_t return_type_token = instruction.controls.resource_return_type != 0
-                                         ? instruction.controls.resource_return_type
-                                         : EncodeFloatResourceReturnTypeToken();
+  // Extract dimension and return type from extended_op_codes if present
+  // (recipe-specified overrides); otherwise fall back to parsed controls.
+  std::optional<ResourceDimension> dimension;
+  std::array<std::optional<ResourceReturnType>, 4> return_type;
+  return_type.fill(std::nullopt);
+  for (const auto& ext : instruction.controls.extended_op_codes) {
+    const uint32_t kType = ext.value & kExtendedOpcodeTypeMask;
+    if (kType == static_cast<uint32_t>(ExtendedOpcodeType::ResourceDim)) {
+      dimension = static_cast<ResourceDimension>(DECODE_D3D11_SB_EXTENDED_RESOURCE_DIMENSION(ext.value));
+    } else if (kType == static_cast<uint32_t>(ExtendedOpcodeType::ResourceType)) {
+      for (uint32_t component = 0; component < 4; ++component) {
+        return_type[component] = static_cast<ResourceReturnType>(
+            DECODE_D3D11_SB_EXTENDED_RESOURCE_RETURN_TYPE(ext.value, component));
+      }
+    }
+  }
+
+  // Fall back to parsed controls if not overridden by extended_op_codes.
+  if (!dimension.has_value()) {
+    dimension = instruction.controls.resource_dimension.has_value()
+                    ? instruction.controls.resource_dimension
+                    : ResourceDimension::Texture2D;
+  }
+  bool any_return_type = false;
+  for (uint32_t component = 0; component < 4; ++component) {
+    if (!return_type[component].has_value()) {
+      if (instruction.controls.resource_return_type[component].has_value()) {
+        return_type[component] = instruction.controls.resource_return_type[component];
+      } else {
+        return_type[component] = ResourceReturnType::Float;
+      }
+    }
+    if (return_type[component].has_value()) {
+      any_return_type = true;
+    }
+  }
+  (void)any_return_type;
 
   const auto resource_operand =
       EncodeDeclarationOperand(OperandType::Resource, {*instruction.operands.front().index_entries[0].immediate_lo});
@@ -145,9 +175,13 @@ auto EncodeResourceDeclaration(const Instruction& instruction) -> std::vector<ui
 
   std::vector<uint32_t> encoded;
   encoded.reserve(kLength);
-  encoded.push_back(ENCODE_D3D10_SB_OPCODE_TYPE(D3D10_SB_OPCODE_DCL_RESOURCE) | ENCODE_D3D10_SB_RESOURCE_DIMENSION(static_cast<D3D10_SB_RESOURCE_DIMENSION>(dimension)) | ENCODE_D3D10_SB_TOKENIZED_INSTRUCTION_LENGTH(kLength));
+  encoded.push_back(ENCODE_D3D10_SB_OPCODE_TYPE(D3D10_SB_OPCODE_DCL_RESOURCE) | ENCODE_D3D10_SB_RESOURCE_DIMENSION(static_cast<D3D10_SB_RESOURCE_DIMENSION>(*dimension)) | ENCODE_D3D10_SB_TOKENIZED_INSTRUCTION_LENGTH(kLength));
   encoded.insert(encoded.end(), resource_operand.begin(), resource_operand.end());
-  encoded.push_back(return_type_token);
+  uint32_t kReturnTypeToken = 0;
+  for (uint32_t component = 0; component < 4; ++component) {
+    kReturnTypeToken |= ENCODE_D3D10_SB_RESOURCE_RETURN_TYPE(static_cast<D3D10_SB_RESOURCE_RETURN_TYPE>(static_cast<uint8_t>(*return_type[component])), component);
+  }
+  encoded.push_back(kReturnTypeToken);
   return encoded;
 }
 
@@ -156,7 +190,12 @@ auto EncodeConstantBufferDeclaration(const Instruction& instruction) -> std::vec
     return {};
   }
 
-  const uint32_t access_pattern = D3D10_SB_CONSTANT_BUFFER_IMMEDIATE_INDEXED;
+  uint32_t access_pattern = D3D10_SB_CONSTANT_BUFFER_IMMEDIATE_INDEXED;
+  if (instruction.controls.access_pattern.has_value()) {
+    access_pattern = static_cast<uint32_t>(static_cast<uint8_t>(*instruction.controls.access_pattern));
+  } else if (instruction.controls.access_pattern_raw != 0) {
+    access_pattern = instruction.controls.access_pattern_raw;
+  }
 
   // Encode the parsed operand directly (component selection, num_components,
   // indices) rather than rebuilding a canonical form: the source convention is
@@ -222,23 +261,34 @@ auto EncodeInstructionToken0(const Instruction& instruction, uint32_t total_dwor
   }
 
   if (opcode == D3D10_SB_OPCODE_DCL_SAMPLER) {
-    token0 |= ENCODE_D3D10_SB_SAMPLER_MODE(static_cast<D3D10_SB_SAMPLER_MODE>(instruction.sampler_mode));
+    uint32_t sampler_mode = static_cast<uint32_t>(instruction.sampler_mode);
+    if (instruction.controls.mode.has_value()) {
+      sampler_mode = static_cast<uint32_t>(static_cast<uint8_t>(*instruction.controls.mode));
+    }
+    token0 |= ENCODE_D3D10_SB_SAMPLER_MODE(static_cast<D3D10_SB_SAMPLER_MODE>(sampler_mode));
   }
 
   if (opcode == D3D10_SB_OPCODE_DCL_GLOBAL_FLAGS && instruction.controls.sync_flags != 0) {
     token0 |= ENCODE_D3D10_SB_GLOBAL_FLAGS(instruction.controls.sync_flags);
   }
 
-  if (opcode == D3D10_SB_OPCODE_DCL_CONSTANT_BUFFER && instruction.controls.access_pattern != 0) {
-    token0 |= ENCODE_D3D10_SB_D3D10_SB_CONSTANT_BUFFER_ACCESS_PATTERN(instruction.controls.access_pattern);
+  if (opcode == D3D10_SB_OPCODE_DCL_CONSTANT_BUFFER && instruction.controls.access_pattern_raw != 0) {
+    token0 |= ENCODE_D3D10_SB_D3D10_SB_CONSTANT_BUFFER_ACCESS_PATTERN(instruction.controls.access_pattern_raw);
   }
 
   if (opcode == D3D10_SB_OPCODE_DCL_RESOURCE) {
-    if (instruction.controls.resource_dimension != 0) {
-      token0 |= ENCODE_D3D10_SB_RESOURCE_DIMENSION(static_cast<D3D10_SB_RESOURCE_DIMENSION>(instruction.controls.resource_dimension));
+    if (instruction.controls.resource_dimension.has_value()) {
+      token0 |= ENCODE_D3D10_SB_RESOURCE_DIMENSION(static_cast<D3D10_SB_RESOURCE_DIMENSION>(static_cast<uint8_t>(*instruction.controls.resource_dimension)));
     }
-    if (instruction.controls.resource_return_type != 0) {
-      token0 |= instruction.controls.resource_return_type;
+    bool any_return_type = false;
+    for (uint32_t component = 0; component < 4; ++component) {
+      if (instruction.controls.resource_return_type[component].has_value()) {
+        token0 |= ENCODE_D3D10_SB_RESOURCE_RETURN_TYPE(static_cast<D3D10_SB_RESOURCE_RETURN_TYPE>(static_cast<uint8_t>(*instruction.controls.resource_return_type[component])), component);
+        any_return_type = true;
+      }
+    }
+    if (any_return_type) {
+      token0 |= D3D10_SB_OPCODE_EXTENDED_MASK;
     }
   }
 
@@ -321,7 +371,7 @@ auto Instruction::Encode() const -> std::vector<uint32_t> {
   std::vector<ExtendedOpcode> extended_op_codes = controls.extended_op_codes;
   const bool synthesize_resource_ext = extended_op_codes.empty()
                                        && kChain.RequiresResourcePair()
-                                       && (controls.resource_dimension != 0U || kChain.HasFixedMetadata());
+                                       && (controls.resource_dimension.has_value() || kChain.HasFixedMetadata());
   if (synthesize_resource_ext) {
     extended_op_codes.emplace_back(0U);  // ResourceDim
     extended_op_codes.emplace_back(0U);  // ResourceReturnType
@@ -344,14 +394,17 @@ auto Instruction::Encode() const -> std::vector<uint32_t> {
     // ResourceReturnType (bit 31 clear: last). Matches the HLSL compiler's
     // canonical encoding for ld/sample instructions.
     encoded.push_back(ENCODE_D3D10_SB_EXTENDED_OPCODE_TYPE(D3D11_SB_EXTENDED_OPCODE_RESOURCE_DIM)
-                      | ENCODE_D3D11_SB_EXTENDED_RESOURCE_DIMENSION(kChain.HasFixedMetadata() ? kChain.fixed_dimension : controls.resource_dimension)
+                      | ENCODE_D3D11_SB_EXTENDED_RESOURCE_DIMENSION(kChain.HasFixedMetadata() ? kChain.fixed_dimension : static_cast<uint32_t>(*controls.resource_dimension))
                       | ENCODE_D3D11_SB_EXTENDED_RESOURCE_DIMENSION_STRUCTURE_STRIDE(controls.structure_stride)
                       | D3D10_SB_OPCODE_EXTENDED_MASK);
     uint32_t return_type_token = ENCODE_D3D10_SB_EXTENDED_OPCODE_TYPE(D3D11_SB_EXTENDED_OPCODE_RESOURCE_RETURN_TYPE);
-    const uint32_t kPackedReturnTypes = kChain.HasFixedMetadata() ? kChain.fixed_return_type : controls.resource_return_type;
     for (uint32_t component = 0; component < 4; ++component) {
-      uint32_t return_type = (kPackedReturnTypes >> (component * D3D10_SB_RESOURCE_RETURN_TYPE_NUMBITS)) & D3D10_SB_RESOURCE_RETURN_TYPE_MASK;
-      if (return_type == 0U) {
+      uint32_t return_type;
+      if (kChain.HasFixedMetadata()) {
+        return_type = (kChain.fixed_return_type >> (component * D3D10_SB_RESOURCE_RETURN_TYPE_NUMBITS)) & D3D10_SB_RESOURCE_RETURN_TYPE_MASK;
+      } else if (controls.resource_return_type[component].has_value()) {
+        return_type = static_cast<uint32_t>(static_cast<uint8_t>(*controls.resource_return_type[component]));
+      } else {
         return_type = D3D10_SB_RETURN_TYPE_FLOAT;
       }
       return_type_token |= ENCODE_D3D11_SB_EXTENDED_RESOURCE_RETURN_TYPE(return_type, component);

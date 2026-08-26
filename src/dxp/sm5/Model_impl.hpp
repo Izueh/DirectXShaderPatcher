@@ -110,6 +110,24 @@ struct meta<dxp::sm5::model::OperandModifier> {
 };
 
 template <>
+struct meta<dxp::sm5::model::ResourceDimension> {
+  using T = dxp::sm5::model::ResourceDimension;
+  static constexpr std::array keys = {"unknown", "buffer", "texture1d", "texture2d", "texture2dms",
+                                      "texture3d", "texturecube", "texture1darray", "texture2darray",
+                                      "texture2dmsarray", "texturecubearray", "raw_buffer", "structured_buffer"};
+  static constexpr std::array value = {T::Unknown, T::Buffer, T::Texture1D, T::Texture2D, T::Texture2DMS,
+                                       T::Texture3D, T::TextureCube, T::Texture1DArray, T::Texture2DArray,
+                                       T::Texture2DMSArray, T::TextureCubeArray, T::RawBuffer, T::StructuredBuffer};
+};
+
+template <>
+struct meta<dxp::sm5::model::ResourceReturnType> {
+  using T = dxp::sm5::model::ResourceReturnType;
+  static constexpr std::array keys = {"unorm", "snorm", "sint", "uint", "float", "mixed", "double", "continued", "unused"};
+  static constexpr std::array value = {T::UNorm, T::SNorm, T::SInt, T::UInt, T::Float, T::Mixed, T::Double, T::Continued, T::Unused};
+};
+
+template <>
 struct meta<dxp::sm5::model::Opcode> {
   using T = dxp::sm5::model::Opcode;
   static constexpr std::array keys = {

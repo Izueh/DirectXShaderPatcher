@@ -18,6 +18,8 @@
 #include "src/dxp/sm5/ShaderProgram.hpp"
 #include "tests/helper/TestHelper.hpp"
 
+using namespace dxp::sm5;
+
 namespace {
 
 using dxp::sm5::model::Instruction;
@@ -66,8 +68,10 @@ bool TestCanonicalSynthesisForAllResourceOpcodes() {
   for (const Opcode opcode : kOpcodes) {
     Instruction instr;
     instr.opcode = opcode;
-    instr.controls.resource_dimension = D3D10_SB_RESOURCE_DIMENSION_TEXTURE2D;
-    instr.controls.resource_return_type = PackedFloat4ReturnType();
+    instr.controls.resource_dimension = ResourceDimension::Texture2D;
+    for (uint32_t component = 0; component < 4; ++component) {
+      instr.controls.resource_return_type[component] = ResourceReturnType::Float;
+    }
     instr.operands = {MakeTemp(0xF, "xyzw"), MakeTemp(0xF, "xyzw")};
 
     const auto encoded = instr.Encode();
@@ -106,8 +110,10 @@ bool TestCanonicalSynthesisForAllResourceOpcodes() {
 bool TestNonResourceOpcodeGetsNoExtendedTokens() {
   Instruction instr;
   instr.opcode = Opcode::Mov;
-  instr.controls.resource_dimension = D3D10_SB_RESOURCE_DIMENSION_TEXTURE2D;
-  instr.controls.resource_return_type = PackedFloat4ReturnType();
+  instr.controls.resource_dimension = ResourceDimension::Texture2D;
+  for (uint32_t component = 0; component < 4; ++component) {
+    instr.controls.resource_return_type[component] = ResourceReturnType::Float;
+  }
   instr.operands = {MakeTemp(0xF, "xyzw"), MakeTemp(0xF, "xyzw")};
 
   const auto encoded = instr.Encode();

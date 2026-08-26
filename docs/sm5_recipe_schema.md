@@ -14,28 +14,17 @@ JSON Schema companion: [sm5_recipe_schema.json](sm5_recipe_schema.json)
 SM5 recipes use schema version `1` and are specific to `dxp::sm5` / DXBC token
 IR patching.
 
-## Top-Level Shape
+## Recipe Structure
 
-```yaml
-version: 1
-steps:
-  - kind: add_resource
-    name: resource_declarations
-    textures: []
-    raw_resources: []
-    structured_resources: []
-    cbuffers: []
-    samplers: []
-    uavs: []
-    inputs: []
-    outputs: []
-    temps: []
-```
+Every SM5 recipe is a YAML document with three top-level keys:
 
-Rules:
+| key | required | meaning |
+|---|---|---|
+| `version` | optional, defaults to `1` | schema version (currently only `1` is supported) |
+| `env` | optional | variable definitions accessible via conditions |
+| `steps` | required | non-empty array of step objects, executed in order |
 
-- `version` (optional, defaults to `1`) must be `1` when present.
-- `steps` is required, non-empty, and execution order is defined only by `steps`.
+Each step has a unique `name` and a `kind` that determines its behaviour.
 
 ## Step Kinds
 
@@ -81,26 +70,11 @@ Comparison operands are typed: string values are treated as variable references
 so both `eq: {lhs: count_ops.mov, rhs: 0}` and `eq: {lhs: 0, rhs: count_ops.mov}`
 are valid. Missing values resolve to `false`.
 
-```yaml
-steps:
-  - kind: check_opcode_count
-    name: count_ops
-    opcodes: [mov, add]
-  - kind: apply_rule
-    name: gate_on_mov
-    condition:
-      gt:
-        lhs: count_ops.mov
-        rhs: 0
-    rule:
-      match:
-        - opcode: mov
-```
-
 ## `add_resource`
 
-All declaration arrays use the same element shape; only the relevant fields
-are honored per declaration type:
+Declares resources (textures, raw/structured buffers, cbuffers, samplers, UAVs,
+input/output signatures, temps). All declaration arrays use the same element
+shape; only the relevant fields are honored per declaration type:
 
 | field | applies to | meaning |
 |---|---|---|
@@ -121,6 +95,9 @@ are honored per declaration type:
 Register limits: textures/raw/structured ≤ 127, cbuffers ≤ 14, samplers ≤ 15,
 uavs ≤ 63, inputs ≤ 31, outputs ≤ 7.
 
+<details>
+<summary>Example</summary>
+
 ```yaml
 steps:
   - kind: add_resource
@@ -134,7 +111,11 @@ steps:
     temps: [temp0, temp1]
 ```
 
+</details>
+
 ## `apply_rule`
+
+Matches instruction patterns and rewrites them (or probes without mutating).
 
 | field | meaning |
 |---|---|
@@ -164,6 +145,12 @@ steps:
 | `interpolation` | optional `InterpolationMode` |
 | `test_boolean` | optional int |
 | `operands` | list of operand patterns |
+| `dimension` | optional `ResourceDimension` — matches declaration dimension |
+| `return_type` | optional array of 4 `ResourceReturnType` — matches per-component return types |
+| `structure_stride` | optional uint — matches structured buffer stride |
+| `access_pattern` | optional `CbufferAccessPattern` — matches cbuffer access pattern |
+| `mode` | optional `SamplerMode` — matches sampler mode |
+| `uav_flags` | optional uint — matches UAV flags |
 
 ### Emit instruction pattern
 
@@ -173,6 +160,12 @@ steps:
 | `capture` | emits a previously captured instruction |
 | `saturate` / `interpolation` / `test_boolean` | optional overrides |
 | `operands` | list of emit operand patterns |
+| `dimension` | optional `ResourceDimension` — emitted declaration dimension |
+| `return_type` | optional array of 4 `ResourceReturnType` — emitted per-component return types |
+| `structure_stride` | optional uint — emitted structured buffer stride |
+| `access_pattern` | optional `CbufferAccessPattern` — emitted cbuffer access pattern |
+| `mode` | optional `SamplerMode` — emitted sampler mode |
+| `uav_flags` | optional uint — emitted UAV flags |
 
 ### Operand pattern (match and emit)
 
@@ -200,7 +193,29 @@ Fields: `any`, `representation` (`immediate32` … `immediate64_plus_relative`),
 `relative`-style representation and cannot nest; it must use explicit `indices`
 (no shorthand arrays).
 
-### Extended opcodes (`extended_opcodes` on match and emit patterns)
+### Instruction-level fields for declaration opcodes
+
+Declaration opcodes (`dcl_resource`, `dcl_constant_buffer`, `dcl_sampler`,
+`dcl_unordered_access_view_*`) encode dimension, return type, access pattern,
+and mode directly in their instruction tokens (Token0, Token2). Recipes can
+specify these via dedicated instruction-level fields instead of extended
+opcodes:
+
+| field | valid opcodes | meaning |
+|---|---|---|
+| `dimension` | `dcl_resource`, `dcl_unordered_access_view_*` | `ResourceDimension` key (`texture2d`, `texture2darray`, `texture3d`, etc.) |
+| `return_type` | `dcl_resource`, `dcl_unordered_access_view_*` | array of 4 `ResourceReturnType` keys (`float`, `uint`, `snorm`, etc.) |
+| `structure_stride` | `dcl_resource`, `dcl_unordered_access_view_*` | byte stride for structured buffers |
+| `access_pattern` | `dcl_constant_buffer` | `CbufferAccessPattern` key (`immediate_indexed`, `dynamic_indexed`) |
+| `mode` | `dcl_sampler` | `SamplerMode` key (`default`, `comparison`, `mono`) |
+| `uav_flags` | `dcl_unordered_access_view_*` | raw uint32 (coherency/UAV flags) |
+
+When any instruction-level field is present, the operand count validation is
+relaxed: only the register operand is required (the rest is encoded via the
+fields). Fields are validated at parse time — `dimension` on a non-resource
+declaration, `mode` on a non-sampler, etc. are rejected.
+
+### Extended opcodes
 
 SM5 resource-access opcodes (`ld`, `sample` family, `gather4` family, `resinfo`,
 and `ld_raw`/`ld_structured`) canonically carry chained extended-opcode tokens
@@ -233,7 +248,8 @@ hard error. Typed entries must be canonical-ordered and non-duplicated.
 sample/gather4-family opcodes; extended opcodes are rejected on opcodes whose
 canonical chain carries none (e.g. `mov`, `store_raw`).
 
-### Example
+<details>
+<summary>Example</summary>
 
 ```yaml
 steps:
@@ -258,7 +274,12 @@ steps:
               capture: src
 ```
 
+</details>
+
 ## `check_shader_version`
+
+Filters unless the program shader model matches `major`/`minor` (mismatch is a
+non-error no-match).
 
 | field | meaning |
 |---|---|
@@ -268,7 +289,22 @@ steps:
 Fails when the program's shader model does not match. Publishes `major_version` /
 `minor_version` results under the step name.
 
+<details>
+<summary>Example</summary>
+
+```yaml
+steps:
+  - kind: check_shader_version
+    name: require_sm5
+    major: 5
+    minor: 0
+```
+
+</details>
+
 ## `check_opcode_count`
+
+Counts occurrences of requested opcodes and publishes results.
 
 | field | meaning |
 |---|---|
@@ -277,13 +313,38 @@ Fails when the program's shader model does not match. Publishes `major_version` 
 Publishes per-opcode counts under the step name (accessible via dot notation,
 e.g. `count_ops.mov`).
 
+<details>
+<summary>Example</summary>
+
+```yaml
+steps:
+  - kind: check_opcode_count
+    name: count_ops
+    opcodes: [mov, add, mul]
+```
+
+</details>
+
 ## `check_resource_count`
+
+Counts resource declarations and publishes results.
 
 | field | meaning |
 |---|---|
 
 Counts textures, samplers, cbuffers, uavs, and thread groups; publishes
 `textures` / `samplers` / `cbuffers` / `uavs` / `thread_groups` / `total`.
+
+<details>
+<summary>Example</summary>
+
+```yaml
+steps:
+  - kind: check_resource_count
+    name: resource_counts
+```
+
+</details>
 
 ## Captures and State
 

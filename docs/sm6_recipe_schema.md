@@ -14,23 +14,17 @@ JSON Schema companion: [sm6_recipe_schema.json](sm6_recipe_schema.json)
 SM6 recipes use schema version `1` and are specific to `dxp::sm6` / DXIL (LLVM
 IR) patching.
 
-## Top-Level Shape
+## Recipe Structure
 
-```yaml
-version: 1
-steps:
-  - kind: add_resource
-    name: my_resources
-    textures: []
-    uavs: []
-    cbuffers: []
-    samplers: []
-```
+Every SM6 recipe is a YAML document with three top-level keys:
 
-Rules:
+| key | required | meaning |
+|---|---|---|
+| `version` | optional, defaults to `1` | schema version (currently only `1` is supported) |
+| `env` | optional | variable definitions accessible via conditions |
+| `steps` | required | non-empty array of step objects, executed in order |
 
-- `version` (optional, defaults to `1`) must be `1` when present.
-- `steps` is required, non-empty, and execution order is defined only by `steps`.
+Each step has a unique `name` and a `kind` that determines its behaviour.
 
 ## Step Kinds
 
@@ -76,6 +70,23 @@ Comparison operands are typed: string values are treated as variable references
 so both `eq: {lhs: count_ops.Frc, rhs: 3}` and `eq: {lhs: 3, rhs: count_ops.Frc}`
 are valid. Missing values resolve to `false`.
 
+```yaml
+steps:
+  - kind: check_opcode_count
+    name: count_ops
+    llvm_opcodes: [Frc, Trunc]
+  - kind: apply_rule
+    name: gate_on_frc
+    condition:
+      gt:
+        lhs: count_ops.Frc
+        rhs: 0
+    rule:
+      name: my_rule
+      match:
+        - opcode: Frc
+```
+
 ## `add_resource`
 
 | array key | element type | notable fields |
@@ -104,6 +115,9 @@ Cbuffer desc fields:
 - `type` — schema type name.
 - `fields` — list of `{ name, type, width, offset }`.
 
+<details>
+<summary>Example</summary>
+
 ```yaml
 steps:
   - kind: add_resource
@@ -125,6 +139,8 @@ steps:
             width: 1
             offset: 0
 ```
+
+</details>
 
 ## `apply_rule`
 
@@ -229,7 +245,8 @@ Fields: `index`, `kind` (`call`/`constant`/`resource`/`undefined`), `capture`,
 `component_type`. `component_type` controls the emitted constant's type
 (default: signature-derived; float shorthand defaults to `F32`).
 
-### Example
+<details>
+<summary>Example</summary>
 
 ```yaml
 steps:
@@ -248,6 +265,8 @@ steps:
               handle: fast_noise
 ```
 
+</details>
+
 ## `check_shader_version`
 
 | field | meaning |
@@ -258,6 +277,19 @@ steps:
 
 Fails when the program's shader model does not match. Publishes `major_version` /
 `minor_version` results under the step name.
+
+<details>
+<summary>Example</summary>
+
+```yaml
+steps:
+  - kind: check_shader_version
+    name: require_sm6
+    major: 6
+    minor: 0
+```
+
+</details>
 
 ## `check_opcode_count`
 
@@ -270,6 +302,18 @@ Fails when the program's shader model does not match. Publishes `major_version` 
 Publishes per-opcode counts under the step name (accessible via dot notation,
 e.g. `count_ops.Frc`).
 
+<details>
+<summary>Example</summary>
+
+```yaml
+steps:
+  - kind: check_opcode_count
+    name: count_ops
+    llvm_opcodes: [Frc, Trunc, Call]
+```
+
+</details>
+
 ## `check_resource_count`
 
 | field | meaning |
@@ -278,6 +322,17 @@ e.g. `count_ops.Frc`).
 
 Counts resource declarations; publishes `textures` / `samplers` / `cbuffers` /
 `uavs` / `total`.
+
+<details>
+<summary>Example</summary>
+
+```yaml
+steps:
+  - kind: check_resource_count
+    name: resource_counts
+```
+
+</details>
 
 ## Captures and State
 

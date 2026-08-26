@@ -94,6 +94,13 @@ struct InstructionMatchData {
   /// @brief Extended-opcode expectations; absent = wildcard (any chain),
   /// empty list = the instruction must carry no extended tokens.
   std::optional<std::vector<ExtendedOpcodeMatchData>> extended_opcodes;
+  /// @brief Instruction-level fields for declaration opcodes (dcl_resource, dcl_constant_buffer, dcl_sampler, dcl_uav_*).
+  std::optional<ResourceDimension> dimension;
+  std::array<std::optional<ResourceReturnType>, 4> return_type;
+  uint32_t structure_stride = 0;
+  std::optional<CbufferAccessPattern> access_pattern;
+  std::optional<SamplerMode> mode;
+  uint32_t uav_flags = 0;
 };
 
 /// @brief One extended-opcode emit entry. Exactly one of `type` / `raw` must be
@@ -114,6 +121,13 @@ struct EmitInstructionData {
   std::vector<OperandData> operands;
   std::string capture;
   std::vector<EmitExtendedOpcodeData> extended_opcodes;
+  /// @brief Instruction-level fields for declaration opcodes (dcl_resource, dcl_constant_buffer, dcl_sampler, dcl_uav_*).
+  std::optional<ResourceDimension> dimension;
+  std::array<std::optional<ResourceReturnType>, 4> return_type;
+  uint32_t structure_stride = 0;
+  std::optional<CbufferAccessPattern> access_pattern;
+  std::optional<SamplerMode> mode;
+  uint32_t uav_flags = 0;
 };
 
 struct RuleData {

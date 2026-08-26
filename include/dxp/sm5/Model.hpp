@@ -97,6 +97,38 @@ enum class OperandModifier : std::uint8_t {
   AbsNeg = 3,  ///< @c D3D10_SB_OPERAND_MODIFIER_ABSNEG
 };
 
+/// @brief Resource dimension in DXBC instructions.
+/// Mirrors @c D3D10_SB_RESOURCE_DIMENSION from the DXBC token format.
+enum class ResourceDimension : std::uint8_t {
+  Unknown = 0,            ///< @c D3D10_SB_RESOURCE_DIMENSION_UNKNOWN
+  Buffer = 1,             ///< @c D3D10_SB_RESOURCE_DIMENSION_BUFFER
+  Texture1D = 2,          ///< @c D3D10_SB_RESOURCE_DIMENSION_TEXTURE1D
+  Texture2D = 3,          ///< @c D3D10_SB_RESOURCE_DIMENSION_TEXTURE2D
+  Texture2DMS = 4,        ///< @c D3D10_SB_RESOURCE_DIMENSION_TEXTURE2DMS
+  Texture3D = 5,          ///< @c D3D10_SB_RESOURCE_DIMENSION_TEXTURE3D
+  TextureCube = 6,        ///< @c D3D10_SB_RESOURCE_DIMENSION_TEXTURECUBE
+  Texture1DArray = 7,     ///< @c D3D10_SB_RESOURCE_DIMENSION_TEXTURE1DARRAY
+  Texture2DArray = 8,     ///< @c D3D10_SB_RESOURCE_DIMENSION_TEXTURE2DARRAY
+  Texture2DMSArray = 9,   ///< @c D3D10_SB_RESOURCE_DIMENSION_TEXTURE2DMSARRAY
+  TextureCubeArray = 10,  ///< @c D3D10_SB_RESOURCE_DIMENSION_TEXTURECUBEARRAY
+  RawBuffer = 11,         ///< @c D3D11_SB_RESOURCE_DIMENSION_RAW_BUFFER
+  StructuredBuffer = 12   ///< @c D3D11_SB_RESOURCE_DIMENSION_STRUCTURED_BUFFER
+};
+
+/// @brief Resource return type in DXBC instructions.
+/// Mirrors @c D3D10_SB_RESOURCE_RETURN_TYPE from the DXBC token format.
+enum class ResourceReturnType : std::uint8_t {
+  UNorm = 1,      ///< @c D3D10_SB_RETURN_TYPE_UNORM
+  SNorm = 2,      ///< @c D3D10_SB_RETURN_TYPE_SNORM
+  SInt = 3,       ///< @c D3D10_SB_RETURN_TYPE_SINT
+  UInt = 4,       ///< @c D3D10_SB_RETURN_TYPE_UINT
+  Float = 5,      ///< @c D3D10_SB_RETURN_TYPE_FLOAT
+  Mixed = 6,      ///< @c D3D10_SB_RETURN_TYPE_MIXED
+  Double = 7,     ///< @c D3D11_SB_RETURN_TYPE_DOUBLE
+  Continued = 8,  ///< @c D3D11_SB_RETURN_TYPE_CONTINUED
+  Unused = 9      ///< @c D3D11_SB_RETURN_TYPE_UNUSED
+};
+
 /// @brief Extended opcode type in DXBC instructions.
 /// Mirrors @c D3D10_SB_EXTENDED_OPCODE_TYPE from the DXBC token format.
 enum class ExtendedOpcodeType : std::uint8_t {
@@ -489,9 +521,11 @@ struct OpcodeControls {
   uint32_t resinfo_return_type = 0;
   uint32_t sync_flags = 0;
   std::optional<uint32_t> input_interpolation_mode;
-  uint32_t access_pattern = 0;
-  uint32_t resource_dimension = 0;
-  uint32_t resource_return_type = 0;
+  std::optional<CbufferAccessPattern> access_pattern;
+  uint32_t access_pattern_raw = 0;
+  std::optional<SamplerMode> mode;
+  std::optional<ResourceDimension> resource_dimension;
+  std::array<std::optional<ResourceReturnType>, 4> resource_return_type = {std::nullopt, std::nullopt, std::nullopt, std::nullopt};
   uint32_t uav_flags = 0;
   uint32_t structure_stride = 0;
   std::vector<ExtendedOpcode> extended_op_codes;

@@ -232,17 +232,14 @@ auto ParseOpcodeControls(std::span<const uint8_t> data, uint32_t instruction_sta
     controls.sync_flags = DECODE_D3D10_SB_GLOBAL_FLAGS(token0);
   }
   if (kOpcode == D3D10_SB_OPCODE_DCL_RESOURCE) {
-    controls.resource_dimension = DECODE_D3D10_SB_RESOURCE_DIMENSION(token0);
-    // Pack the four per-component resource return types (4 bits each) the same
+    controls.resource_dimension = static_cast<ResourceDimension>(DECODE_D3D10_SB_RESOURCE_DIMENSION(token0));
+    // Parse the four per-component resource return types (4 bits each) the same
     // way the extended RESOURCE_RETURN_TYPE token and the DCL encode path do,
     // so resource-access synthesis can reproduce the declaration's real types
     // (not a silent float default).
-    uint32_t packed_return_types = 0;
     for (uint32_t component = 0; component < 4; ++component) {
-      packed_return_types |= static_cast<uint32_t>(DECODE_D3D10_SB_RESOURCE_RETURN_TYPE(token0, component))
-                             << (component * D3D10_SB_RESOURCE_RETURN_TYPE_NUMBITS);
+      controls.resource_return_type[component] = static_cast<ResourceReturnType>(DECODE_D3D10_SB_RESOURCE_RETURN_TYPE(token0, component));
     }
-    controls.resource_return_type = packed_return_types;
   }
   if (kOpcode == D3D10_SB_OPCODE_DCL_INPUT_PS || kOpcode == D3D10_SB_OPCODE_DCL_INPUT_PS_SIV) {
     controls.input_interpolation_mode = static_cast<uint32_t>(DECODE_D3D10_SB_INPUT_INTERPOLATION_MODE(token0));
@@ -434,13 +431,19 @@ auto ParseProgramImpl(std::span<const uint8_t> data, uint32_t size, ShaderProgra
     instruction.controls = ParseOpcodeControls(data, kInstructionStart, kLength, kToken0);
     if (kOpcode == D3D10_SB_OPCODE_DCL_SAMPLER) {
       instruction.sampler_mode = static_cast<SamplerMode>(DECODE_D3D10_SB_SAMPLER_MODE(kToken0));
+      instruction.controls.mode = static_cast<SamplerMode>(DECODE_D3D10_SB_SAMPLER_MODE(kToken0));
+    }
+    if (kOpcode == D3D10_SB_OPCODE_DCL_CONSTANT_BUFFER) {
+      instruction.controls.access_pattern = static_cast<CbufferAccessPattern>(DECODE_D3D10_SB_CONSTANT_BUFFER_ACCESS_PATTERN(kToken0));
     }
     if (kOpcode == D3D10_SB_OPCODE_DCL_RESOURCE && kLength >= 4) {
       // The last dword of a dcl_resource instruction is the 4-component
       // return-type token; capture it so re-serialization preserves non-float
       // return types (the token is otherwise parsed as a trailing operand).
-      instruction.controls.resource_return_type =
-          ParseReadDword(data, (kInstructionStart + kLength - 1) * 4);
+      const uint32_t kReturnTypeToken = ParseReadDword(data, (kInstructionStart + kLength - 1) * 4);
+      for (uint32_t component = 0; component < 4; ++component) {
+        instruction.controls.resource_return_type[component] = static_cast<ResourceReturnType>((kReturnTypeToken >> (component * D3D10_SB_RESOURCE_RETURN_TYPE_NUMBITS)) & D3D10_SB_RESOURCE_RETURN_TYPE_MASK);
+      }
     }
     if (kOpcode == D3D10_SB_OPCODE_CUSTOMDATA) {
       // DCL_CUSTOMDATA stores opaque bytes that must round-trip exactly.
@@ -1114,7 +1117,8 @@ auto ShaderProgram::BuildConstantBufferDeclaration(const dxp::sm5::step::AddReso
   instruction.opcode = Opcode::DclConstantBuffer;
   const uint32_t register_index = decl.register_index.value_or(0U);
   instruction.operands.push_back(MakeConstantBufferDeclarationOperand(register_index, decl.elements));
-  instruction.controls.access_pattern = static_cast<uint32_t>(decl.access_pattern);
+  instruction.controls.access_pattern = decl.access_pattern;
+  instruction.controls.access_pattern_raw = static_cast<uint32_t>(decl.access_pattern);
   return instruction;
 }
 
@@ -1123,8 +1127,10 @@ auto ShaderProgram::BuildTextureDeclaration(const dxp::sm5::step::AddResourceSte
   instruction.opcode = Opcode::DclResource;
   const uint32_t register_index = decl.register_index.value_or(0U);
   instruction.operands.push_back(MakeResourceOperand(register_index));
-  instruction.controls.resource_dimension = decl.dimension;
-  instruction.controls.resource_return_type = ENCODE_D3D10_SB_RESOURCE_RETURN_TYPE(D3D10_SB_RETURN_TYPE_FLOAT, 0) | ENCODE_D3D10_SB_RESOURCE_RETURN_TYPE(D3D10_SB_RETURN_TYPE_FLOAT, 1) | ENCODE_D3D10_SB_RESOURCE_RETURN_TYPE(D3D10_SB_RETURN_TYPE_FLOAT, 2) | ENCODE_D3D10_SB_RESOURCE_RETURN_TYPE(D3D10_SB_RETURN_TYPE_FLOAT, 3);
+  instruction.controls.resource_dimension = static_cast<ResourceDimension>(decl.dimension);
+  for (uint32_t component = 0; component < 4; ++component) {
+    instruction.controls.resource_return_type[component] = ResourceReturnType::Float;
+  }
   return instruction;
 }
 
@@ -1195,8 +1201,10 @@ auto ShaderProgram::BuildUavDeclaration(const dxp::sm5::step::AddResourceStep::U
 
   instruction.opcode = Opcode::DclUnorderedAccessViewTyped;
   instruction.operands.push_back(MakeUavOperand(register_index));
-  instruction.controls.resource_dimension = decl.dimension;
-  instruction.controls.resource_return_type = ENCODE_D3D10_SB_RESOURCE_RETURN_TYPE(D3D10_SB_RETURN_TYPE_FLOAT, 0) | ENCODE_D3D10_SB_RESOURCE_RETURN_TYPE(D3D10_SB_RETURN_TYPE_FLOAT, 1) | ENCODE_D3D10_SB_RESOURCE_RETURN_TYPE(D3D10_SB_RETURN_TYPE_FLOAT, 2) | ENCODE_D3D10_SB_RESOURCE_RETURN_TYPE(D3D10_SB_RETURN_TYPE_FLOAT, 3);
+  instruction.controls.resource_dimension = static_cast<ResourceDimension>(decl.dimension);
+  for (uint32_t component = 0; component < 4; ++component) {
+    instruction.controls.resource_return_type[component] = ResourceReturnType::Float;
+  }
   instruction.controls.uav_flags = decl.globally_coherent ? D3D11_SB_GLOBALLY_COHERENT_ACCESS : 0;
   return instruction;
 }

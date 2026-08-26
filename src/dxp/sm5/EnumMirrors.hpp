@@ -73,6 +73,30 @@ static_assert(static_cast<uint8_t>(OperandModifier::Neg) == static_cast<uint8_t>
 static_assert(static_cast<uint8_t>(OperandModifier::Abs) == static_cast<uint8_t>(D3D10_SB_OPERAND_MODIFIER_ABS));
 static_assert(static_cast<uint8_t>(OperandModifier::AbsNeg) == static_cast<uint8_t>(D3D10_SB_OPERAND_MODIFIER_ABSNEG));
 
+static_assert(static_cast<uint8_t>(ResourceDimension::Unknown) == static_cast<uint8_t>(D3D10_SB_RESOURCE_DIMENSION_UNKNOWN));
+static_assert(static_cast<uint8_t>(ResourceDimension::Buffer) == static_cast<uint8_t>(D3D10_SB_RESOURCE_DIMENSION_BUFFER));
+static_assert(static_cast<uint8_t>(ResourceDimension::Texture1D) == static_cast<uint8_t>(D3D10_SB_RESOURCE_DIMENSION_TEXTURE1D));
+static_assert(static_cast<uint8_t>(ResourceDimension::Texture2D) == static_cast<uint8_t>(D3D10_SB_RESOURCE_DIMENSION_TEXTURE2D));
+static_assert(static_cast<uint8_t>(ResourceDimension::Texture2DMS) == static_cast<uint8_t>(D3D10_SB_RESOURCE_DIMENSION_TEXTURE2DMS));
+static_assert(static_cast<uint8_t>(ResourceDimension::Texture3D) == static_cast<uint8_t>(D3D10_SB_RESOURCE_DIMENSION_TEXTURE3D));
+static_assert(static_cast<uint8_t>(ResourceDimension::TextureCube) == static_cast<uint8_t>(D3D10_SB_RESOURCE_DIMENSION_TEXTURECUBE));
+static_assert(static_cast<uint8_t>(ResourceDimension::Texture1DArray) == static_cast<uint8_t>(D3D10_SB_RESOURCE_DIMENSION_TEXTURE1DARRAY));
+static_assert(static_cast<uint8_t>(ResourceDimension::Texture2DArray) == static_cast<uint8_t>(D3D10_SB_RESOURCE_DIMENSION_TEXTURE2DARRAY));
+static_assert(static_cast<uint8_t>(ResourceDimension::Texture2DMSArray) == static_cast<uint8_t>(D3D10_SB_RESOURCE_DIMENSION_TEXTURE2DMSARRAY));
+static_assert(static_cast<uint8_t>(ResourceDimension::TextureCubeArray) == static_cast<uint8_t>(D3D10_SB_RESOURCE_DIMENSION_TEXTURECUBEARRAY));
+static_assert(static_cast<uint8_t>(ResourceDimension::RawBuffer) == static_cast<uint8_t>(D3D11_SB_RESOURCE_DIMENSION_RAW_BUFFER));
+static_assert(static_cast<uint8_t>(ResourceDimension::StructuredBuffer) == static_cast<uint8_t>(D3D11_SB_RESOURCE_DIMENSION_STRUCTURED_BUFFER));
+
+static_assert(static_cast<uint8_t>(ResourceReturnType::UNorm) == static_cast<uint8_t>(D3D10_SB_RETURN_TYPE_UNORM));
+static_assert(static_cast<uint8_t>(ResourceReturnType::SNorm) == static_cast<uint8_t>(D3D10_SB_RETURN_TYPE_SNORM));
+static_assert(static_cast<uint8_t>(ResourceReturnType::SInt) == static_cast<uint8_t>(D3D10_SB_RETURN_TYPE_SINT));
+static_assert(static_cast<uint8_t>(ResourceReturnType::UInt) == static_cast<uint8_t>(D3D10_SB_RETURN_TYPE_UINT));
+static_assert(static_cast<uint8_t>(ResourceReturnType::Float) == static_cast<uint8_t>(D3D10_SB_RETURN_TYPE_FLOAT));
+static_assert(static_cast<uint8_t>(ResourceReturnType::Mixed) == static_cast<uint8_t>(D3D10_SB_RETURN_TYPE_MIXED));
+static_assert(static_cast<uint8_t>(ResourceReturnType::Double) == static_cast<uint8_t>(D3D11_SB_RETURN_TYPE_DOUBLE));
+static_assert(static_cast<uint8_t>(ResourceReturnType::Continued) == static_cast<uint8_t>(D3D11_SB_RETURN_TYPE_CONTINUED));
+static_assert(static_cast<uint8_t>(ResourceReturnType::Unused) == static_cast<uint8_t>(D3D11_SB_RETURN_TYPE_UNUSED));
+
 static_assert(static_cast<uint8_t>(ExtendedOpcodeType::Empty) == static_cast<uint8_t>(D3D10_SB_EXTENDED_OPCODE_EMPTY));
 static_assert(static_cast<uint8_t>(ExtendedOpcodeType::SampleControls) == static_cast<uint8_t>(D3D10_SB_EXTENDED_OPCODE_SAMPLE_CONTROLS));
 static_assert(static_cast<uint8_t>(ExtendedOpcodeType::ResourceDim) == static_cast<uint8_t>(D3D11_SB_EXTENDED_OPCODE_RESOURCE_DIM));

@@ -166,6 +166,12 @@ struct ApplyRuleStep {
     int32_t test_boolean = -1;
     std::vector<OperandPattern> operands;
     std::optional<std::vector<ExtendedOpcodePattern>> extended_opcodes;
+    std::optional<model::ResourceDimension> dimension;
+    std::array<std::optional<model::ResourceReturnType>, 4> return_type;
+    uint32_t structure_stride = 0;
+    std::optional<model::CbufferAccessPattern> access_pattern;
+    std::optional<model::SamplerMode> mode;
+    uint32_t uav_flags = 0;
   };
 
   /// @brief Extended-opcode emit entry.
@@ -199,6 +205,12 @@ struct ApplyRuleStep {
     std::vector<OperandPattern> operands;
     std::string capture;
     std::vector<EmitExtendedOpcode> extended_opcodes;
+    std::optional<model::ResourceDimension> dimension;
+    std::array<std::optional<model::ResourceReturnType>, 4> return_type;
+    uint32_t structure_stride = 0;
+    std::optional<model::CbufferAccessPattern> access_pattern;
+    std::optional<model::SamplerMode> mode;
+    uint32_t uav_flags = 0;
   };
 
   /// @brief Describes one SM5 rewrite rule.

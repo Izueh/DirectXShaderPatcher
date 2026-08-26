@@ -801,6 +801,12 @@ auto RuleData::Compile() const -> std::expected<Rule, std::string> {
     }
     tpl.interpolation_mode = emit_entry.interpolation;
     tpl.test_boolean = emit_entry.test_boolean;
+    tpl.dimension = emit_entry.dimension;
+    tpl.return_type = emit_entry.return_type;
+    tpl.structure_stride = emit_entry.structure_stride;
+    tpl.access_pattern = emit_entry.access_pattern;
+    tpl.mode = emit_entry.mode;
+    tpl.uav_flags = emit_entry.uav_flags;
     for (const auto& operand : emit_entry.operands) {
       const bool has_indices = !operand.indices.empty();
       const bool has_immediates = !operand.immediates_u32.empty() || !operand.immediates_u64.empty() || !operand.immediates_i32.empty() || !operand.immediates_i64.empty() || !operand.immediates_f32.empty() || !operand.immediates_f64.empty();
@@ -883,12 +889,20 @@ auto RuleData::Compile() const -> std::expected<Rule, std::string> {
       }
       tpl.extended_opcodes.push_back(compiled);
     }
-    // Extended opcodes are only meaningful on opcodes whose canonical chain
-    // supports them (resource-access opcodes); everything else must stay bare.
-    if (!tpl.extended_opcodes.empty() && tpl.opcode.has_value()
-        && !RequiredExtendedChainForOpcode(*tpl.opcode).RequiresResourcePair()) {
-      error = "SM5 emit extended_opcodes are only supported on resource-access opcodes (ld, sample, gather4 families, resinfo)";
-      return std::unexpected(error);
+    // Extended opcodes are meaningful on resource-access opcodes and declaration
+    // opcodes (dcl_resource, dcl_constant_buffer, dcl_sampler). Everything else
+    // must stay bare.
+    if (!tpl.extended_opcodes.empty() && tpl.opcode.has_value()) {
+      const auto kChain = RequiredExtendedChainForOpcode(*tpl.opcode);
+      const bool kIsResourceAccess = kChain.RequiresResourcePair();
+      const bool kIsDeclaration =
+          *tpl.opcode == Opcode::DclResource || *tpl.opcode == Opcode::DclResourceRaw
+          || *tpl.opcode == Opcode::DclResourceStructured
+          || *tpl.opcode == Opcode::DclConstantBuffer || *tpl.opcode == Opcode::DclSampler;
+      if (!kIsResourceAccess && !kIsDeclaration) {
+        error = "SM5 emit extended_opcodes are only supported on resource-access opcodes (ld, sample, gather4 families, resinfo) and declaration opcodes (dcl_resource, dcl_constant_buffer, dcl_sampler)";
+        return std::unexpected(error);
+      }
     }
     // sample_controls only ride on the sample/gather4 families.
     for (const auto& ext : tpl.extended_opcodes) {
@@ -1199,7 +1213,42 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string
   for (size_t ei = 0; ei < step.rule.emit_patterns.size(); ++ei) {
     const auto& emit = step.rule.emit_patterns[ei];
     if (!emit.opcode.has_value()) continue;
-    const uint32_t kExpectedOperands = GetExpectedOperandCount(*emit.opcode);
+    uint32_t kExpectedOperands = GetExpectedOperandCount(*emit.opcode);
+    // Declaration opcodes present as multiple "operands" in ASM but are encoded
+    // with extended opcodes in DXBC. When extended_opcodes are present, subtract
+    // the extended-opcode count from the expected operand count.
+    if (!emit.extended_opcodes.empty()) {
+      const Opcode kOpcode = *emit.opcode;
+      const bool kIsDeclaration =
+          kOpcode == Opcode::DclResource || kOpcode == Opcode::DclResourceRaw
+          || kOpcode == Opcode::DclResourceStructured
+          || kOpcode == Opcode::DclConstantBuffer || kOpcode == Opcode::DclSampler;
+      if (kIsDeclaration) {
+        kExpectedOperands =
+            kExpectedOperands > static_cast<uint32_t>(emit.extended_opcodes.size())
+                ? kExpectedOperands - static_cast<uint32_t>(emit.extended_opcodes.size())
+                : 0;
+      }
+    }
+    // Declaration opcodes with instruction-level fields only require the register operand.
+    bool has_any_fields = emit.dimension.has_value() || emit.structure_stride != 0 || emit.access_pattern.has_value() || emit.mode.has_value() || emit.uav_flags != 0;
+    for (uint32_t component = 0; component < 4; ++component) {
+      if (emit.return_type[component].has_value()) {
+        has_any_fields = true;
+        break;
+      }
+    }
+    if (has_any_fields) {
+      const Opcode kOpcode = *emit.opcode;
+      const bool kIsDeclaration =
+          kOpcode == Opcode::DclResource || kOpcode == Opcode::DclResourceRaw
+          || kOpcode == Opcode::DclResourceStructured || kOpcode == Opcode::DclUnorderedAccessViewTyped
+          || kOpcode == Opcode::DclUnorderedAccessViewRaw || kOpcode == Opcode::DclUnorderedAccessViewStructured
+          || kOpcode == Opcode::DclConstantBuffer || kOpcode == Opcode::DclSampler;
+      if (kIsDeclaration && emit.operands.size() > 0) {
+        kExpectedOperands = static_cast<uint32_t>(emit.operands.size());
+      }
+    }
     if (kExpectedOperands > 0 && emit.operands.size() != kExpectedOperands) {
       error = "rule.emit_patterns[" + std::to_string(ei) + "]: opcode " + std::to_string(static_cast<uint32_t>(*emit.opcode)) + " expects " + std::to_string(kExpectedOperands) + " operands, recipe provides " + std::to_string(emit.operands.size());
       return std::unexpected(std::move(error));
@@ -1221,6 +1270,44 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string
           error = opPath + ": operand type does not match the opcode's expected slot type (" + std::to_string(static_cast<uint32_t>(kExpectedType)) + ")";
           return std::unexpected(std::move(error));
         }
+      }
+    }
+    const Opcode kEmitOpcode = *emit.opcode;
+    bool has_resource_fields = emit.dimension.has_value() || emit.structure_stride != 0;
+    for (uint32_t component = 0; component < 4; ++component) {
+      if (emit.return_type[component].has_value()) {
+        has_resource_fields = true;
+        break;
+      }
+    }
+    if (has_resource_fields) {
+      if (kEmitOpcode != Opcode::DclResource && kEmitOpcode != Opcode::DclUnorderedAccessViewTyped && kEmitOpcode != Opcode::DclUnorderedAccessViewRaw && kEmitOpcode != Opcode::DclUnorderedAccessViewStructured) {
+        error = "rule.emit_patterns[" + std::to_string(ei) + "]: dimension/return_type/structure_stride fields are only valid for resource declaration opcodes";
+        return std::unexpected(std::move(error));
+      }
+    }
+    if (emit.access_pattern.has_value()) {
+      if (kEmitOpcode != Opcode::DclConstantBuffer) {
+        error = "rule.emit_patterns[" + std::to_string(ei) + "]: access_pattern field is only valid for dcl_constant_buffer";
+        return std::unexpected(std::move(error));
+      }
+    }
+    if (emit.mode.has_value()) {
+      if (kEmitOpcode != Opcode::DclSampler) {
+        error = "rule.emit_patterns[" + std::to_string(ei) + "]: mode field is only valid for dcl_sampler";
+        return std::unexpected(std::move(error));
+      }
+    }
+    if (emit.mode.has_value()) {
+      if (kEmitOpcode != Opcode::DclSampler) {
+        error = "rule.emit_patterns[" + std::to_string(ei) + "]: mode field is only valid for dcl_sampler";
+        return std::unexpected(std::move(error));
+      }
+    }
+    if (emit.uav_flags != 0) {
+      if (kEmitOpcode != Opcode::DclUnorderedAccessViewRaw && kEmitOpcode != Opcode::DclUnorderedAccessViewStructured && kEmitOpcode != Opcode::DclUnorderedAccessViewTyped) {
+        error = "rule.emit_patterns[" + std::to_string(ei) + "]: uav_flags field is only valid for UAV declaration opcodes";
+        return std::unexpected(std::move(error));
       }
     }
   }
@@ -1324,15 +1411,19 @@ bool BuildExtendedOpcodeChain(ExecutionContext& context, Instruction& instr,
         packed_return = kChain.fixed_return_type;
       } else {
         StampResourceAccessControls(context, instr);
-        if (instr.controls.resource_dimension == 0) {
+        if (!instr.controls.resource_dimension.has_value()) {
           error = path
                   +
                   ": resource-access emit requires a declared resource to synthesize the canonical "
                   "ResourceDim/ResourceReturnType extended pair (no silent bare emit)";
           return false;
         }
-        dimension = instr.controls.resource_dimension;
-        packed_return = instr.controls.resource_return_type;
+        dimension = static_cast<uint32_t>(static_cast<uint8_t>(*instr.controls.resource_dimension));
+        for (uint32_t component = 0; component < 4; ++component) {
+          if (instr.controls.resource_return_type[component].has_value()) {
+            packed_return |= static_cast<uint32_t>(static_cast<uint8_t>(*instr.controls.resource_return_type[component])) << (component * D3D10_SB_RESOURCE_RETURN_TYPE_NUMBITS);
+          }
+        }
       }
       // Insert the missing members at their canonical positions (dim before
       // return), never after the return token.
@@ -1492,6 +1583,27 @@ auto ResolveEmit(const MatchResult& match, ExecutionContext& context, const Emit
   if (emit.interpolation_mode.has_value()) {
     instr.controls.input_interpolation_mode = static_cast<uint32_t>(*emit.interpolation_mode);
   }
+  if (emit.dimension.has_value()) {
+    instr.controls.resource_dimension = emit.dimension;
+  }
+  for (uint32_t component = 0; component < 4; ++component) {
+    if (emit.return_type[component].has_value()) {
+      instr.controls.resource_return_type[component] = emit.return_type[component];
+    }
+  }
+  if (emit.structure_stride != 0) {
+    instr.controls.structure_stride = emit.structure_stride;
+  }
+  if (emit.access_pattern.has_value()) {
+    instr.controls.access_pattern = emit.access_pattern;
+    instr.controls.access_pattern_raw = static_cast<uint32_t>(static_cast<uint8_t>(*emit.access_pattern));
+  }
+  if (emit.mode.has_value()) {
+    instr.controls.mode = emit.mode;
+  }
+  if (emit.uav_flags != 0) {
+    instr.controls.uav_flags = emit.uav_flags;
+  }
   instr.length_in_dwords = 0;
   for (size_t oi = 0; oi < emit.operands.size(); ++oi) {
     const std::string op = path + ".operands[" + std::to_string(oi) + "]";
@@ -1547,6 +1659,14 @@ auto MatchesInstruction(const Instruction& instr, std::unordered_map<std::string
     if (instr.opcode != static_cast<uint32_t>(Opcode::DclInputPs) && instr.opcode != static_cast<uint32_t>(Opcode::DclInputPsSiv)) return false;
     if (instr.controls.input_interpolation_mode.has_value() && *instr.controls.input_interpolation_mode != static_cast<uint32_t>(*pattern.interpolation_mode)) return false;
   }
+  if (pattern.dimension.has_value() && instr.controls.resource_dimension != pattern.dimension) return false;
+  for (uint32_t component = 0; component < 4; ++component) {
+    if (pattern.return_type[component].has_value() && instr.controls.resource_return_type[component] != pattern.return_type[component]) return false;
+  }
+  if (pattern.structure_stride != 0 && instr.controls.structure_stride != pattern.structure_stride) return false;
+  if (pattern.access_pattern.has_value() && instr.controls.access_pattern != pattern.access_pattern) return false;
+  if (pattern.mode.has_value() && instr.controls.mode != pattern.mode) return false;
+  if (pattern.uav_flags != 0 && instr.controls.uav_flags != pattern.uav_flags) return false;
   // Extended-opcode expectations: absent = wildcard (any chain, including
   // none); present = exact full-chain match (count + per-entry rules).
   if (pattern.extended_opcodes.has_value()) {
