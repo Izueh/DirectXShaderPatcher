@@ -129,7 +129,7 @@ jobs:
 
       - name: Build (x64)
         if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --build --preset ninja-x64-release --parallel
+        run: cmake --build --parallel --preset ninja-x64-release
 
       - name: Test (x64 Release)
         if: steps.check-artifacts.outputs.exists != 'true'
@@ -137,7 +137,7 @@ jobs:
 
       - name: Build Debug (x64)
         if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --build --preset ninja-x64-debug --parallel
+        run: cmake --build --parallel --preset ninja-x64-debug
 
       - name: Configure build for x86
         if: steps.check-artifacts.outputs.exists != 'true'
@@ -151,11 +151,11 @@ jobs:
 
       - name: Build (x86)
         if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --build --preset ninja-x86-release --parallel
+        run: cmake --build --parallel --preset ninja-x86-release
 
       - name: Build Debug (x86)
         if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --build --preset ninja-x86-debug --parallel
+        run: cmake --build --parallel --preset ninja-x86-debug
 
       - name: Configure CMake (clang-x64)
         if: steps.check-artifacts.outputs.exists != 'true'
@@ -163,11 +163,11 @@ jobs:
 
       - name: Build (clang-x64)
         if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --build --preset clang-x64-release --parallel
+        run: cmake --build --parallel --preset clang-x64-release
 
       - name: Build Debug (clang-x64)
         if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --build --preset clang-x64-debug --parallel
+        run: cmake --build --parallel --preset clang-x64-debug
 
       - name: Configure CMake (clang-x86)
         if: steps.check-artifacts.outputs.exists != 'true'
@@ -175,11 +175,11 @@ jobs:
 
       - name: Build (clang-x86)
         if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --build --preset clang-x86-release --parallel
+        run: cmake --build --parallel --preset clang-x86-release
 
       - name: Build Debug (clang-x86)
         if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --build --preset clang-x86-debug --parallel
+        run: cmake --build --parallel --preset clang-x86-debug
 
       - name: Show sccache stats
         if: steps.check-artifacts.outputs.exists != 'true'

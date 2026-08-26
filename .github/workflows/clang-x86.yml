@@ -43,10 +43,10 @@ jobs:
         run: cmake --preset clang-x86 -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Build (x86)
-        run: cmake --build --preset clang-x86-release --verbose
+        run: cmake --build --parallel --preset clang-x86-release --verbose
 
       - name: Build Debug (x86)
-        run: cmake --build --preset clang-x86-debug --verbose
+        run: cmake --build --parallel --preset clang-x86-debug --verbose
 
       - name: Install SDK (x86 Release)
         run: cmake --install out/build32/clang-x86 --config Release --component DirectXShaderPatcherSDK --prefix out/install/clang-x86
