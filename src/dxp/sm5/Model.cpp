@@ -321,7 +321,12 @@ auto Instruction::Encode() const -> std::vector<uint32_t> {
   if (opcode == Opcode::CustomData) {
     std::vector<uint32_t> encoded;
     encoded.reserve(1 + custom_data.size());
-    encoded.push_back(ENCODE_D3D10_SB_OPCODE_TYPE(D3D10_SB_OPCODE_CUSTOMDATA) | ENCODE_D3D10_SB_TOKENIZED_INSTRUCTION_LENGTH(static_cast<uint32_t>(1 + custom_data.size())));
+    // Emit the preserved raw opcode token (custom-data class lives in its high bits).
+    const uint32_t token0 = custom_data_opcode_token != 0
+        ? custom_data_opcode_token
+        : (ENCODE_D3D10_SB_OPCODE_TYPE(D3D10_SB_OPCODE_CUSTOMDATA)
+           | ENCODE_D3D10_SB_TOKENIZED_INSTRUCTION_LENGTH(static_cast<uint32_t>(1 + custom_data.size())));
+    encoded.push_back(token0);
     encoded.insert(encoded.end(), custom_data.begin(), custom_data.end());
     return encoded;
   }

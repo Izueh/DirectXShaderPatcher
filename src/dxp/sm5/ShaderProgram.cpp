@@ -446,13 +446,22 @@ auto ParseProgramImpl(std::span<const uint8_t> data, uint32_t size, ShaderProgra
       }
     }
     if (kOpcode == D3D10_SB_OPCODE_CUSTOMDATA) {
-      // DCL_CUSTOMDATA stores opaque bytes that must round-trip exactly.
-      instruction.custom_data.reserve(kLength - 1);
-      for (uint32_t i = 1; i < kLength; ++i) {
+      // Custom-data blocks carry their own length in DWORD 1 (count including
+      // the opcode token); the length field overlaps the class bits. Opaque
+      // by design (header leaves the contents undefined) — round-trip exactly.
+      const uint32_t kCustomCount = ParseReadDword(data, (kInstructionStart + 1) * 4);
+      if (kCustomCount < 2 || (kInstructionStart + kCustomCount) > kTotalDwords) {
+        return false;
+      }
+      instruction.length_in_dwords = kCustomCount;
+      instruction.source_length = kCustomCount;
+      instruction.custom_data_opcode_token = kToken0;
+      instruction.custom_data.reserve(kCustomCount - 1);
+      for (uint32_t i = 1; i < kCustomCount; ++i) {
         instruction.custom_data.push_back(ParseReadDword(data, (kInstructionStart + i) * 4));
       }
       program.instructions.push_back(std::move(instruction));
-      cursor += kLength;
+      cursor += kCustomCount;
       continue;
     }
     if (kOpcode == D3D10_SB_OPCODE_DCL_TEMPS) {

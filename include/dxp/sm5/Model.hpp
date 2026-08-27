@@ -574,6 +574,7 @@ struct Instruction {
   std::vector<Operand> operands;
   SamplerMode sampler_mode = SamplerMode::Default;
   std::vector<uint32_t> custom_data;
+  uint32_t custom_data_opcode_token = 0;
   uint32_t source_offset = 0;  ///< Parse provenance (dword offset in the shader chunk); not recipe state.
   uint32_t source_length = 0;  ///< Parse provenance (dword length); not recipe state.
 
