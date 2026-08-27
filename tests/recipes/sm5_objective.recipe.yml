@@ -42,9 +42,7 @@ steps:
                 selection_mode: mask
                 value: z
             - type: constant_buffer
-              handle: { name: frame_constants }
-              indices:
-                - immediate_lo: 0x00000000
+              handle: { name: frame_constants, element_index: 0 }
               components:
                 selection_mode: select
                 value: x

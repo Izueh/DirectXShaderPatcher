@@ -1727,6 +1727,27 @@ auto ResolveOperand(const MatchResult& match, ExecutionContext& context, const O
       operand.index_entries.push_back(std::move(idx));
     }
   }
+  if (!op.indices.empty()) {
+    if (!op.capture.empty()) {
+      operand.index_entries.clear();
+    }
+    for (size_t i = 0; i < op.indices.size(); ++i) {
+      const std::string ip = path + ".indices[" + std::to_string(i) + "]";
+      Operand::Index idx;
+      idx.representation = static_cast<Operand::IndexRepresentation>(op.indices[i].representation);
+      idx.immediate_lo = op.indices[i].immediate_lo.value_or(0);
+      idx.immediate_hi = op.indices[i].immediate_hi.value_or(0);
+      operand.index_entries.push_back(std::move(idx));
+    }
+  }
+  if (op.handle && (!op.indices.empty() || !op.immediates_u32.empty() || !op.immediates_u64.empty() || !op.immediates_i32.empty() || !op.immediates_i64.empty() || !op.immediates_f32.empty() || !op.immediates_f64.empty())) {
+    error = path + ": handle cannot be combined with explicit indices or typed immediates";
+    return {};
+  }
+  if (!op.indices.empty() && (!op.immediates_u32.empty() || !op.immediates_u64.empty() || !op.immediates_i32.empty() || !op.immediates_i64.empty() || !op.immediates_f32.empty() || !op.immediates_f64.empty())) {
+    error = path + ": explicit indices and typed immediates cannot be combined";
+    return {};
+  }
   if (op.handle) {
     const auto lookup = [&](BindingKind kind) -> const uint32_t* {
       auto& m = context.Bindings(kind);
@@ -1758,10 +1779,16 @@ auto ResolveOperand(const MatchResult& match, ExecutionContext& context, const O
       error = path + ": missing SM5 declaration handle binding '" + op.handle->name + "'";
       return {};
     }
-    Operand::Index operand_index;
-    operand_index.representation = Operand::IndexRepresentation::Immediate32;
-    operand_index.immediate_lo = *rbp;
-    operand.index_entries.push_back(std::move(operand_index));
+    // Handle overrides the register index (first entry) but preserves any
+    // subsequent entries (e.g. cbuffer element_index) from a captured operand.
+    if (!operand.index_entries.empty()) {
+      operand.index_entries[0].immediate_lo = *rbp;
+    } else {
+      Operand::Index operand_index;
+      operand_index.representation = Operand::IndexRepresentation::Immediate32;
+      operand_index.immediate_lo = *rbp;
+      operand.index_entries.push_back(std::move(operand_index));
+    }
     if (op.handle->element_index.has_value()) {
       uint32_t resolved_element = 0;
       const auto& elem_idx = *op.handle->element_index;

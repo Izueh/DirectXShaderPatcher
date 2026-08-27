@@ -176,10 +176,15 @@ capture/match_capture/export_as) is in the generated JSON. Key semantics:
   (`immediates_u32` … `immediates_f64`), not both.
 - Shorthand entries are literals or variable names (resolved from recipe env).
 - `handle` resolves a declaration handle from an `add_resource` step (emit only)
-  and requires an explicit `type`.
+  and requires an explicit `type`. Cannot be combined with `indices` or
+  `immediates_*` arrays.
 - `capture` names the operand: in a match pattern it stores the matched operand
   under that name; in an emit operand it replays a previously captured operand
-  (same-match first, then the cross-step global store).
+  (same-match first, then the cross-step global store). Explicit `indices`
+  replace captured index entries; typed immediates are ignored when capture
+  is present. `handle` overrides the first index entry but preserves subsequent
+  entries (e.g. cbuffer element_index). Conflicting sources
+  (`handle`+`immediates_*`, `indices`+`immediates_*`) are rejected.
 - `match_capture` (match patterns only) constrains the match: the operand must
   equal a previously captured operand (a prior step's global store, or a
   same-match capture). It is rejected in emit patterns.

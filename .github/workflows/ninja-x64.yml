@@ -43,10 +43,10 @@ jobs:
         run: cmake --preset ninja-x64 -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Build (x64)
-        run: cmake --build --parallel --preset ninja-x64-release --verbose
+        run: cmake --build --parallel --preset ninja-x64-release
 
       - name: Build Debug (x64)
-        run: cmake --build --parallel --preset ninja-x64-debug --verbose
+        run: cmake --build --parallel --preset ninja-x64-debug
 
       - name: Test (x64)
         run: ctest --preset ninja-x64-release --output-on-failure

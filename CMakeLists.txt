@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.27)
-project(DirectXShaderPatcher VERSION 0.3.1 LANGUAGES CXX)
+project(DirectXShaderPatcher VERSION 0.3.2 LANGUAGES CXX)
 
 # ─── Versioning ──────────────────────────────────────────────────────────────
 # Single source of truth: project(VERSION) above. DXP_VERSION_STRING follows
