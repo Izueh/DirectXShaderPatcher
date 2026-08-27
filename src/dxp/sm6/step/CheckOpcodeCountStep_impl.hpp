@@ -21,7 +21,7 @@ std::expected<dxp::CheckOpcodeCountResults, std::string> Execute(const CheckOpco
 /// @param error Output error message on failure.
 /// @param ctx Validation context.
 /// @return void on success, error message on failure.
-std::expected<void, std::string> Validate(const CheckOpcodeCountStep& step, std::string& error, ValidationContext& ctx);
+std::expected<void, std::string> Validate(const CheckOpcodeCountStep& step, ValidationContext& ctx);
 /// @brief Formats the step's result as a Trace log message.
 std::string DescribeOutcome(const CheckOpcodeCountStep& step, const dxp::CheckOpcodeCountResults& results, const ExecutionContext& ctx);
 

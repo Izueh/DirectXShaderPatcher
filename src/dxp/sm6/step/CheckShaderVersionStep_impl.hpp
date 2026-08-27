@@ -22,7 +22,7 @@ std::expected<dxp::CheckShaderVersionResults, std::string> Execute(const CheckSh
 /// @param error Output error message on failure.
 /// @param ctx Validation context.
 /// @return void on success, error message on failure.
-std::expected<void, std::string> Validate(const CheckShaderVersionStep& step, std::string& error, ValidationContext& ctx);
+std::expected<void, std::string> Validate(const CheckShaderVersionStep& step, ValidationContext& ctx);
 /// @brief Formats the step's result as a Trace log message.
 std::string DescribeOutcome(const CheckShaderVersionStep& step, const dxp::CheckShaderVersionResults& results, const ExecutionContext& ctx);
 

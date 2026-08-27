@@ -1161,7 +1161,7 @@
                "dimension": {
                   "anyOf": [
                      {
-                        "$ref": "#/$defs/uint32_t"
+                        "$ref": "#/$defs/dxp::sm5::model::ResourceDimension"
                      },
                      {
                         "type": "null"

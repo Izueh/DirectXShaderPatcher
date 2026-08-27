@@ -22,7 +22,7 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
 /// @param error Output error message on failure.
 /// @param ctx Validation context.
 /// @return void on success, error message on failure.
-std::expected<void, std::string> Validate(const AddResourceStep& step, std::string& error, ValidationContext& ctx);
+std::expected<void, std::string> Validate(const AddResourceStep& step, ValidationContext& ctx);
 /// @brief Formats the step's result as a Trace log message.
 std::string DescribeOutcome(const AddResourceStep& step, const dxp::AddResourceResults& results, const ExecutionContext& ctx);
 

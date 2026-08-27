@@ -178,7 +178,7 @@ steps:
     textures:
       - handle: test_tex
         register_index: 15
-        dimension: 3
+        dimension: texture2d
     cbuffers:
       - handle: test_cb
         register_index: 14

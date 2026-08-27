@@ -32,7 +32,7 @@ struct AddResourceStep {
   struct TextureDecl {
     std::optional<uint32_t> register_index;  ///< Binding register index. Empty for next available, or a number for explicit.
     std::optional<bool> reverse_bind;              ///< Auto-bind reverse order: take the HIGHEST free slot (scan down from the max) instead of the lowest.
-    uint32_t dimension = 3U;
+    model::ResourceDimension dimension = model::ResourceDimension::Texture3D;
     std::string handle;
   };
 
@@ -45,7 +45,7 @@ struct AddResourceStep {
   struct InputDecl {
     std::optional<uint32_t> register_index;  ///< Binding register index. Empty for next available, or a number for explicit.
     std::optional<bool> reverse_bind;              ///< Auto-bind reverse order: take the HIGHEST free slot (scan down from the max) instead of the lowest.
-    uint32_t interpolation_mode = 2U;
+    model::InterpolationMode interpolation_mode = model::InterpolationMode::Linear;
     std::string handle;
   };
 
@@ -93,7 +93,7 @@ struct AddResourceStep {
     std::optional<uint32_t> register_index;  ///< Binding register index. Empty for next available, or a number for explicit.
     std::optional<bool> reverse_bind;              ///< Auto-bind reverse order: take the HIGHEST free slot (scan down from the max) instead of the lowest.
     UavKind kind = UavKind::Typed;
-    uint32_t dimension = 3U;
+    model::ResourceDimension dimension = model::ResourceDimension::Texture3D;
     uint32_t structure_stride = 0;  ///< 0 = skip stride token, DXBC loader uses its default
     bool globally_coherent = false;
     bool has_order_preserving_counter = false;

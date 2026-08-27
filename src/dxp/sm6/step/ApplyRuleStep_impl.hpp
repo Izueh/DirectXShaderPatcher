@@ -21,7 +21,7 @@ std::expected<dxp::ApplyRuleResults, std::string> Execute(const ApplyRuleStep& s
 /// @param error Output error message on failure.
 /// @param ctx Validation context.
 /// @return void on success, error message on failure.
-std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string& error, ValidationContext& ctx);
+std::expected<void, std::string> Validate(const ApplyRuleStep& step, ValidationContext& ctx);
 /// @brief Formats the step's result as a Trace log message.
 std::string DescribeOutcome(const ApplyRuleStep& step, const dxp::ApplyRuleResults& results, const ExecutionContext& ctx);
 

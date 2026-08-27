@@ -53,15 +53,13 @@ Execute(const CheckResourceCountStep& step, ExecutionContext& ctx) {
 }
 
 std::expected<void, std::string>
-Validate(const CheckResourceCountStep& step, std::string& error, ValidationContext& ctx) {
+Validate(const CheckResourceCountStep& step, ValidationContext& ctx) {
   if (!ctx.names.insert(step.name).second) {
-    error = "duplicate SM6 name '" + step.name + "' reused by step";
-    return std::unexpected(std::move(error));
+    return std::unexpected("duplicate SM6 name '" + step.name + "' reused by step");
   }
 
   if (auto r = ValidateCondition<CheckResourceCountStep::Results>(step.condition, ctx); !r) {
-    error = r.error();
-    return std::unexpected(error);
+    return std::unexpected(r.error());
   }
   return {};
 }

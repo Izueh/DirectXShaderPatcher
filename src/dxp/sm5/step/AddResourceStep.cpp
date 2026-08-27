@@ -196,32 +196,28 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
   return result;
 }
 
-std::expected<void, std::string> Validate(const AddResourceStep& step, std::string& error, dxp::ValidationContext& ctx) {
+std::expected<void, std::string> Validate(const AddResourceStep& step, dxp::ValidationContext& ctx) {
   if (step.name.empty()) {
-    error = "add_resource step requires a name";
-    return std::unexpected(std::move(error));
+    return std::unexpected("add_resource step requires a name");
   }
 
   for (const auto& d : step.uavs) {
     if (d.register_index.has_value()) {
       if (d.kind == AddResourceStep::UavKind::Raw) {
-        error = "add_resource: raw UAV does not support stride";
-        return std::unexpected(std::move(error));
+        return std::unexpected("add_resource: raw UAV does not support stride");
       }
     }
   }
 
   for (const auto& t : step.temps) {
     if (t.empty()) {
-      error = "add_resource: temp handle must not be empty";
-      return std::unexpected(std::move(error));
+      return std::unexpected("add_resource: temp handle must not be empty");
     }
     ctx.handles.insert(t);
   }
 
   if (!ctx.names.insert(step.name).second) {
-    error = "duplicate SM5 name '" + step.name + "' reused by step";
-    return std::unexpected(std::move(error));
+    return std::unexpected("duplicate SM5 name '" + step.name + "' reused by step");
   }
 
   auto declareHandles = [&ctx](const auto& decls) {
@@ -240,8 +236,7 @@ std::expected<void, std::string> Validate(const AddResourceStep& step, std::stri
   declareHandles(step.outputs);
 
   if (auto r = ValidateCondition<typename std::decay_t<decltype(step)>::Results>(step.condition, ctx); !r) {
-    error = r.error();
-    return std::unexpected(error);
+    return std::unexpected(r.error());
   }
   return {};
 }
@@ -318,7 +313,7 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     decl.register_index = d.register_index;
     decl.reverse_bind = d.reverse_bind;
     if (d.interpolation.has_value()) {
-      decl.interpolation_mode = static_cast<uint32_t>(*d.interpolation);
+      decl.interpolation_mode = *d.interpolation;
     }
     step.inputs.push_back(std::move(decl));
   }

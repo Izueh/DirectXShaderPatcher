@@ -301,7 +301,7 @@ steps:
       - handle: my_uav
         register_index: 4
         kind: typed
-        dimension: 3
+        dimension: texture2d
     temps: [result]
   - kind: apply_rule
     name: emit_uav_no_element

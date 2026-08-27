@@ -27,8 +27,8 @@ concept RecipeStep = requires(T step) {
 /// This concept builds directly upon RecipeStep, adding constraints for backend engine processing.
 /// It is intended for internal engine use, such as compile-time assertions in .cpp files.
 template <typename Step, typename Context>
-concept ExecutableStep = RecipeStep<Step> && requires(const Step& step, Context& exec_ctx, ValidationContext& validation_ctx, std::string& error) {
-  { Validate(step, error, validation_ctx) }
+concept ExecutableStep = RecipeStep<Step> && requires(const Step& step, Context& exec_ctx, ValidationContext& validation_ctx) {
+  { Validate(step, validation_ctx) }
   -> std::same_as<std::expected<void, std::string>>;
   { Execute(step, exec_ctx) }
   -> std::same_as<std::expected<typename Step::Results, std::string>>;

@@ -54,15 +54,13 @@ Execute(const CheckResourceCountStep& step, ExecutionContext& ctx) {
 }
 
 std::expected<void, std::string>
-Validate(const CheckResourceCountStep& step, std::string& error, dxp::ValidationContext& ctx) {
+Validate(const CheckResourceCountStep& step, dxp::ValidationContext& ctx) {
   if (!ctx.names.insert(step.name).second) {
-    error = "duplicate SM5 name '" + step.name + "' reused by step";
-    return std::unexpected(std::move(error));
+    return std::unexpected("duplicate SM5 name '" + step.name + "' reused by step");
   }
 
   if (auto r = ValidateCondition<typename std::decay_t<decltype(step)>::Results>(step.condition, ctx); !r) {
-    error = r.error();
-    return std::unexpected(error);
+    return std::unexpected(r.error());
   }
   return {};
 }

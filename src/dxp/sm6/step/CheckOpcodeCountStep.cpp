@@ -39,20 +39,17 @@ Execute(const CheckOpcodeCountStep& step, ExecutionContext& ctx) {
 }
 
 std::expected<void, std::string>
-Validate(const CheckOpcodeCountStep& step, std::string& error, ValidationContext& ctx) {
+Validate(const CheckOpcodeCountStep& step, ValidationContext& ctx) {
   if (step.dxil_opcodes.empty() && step.llvm_opcodes.empty()) {
-    error = "check_opcode_count step '" + step.name + "': at least one of dxil_opcodes or llvm_opcodes must be non-empty";
-    return std::unexpected(std::move(error));
+    return std::unexpected("check_opcode_count step '" + step.name + "': at least one of dxil_opcodes or llvm_opcodes must be non-empty");
   }
 
   if (!ctx.names.insert(step.name).second) {
-    error = "duplicate SM6 name '" + step.name + "' reused by step";
-    return std::unexpected(std::move(error));
+    return std::unexpected("duplicate SM6 name '" + step.name + "' reused by step");
   }
 
   if (auto r = ValidateCondition<CheckOpcodeCountStep::Results>(step.condition, ctx); !r) {
-    error = r.error();
-    return std::unexpected(error);
+    return std::unexpected(r.error());
   }
   return {};
 }

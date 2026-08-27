@@ -34,17 +34,21 @@ namespace dxp::detail {
 template <typename StepVariant>
 std::expected<void, std::string> ValidateStepList(const std::vector<StepVariant>& steps) {
   ValidationContext ctx;
-  std::string error;
 
   for (const auto& step : steps) {
     std::string step_name;
-    std::visit([&](auto& s) {
-      auto result = Validate(s, error, ctx);
-      if (!result) error = std::move(result.error());
+    std::string step_kind;
+    std::expected<void, std::string> result = std::visit([&](auto& s) -> std::expected<void, std::string> {
       step_name = s.name;
+      step_kind = s.kind;
+      auto vresult = Validate(s, ctx);
+      if (!vresult) {
+        return std::unexpected(step_kind + " '" + step_name + "': " + vresult.error());
+      }
+      return {};
     },
                step);
-    if (!error.empty()) return std::unexpected(std::move(error));
+    if (!result) return std::unexpected(std::move(result).error());
     ctx.names.insert(std::move(step_name));
   }
   return {};

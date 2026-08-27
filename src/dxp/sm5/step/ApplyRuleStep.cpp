@@ -979,15 +979,13 @@ std::expected<dxp::ApplyRuleResults, std::string> Execute(const ApplyRuleStep& s
   return ExecuteSingleRuleImpl(ctx.program, step.name, step.rule, step.match_mode, step.required, step.rewrite_mode, step.insert_index, step.range_start_offset, step.range_end_offset, ctx);
 }
 
-std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string& error, dxp::ValidationContext& ctx) {
+std::expected<void, std::string> Validate(const ApplyRuleStep& step, dxp::ValidationContext& ctx) {
   if (step.name.empty()) {
-    error = "apply_rule step requires a name";
-    return std::unexpected(std::move(error));
+    return std::unexpected("apply_rule step requires a name");
   }
 
   if (!ctx.names.insert(step.name).second) {
-    error = "duplicate SM5 name '" + step.name + "' reused by step";
-    return std::unexpected(std::move(error));
+    return std::unexpected("duplicate SM5 name '" + step.name + "' reused by step");
   }
 
   std::unordered_set<std::string> global_instruction_captures;
@@ -1014,8 +1012,7 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string
     for (const auto& op : operands) {
       if (op.export_as.has_value()) {
         if (!ctx.names.insert(*op.export_as).second) {
-          error = "duplicate export_as key '" + *op.export_as + "' must be unique across all names";
-          return std::unexpected(std::move(error));
+          return std::unexpected("duplicate export_as key '" + *op.export_as + "' must be unique across all names");
         }
       }
     }
@@ -1028,8 +1025,7 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string
   auto checkHandleRefs = [&](const std::vector<OperandPattern>& operands) -> std::expected<void, std::string> {
     for (const auto& op : operands) {
       if (op.handle && !ctx.handles.contains(op.handle->name)) {
-        error = "unknown resource declaration handle '" + op.handle->name + "'";
-        return std::unexpected(std::move(error));
+        return std::unexpected("unknown resource declaration handle '" + op.handle->name + "'");
       }
     }
     return {};
@@ -1044,21 +1040,18 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string
   for (const auto& emit : step.rule.emit_patterns) {
     if (!emit.capture.empty() && !emit.opcode.has_value()) {
       if (!global_instruction_captures.contains(emit.capture)) {
-        error = "SM5 emit instruction capture reference '" + emit.capture + "' not found in match captures";
-        return std::unexpected(std::move(error));
+        return std::unexpected("SM5 emit instruction capture reference '" + emit.capture + "' not found in match captures");
       }
     }
   }
 
   if ((step.rewrite_mode == RewriteKind::Before || step.rewrite_mode == RewriteKind::After) && step.insert_index < 0) {
-    error = "SM5 before/after rewrites require insert_index >= 0";
-    return std::unexpected(std::move(error));
+    return std::unexpected("SM5 before/after rewrites require insert_index >= 0");
   }
 
   if (step.rewrite_mode != RewriteKind::None) {
     if (step.rule.emit_patterns.empty()) {
-      error = "SM5 rules without emit must use rewrite_mode: None";
-      return std::unexpected(std::move(error));
+      return std::unexpected("SM5 rules without emit must use rewrite_mode: None");
     }
   }
 
@@ -1067,8 +1060,7 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string
       if (pattern.interpolation_mode.has_value()) {
         if (pattern.opcode.has_value()) {
           if (*pattern.opcode != Opcode::DclInputPs && *pattern.opcode != Opcode::DclInputPsSiv) {
-            error = "interpolation is only valid for dcl_input_ps and dcl_input_ps_siv (in " + context + ")";
-            return std::unexpected(std::move(error));
+            return std::unexpected("interpolation is only valid for dcl_input_ps and dcl_input_ps_siv (in " + context + ")");
           }
         }
       }
@@ -1077,8 +1069,7 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string
       if (emit.interpolation_mode.has_value()) {
         if (emit.opcode.has_value()) {
           if (*emit.opcode != Opcode::DclInputPs && *emit.opcode != Opcode::DclInputPsSiv) {
-            error = "interpolation is only valid for dcl_input_ps and dcl_input_ps_siv (in " + context + ")";
-            return std::unexpected(std::move(error));
+            return std::unexpected("interpolation is only valid for dcl_input_ps and dcl_input_ps_siv (in " + context + ")");
           }
         }
       }
@@ -1088,8 +1079,7 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string
   if (auto r = validateInterpolation("rule '" + step.name + "'"); !r) return r;
 
   if (step.rule.match_patterns.empty()) {
-    error = "SM5 rules require at least one match instruction pattern";
-    return std::unexpected(std::move(error));
+    return std::unexpected("SM5 rules require at least one match instruction pattern");
   }
 
   auto validateIndexPatterns = [&](const std::vector<OperandIndexPattern>& indices, const std::string& path) -> std::expected<void, std::string> {
@@ -1100,23 +1090,19 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string
       const bool kReprRequiresRelative = idx.representation == OperandIndexRepresentation::Immediate32PlusRelative || idx.representation == OperandIndexRepresentation::Immediate64PlusRelative;
       if (idx.relative_operand) {
         if (idx.any) {
-          error = idxPath + ": relative_operand is incompatible with any: true";
-          return std::unexpected(std::move(error));
+          return std::unexpected(idxPath + ": relative_operand is incompatible with any: true");
         }
         if (!kReprAllowsRelative) {
-          error = idxPath + ": relative_operand requires representation relative, immediate32_plus_relative, or immediate64_plus_relative";
-          return std::unexpected(std::move(error));
+          return std::unexpected(idxPath + ": relative_operand requires representation relative, immediate32_plus_relative, or immediate64_plus_relative");
         }
         // SM5 supports at most one nested relative operand — reject deeper nesting.
         for (const auto& nested_idx : (**idx.relative_operand).IndexPatterns()) {
           if (nested_idx.relative_operand) {
-            error = idxPath + ".relative_operand: SM5 relative operands support at most one nesting level";
-            return std::unexpected(std::move(error));
+            return std::unexpected(idxPath + ".relative_operand: SM5 relative operands support at most one nesting level");
           }
         }
       } else if (kReprRequiresRelative) {
-        error = idxPath + ": immediate32_plus_relative/immediate64_plus_relative requires relative_operand";
-        return std::unexpected(std::move(error));
+        return std::unexpected(idxPath + ": immediate32_plus_relative/immediate64_plus_relative requires relative_operand");
       }
     }
     return {};
@@ -1124,8 +1110,7 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string
   auto validateIndexForm = [&](const OperandPattern& op, const std::string& path) -> std::expected<void, std::string> {
     const bool has_typed = !op.immediates_u32.empty() || !op.immediates_u64.empty() || !op.immediates_i32.empty() || !op.immediates_i64.empty() || !op.immediates_f32.empty() || !op.immediates_f64.empty();
     if (!op.indices.empty() && has_typed) {
-      error = path + ": cannot use both explicit indices and typed immediates (immediates_u32/etc.)";
-      return std::unexpected(std::move(error));
+      return std::unexpected(path + ": cannot use both explicit indices and typed immediates (immediates_u32/etc.)");
     }
     return {};
   };
@@ -1149,41 +1134,34 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string
   // --- Emit operand completeness + opcode layout validation ---
   auto validateEmitOperand = [&](const OperandPattern& op, const std::string& path) -> std::expected<void, std::string> {
     if (!op.match_capture.empty()) {
-      error = path + ": match_capture is match-only; use capture to replay a captured operand in emit";
-      return std::unexpected(std::move(error));
+      return std::unexpected(path + ": match_capture is match-only; use capture to replay a captured operand in emit");
     }
     if (op.any) {
-      error = path + ": any is not valid in emit operands";
-      return std::unexpected(std::move(error));
+      return std::unexpected(path + ": any is not valid in emit operands");
     }
     if (!op.mask.empty()) {
       if (op.mask.size() > 4) {
-        error = path + ": mask value '" + op.mask + "' has more than 4 components";
-        return std::unexpected(std::move(error));
+        return std::unexpected(path + ": mask value '" + op.mask + "' has more than 4 components");
       }
       for (const char c : op.mask) {
         if (ComponentIndex(c) < 0) {
-          error = path + ": mask value '" + op.mask + "' contains invalid component (expected xyzw)";
-          return std::unexpected(std::move(error));
+          return std::unexpected(path + ": mask value '" + op.mask + "' contains invalid component (expected xyzw)");
         }
       }
     }
     if (!op.swizzle.empty()) {
       if (op.swizzle.size() != 4) {
-        error = path + ": swizzle value '" + op.swizzle + "' must have exactly 4 components (e.g. xyzw)";
-        return std::unexpected(std::move(error));
+        return std::unexpected(path + ": swizzle value '" + op.swizzle + "' must have exactly 4 components (e.g. xyzw)");
       }
       for (const char c : op.swizzle) {
         if (ComponentIndex(c) < 0) {
-          error = path + ": swizzle value '" + op.swizzle + "' contains invalid component (expected xyzw)";
-          return std::unexpected(std::move(error));
+          return std::unexpected(path + ": swizzle value '" + op.swizzle + "' contains invalid component (expected xyzw)");
         }
       }
     }
     if (!op.select.empty()) {
       if (op.select.size() != 1 || ComponentIndex(op.select.front()) < 0) {
-        error = path + ": select value '" + op.select + "' must be a single component (x, y, z, or w)";
-        return std::unexpected(std::move(error));
+        return std::unexpected(path + ": select value '" + op.select + "' must be a single component (x, y, z, or w)");
       }
     }
     const bool is_immediate =
@@ -1192,20 +1170,17 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string
     // operand of sample_l is a bare s#); their encoding is derived.
     const bool is_sampler = op.type.has_value() && *op.type == OperandType::Sampler;
     if (PatternComponentMode(op).has_value() == false && op.capture.empty() && !is_immediate && !is_sampler) {
-      error = path + ": emit operand has no component selection; specify components: or capture: a previously matched operand";
-      return std::unexpected(std::move(error));
+      return std::unexpected(path + ": emit operand has no component selection; specify components: or capture: a previously matched operand");
     }
     if (is_immediate) {
       if (op.num_components >= 0) {
-        error = path + ": immediate operands derive num_components from the immediates count";
-        return std::unexpected(std::move(error));
+        return std::unexpected(path + ": immediate operands derive num_components from the immediates count");
       }
       // Count values from either form: typed immediates arrays (immediates_u32 etc.)
       // or the manual indices: form — IndexPatterns() resolves both.
       const size_t value_count = op.IndexPatterns().size();
       if (value_count != 1 && value_count != 4) {
-        error = path + ": immediate operands must carry exactly 1 or 4 values (got " + std::to_string(value_count) + ")";
-        return std::unexpected(std::move(error));
+        return std::unexpected(path + ": immediate operands must carry exactly 1 or 4 values (got " + std::to_string(value_count) + ")");
       }
     }
     return {};
@@ -1250,8 +1225,7 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string
       }
     }
     if (kExpectedOperands > 0 && emit.operands.size() != kExpectedOperands) {
-      error = "rule.emit_patterns[" + std::to_string(ei) + "]: opcode " + std::to_string(static_cast<uint32_t>(*emit.opcode)) + " expects " + std::to_string(kExpectedOperands) + " operands, recipe provides " + std::to_string(emit.operands.size());
-      return std::unexpected(std::move(error));
+      return std::unexpected("rule.emit_patterns[" + std::to_string(ei) + "]: opcode " + std::to_string(static_cast<uint32_t>(*emit.opcode)) + " expects " + std::to_string(kExpectedOperands) + " operands, recipe provides " + std::to_string(emit.operands.size()));
     }
     for (size_t oi = 0; oi < emit.operands.size(); ++oi) {
       const OperandPattern& op = emit.operands[oi];
@@ -1259,16 +1233,14 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string
       if (auto r = validateEmitOperand(op, opPath); !r) return r;
       const OperandRole kRole = GetOperandRole(*emit.opcode, oi);
       if (kRole == OperandRole::Destination && (!op.swizzle.empty() || !op.select.empty())) {
-        error = opPath + ": destination operand must use mask selection mode (not swizzle/select)";
-        return std::unexpected(std::move(error));
+        return std::unexpected(opPath + ": destination operand must use mask selection mode (not swizzle/select)");
       }
       const OperandScalarType kExpectedType = GetExpectedOperandType(*emit.opcode, oi);
       if (op.type.has_value()) {
         const bool kTypeOk =
             kExpectedType == OperandScalarType::Unknown || (kExpectedType == OperandScalarType::Texture && *op.type == OperandType::Resource) || (kExpectedType == OperandScalarType::Sampler && *op.type == OperandType::Sampler) || (kExpectedType == OperandScalarType::Uav && *op.type == OperandType::UAV) || (kExpectedType == OperandScalarType::CBuffer && *op.type == OperandType::CBuffer) || (kExpectedType == OperandScalarType::F32 || kExpectedType == OperandScalarType::U32 || kExpectedType == OperandScalarType::I32 || kExpectedType == OperandScalarType::F64 || kExpectedType == OperandScalarType::Bool);
         if (!kTypeOk) {
-          error = opPath + ": operand type does not match the opcode's expected slot type (" + std::to_string(static_cast<uint32_t>(kExpectedType)) + ")";
-          return std::unexpected(std::move(error));
+          return std::unexpected(opPath + ": operand type does not match the opcode's expected slot type (" + std::to_string(static_cast<uint32_t>(kExpectedType)) + ")");
         }
       }
     }
@@ -1282,32 +1254,22 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string
     }
     if (has_resource_fields) {
       if (kEmitOpcode != Opcode::DclResource && kEmitOpcode != Opcode::DclUnorderedAccessViewTyped && kEmitOpcode != Opcode::DclUnorderedAccessViewRaw && kEmitOpcode != Opcode::DclUnorderedAccessViewStructured) {
-        error = "rule.emit_patterns[" + std::to_string(ei) + "]: dimension/return_type/structure_stride fields are only valid for resource declaration opcodes";
-        return std::unexpected(std::move(error));
+        return std::unexpected("rule.emit_patterns[" + std::to_string(ei) + "]: dimension/return_type/structure_stride fields are only valid for resource declaration opcodes");
       }
     }
     if (emit.access_pattern.has_value()) {
       if (kEmitOpcode != Opcode::DclConstantBuffer) {
-        error = "rule.emit_patterns[" + std::to_string(ei) + "]: access_pattern field is only valid for dcl_constant_buffer";
-        return std::unexpected(std::move(error));
+        return std::unexpected("rule.emit_patterns[" + std::to_string(ei) + "]: access_pattern field is only valid for dcl_constant_buffer");
       }
     }
     if (emit.mode.has_value()) {
       if (kEmitOpcode != Opcode::DclSampler) {
-        error = "rule.emit_patterns[" + std::to_string(ei) + "]: mode field is only valid for dcl_sampler";
-        return std::unexpected(std::move(error));
-      }
-    }
-    if (emit.mode.has_value()) {
-      if (kEmitOpcode != Opcode::DclSampler) {
-        error = "rule.emit_patterns[" + std::to_string(ei) + "]: mode field is only valid for dcl_sampler";
-        return std::unexpected(std::move(error));
+        return std::unexpected("rule.emit_patterns[" + std::to_string(ei) + "]: mode field is only valid for dcl_sampler");
       }
     }
     if (emit.uav_flags != 0) {
       if (kEmitOpcode != Opcode::DclUnorderedAccessViewRaw && kEmitOpcode != Opcode::DclUnorderedAccessViewStructured && kEmitOpcode != Opcode::DclUnorderedAccessViewTyped) {
-        error = "rule.emit_patterns[" + std::to_string(ei) + "]: uav_flags field is only valid for UAV declaration opcodes";
-        return std::unexpected(std::move(error));
+        return std::unexpected("rule.emit_patterns[" + std::to_string(ei) + "]: uav_flags field is only valid for UAV declaration opcodes");
       }
     }
   }
@@ -1324,13 +1286,11 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string
       const auto& op = step.rule.match_patterns[pi].operands[oi];
       const std::string opPath = "rule.match_patterns[" + std::to_string(pi) + "].operands[" + std::to_string(oi) + "]";
       if (!op.match_capture.empty() && !knownOperandCapture(op.match_capture)) {
-        error = opPath + ": match_capture references unknown captured operand '" + op.match_capture + "'";
-        return std::unexpected(std::move(error));
+        return std::unexpected(opPath + ": match_capture references unknown captured operand '" + op.match_capture + "'");
       }
       for (const auto& idx : op.IndexPatterns()) {
         if (!idx.match_capture.empty() && !knownIndexCapture(idx.match_capture)) {
-          error = opPath + ": index match_capture references unknown captured index '" + idx.match_capture + "'";
-          return std::unexpected(std::move(error));
+          return std::unexpected(opPath + ": index match_capture references unknown captured index '" + idx.match_capture + "'");
         }
       }
     }
@@ -1347,8 +1307,7 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string
   }
 
   if (auto r = ValidateCondition<typename std::decay_t<decltype(step)>::Results>(step.condition, ctx); !r) {
-    error = r.error();
-    return std::unexpected(error);
+    return std::unexpected(r.error());
   }
 
   return {};

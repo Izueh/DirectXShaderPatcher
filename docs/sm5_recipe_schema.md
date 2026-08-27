@@ -86,7 +86,7 @@ shape; only the relevant fields are honored per declaration type:
 | `mode` | samplers | `SamplerMode` key (`default`, `comparison`, `mono`) |
 | `kind` | uavs | `typed`, `raw`, or `structured` |
 | `stride` | structured_resources, uavs | byte stride (required for structured resources) |
-| `dimension` | textures | texture dimension |
+| `dimension` | textures | `ResourceDimension` key (`texture3d`, `texture2darray`, etc.) |
 | `globally_coherent` | uavs | bool |
 | `has_counter` | uavs | bool |
 

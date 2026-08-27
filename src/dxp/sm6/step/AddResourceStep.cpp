@@ -291,15 +291,13 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
   return result;
 }
 
-std::expected<void, std::string> Validate(const AddResourceStep& step, std::string& error, ValidationContext& ctx) {
+std::expected<void, std::string> Validate(const AddResourceStep& step, ValidationContext& ctx) {
   if (step.name.empty()) {
-    error = "add_resource step requires a name";
-    return std::unexpected(std::move(error));
+    return std::unexpected("add_resource step requires a name");
   }
 
   if (!ctx.names.insert(step.name).second) {
-    error = "duplicate SM6 name '" + step.name + "' reused by step";
-    return std::unexpected(std::move(error));
+    return std::unexpected("duplicate SM6 name '" + step.name + "' reused by step");
   }
 
   auto declareHandles = [&ctx](const auto& decls) {
@@ -313,8 +311,7 @@ std::expected<void, std::string> Validate(const AddResourceStep& step, std::stri
   declareHandles(step.samplers);
 
   if (auto r = ValidateCondition<AddResourceStep::Results>(step.condition, ctx); !r) {
-    error = r.error();
-    return std::unexpected(error);
+    return std::unexpected(r.error());
   }
 
   return {};

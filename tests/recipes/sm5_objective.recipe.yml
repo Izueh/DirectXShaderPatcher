@@ -8,7 +8,7 @@ steps:
         elements: 1
     textures:
       - handle: ign_blue_noise
-        dimension: 6
+        dimension: texturecube
     samplers:
       - handle: ign_sampler
   - kind: apply_rule

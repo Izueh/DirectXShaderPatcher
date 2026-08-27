@@ -23,7 +23,7 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
 /// @param error Output error message on failure.
 /// @param ctx Validation context.
 /// @return void on success, error message on failure.
-std::expected<void, std::string> Validate(const AddResourceStep& step, std::string& error, dxp::ValidationContext& ctx);
+std::expected<void, std::string> Validate(const AddResourceStep& step, dxp::ValidationContext& ctx);
 /// @brief Formats the step's result as a Trace log message.
 std::string DescribeOutcome(const AddResourceStep& step, const dxp::AddResourceResults& results, const ExecutionContext& ctx);
 
@@ -38,7 +38,7 @@ struct AddResourceDeclData {
   std::optional<SamplerMode> mode;
   std::optional<AddResourceStep::UavKind> kind;
   uint32_t stride{};  // Required: non-zero byte stride for structured buffer elements
-  std::optional<uint32_t> dimension;
+  std::optional<ResourceDimension> dimension;
   std::optional<bool> globally_coherent;
   std::optional<bool> has_counter;
 };

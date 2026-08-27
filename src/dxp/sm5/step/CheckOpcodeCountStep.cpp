@@ -45,20 +45,17 @@ Execute(const CheckOpcodeCountStep& step, ExecutionContext& ctx) {
 }
 
 std::expected<void, std::string>
-Validate(const CheckOpcodeCountStep& step, std::string& error, dxp::ValidationContext& ctx) {
+Validate(const CheckOpcodeCountStep& step, dxp::ValidationContext& ctx) {
   if (step.opcodes.empty()) {
-    error = "check_opcode_count step '" + step.name + "': opcodes must not be empty";
-    return std::unexpected(std::move(error));
+    return std::unexpected("check_opcode_count step '" + step.name + "': opcodes must not be empty");
   }
 
   if (!ctx.names.insert(step.name).second) {
-    error = "duplicate SM5 name '" + step.name + "' reused by step";
-    return std::unexpected(std::move(error));
+    return std::unexpected("duplicate SM5 name '" + step.name + "' reused by step");
   }
 
   if (auto r = ValidateCondition<typename std::decay_t<decltype(step)>::Results>(step.condition, ctx); !r) {
-    error = r.error();
-    return std::unexpected(error);
+    return std::unexpected(r.error());
   }
   return {};
 }

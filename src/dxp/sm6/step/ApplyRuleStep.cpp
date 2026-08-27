@@ -1407,31 +1407,27 @@ std::expected<::dxp::ApplyRuleResults, std::string> Execute(const ApplyRuleStep&
   return result;
 }
 
-std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string& error, ValidationContext& ctx) {
+std::expected<void, std::string> Validate(const ApplyRuleStep& step, ValidationContext& ctx) {
   if (step.name.empty()) {
-    error = "apply_rule step requires a name";
-    return std::unexpected(std::move(error));
+    return std::unexpected("apply_rule step requires a name");
   }
 
   if (!ctx.names.insert(step.name).second) {
-    error = "duplicate SM6 name '" + step.name + "' reused by step";
-    return std::unexpected(std::move(error));
+    return std::unexpected("duplicate SM6 name '" + step.name + "' reused by step");
   }
 
   for (const auto& pattern : step.rule.match_patterns) {
     for (const auto& op_pattern : pattern.operand_patterns) {
       if (op_pattern.export_as.has_value()) {
         if (!ctx.names.insert(*op_pattern.export_as).second) {
-          error = "duplicate export_as key '" + *op_pattern.export_as + "' must be unique across all names";
-          return std::unexpected(std::move(error));
+          return std::unexpected("duplicate export_as key '" + *op_pattern.export_as + "' must be unique across all names");
         }
       }
     }
   }
 
   if (step.rewrite_mode == RewriteKind::Replace && step.rule.emit_patterns.empty()) {
-    error = "'" + step.name + "': Replace mode requires at least one emit value";
-    return std::unexpected(std::move(error));
+    return std::unexpected("'" + step.name + "': Replace mode requires at least one emit value");
   }
 
   // Op/type consistency: for LLVM binary-op emits, the result and constant
@@ -1448,8 +1444,7 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string
     if (emit_pattern.opcode.has_value() && !emit_pattern.opcode->empty()) {
       auto [dxil_op, resolved_llvm_op] = ResolveOpCode(*emit_pattern.opcode);
       if (!dxil_op.has_value() && !resolved_llvm_op.has_value()) {
-        error = "'" + step.name + "': emit opcode '" + *emit_pattern.opcode + "' is not a known DXIL or LLVM opcode";
-        return std::unexpected(std::move(error));
+        return std::unexpected("'" + step.name + "': emit opcode '" + *emit_pattern.opcode + "' is not a known DXIL or LLVM opcode");
       }
       llvm_op = resolved_llvm_op;
     }
@@ -1461,17 +1456,16 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string
           if (!type.has_value()) return true;
           const bool mismatch = is_float_op ? !type_is_float(*type) : !type_is_int(*type);
           if (mismatch) {
-            error = "'" + step.name + "': emit opcode '" + *emit_pattern.opcode + "' is an integer opcode but " + std::string(what) + " is a float type (or vice versa)";
             return false;
           }
           return true;
         };
         if (!check_type(emit_pattern.result_component_type, "result_component_type")) {
-          return std::unexpected(std::move(error));
+          return std::unexpected("'" + step.name + "': emit opcode '" + *emit_pattern.opcode + "' type mismatch for result_component_type");
         }
         for (const auto& operand : emit_pattern.operands) {
           if (!check_type(operand.component_type, "operand component_type")) {
-            return std::unexpected(std::move(error));
+            return std::unexpected("'" + step.name + "': emit opcode '" + *emit_pattern.opcode + "' type mismatch for operand component_type");
           }
         }
       }
@@ -1482,8 +1476,7 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, std::string
   // so the recipe is immutable during Validate — no const_cast needed here.
 
   if (auto r = ValidateCondition<ApplyRuleStep::Results>(step.condition, ctx); !r) {
-    error = r.error();
-    return std::unexpected(error);
+    return std::unexpected(r.error());
   }
 
   return {};
