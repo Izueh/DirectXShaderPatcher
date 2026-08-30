@@ -37,7 +37,7 @@ int main(int argc, char** argv_) {
 
   dxp::sm6::TextureResourceDesc tex_decl;
   tex_decl.name = "MyTex";
-  tex_decl.kind = dxp::sm6::DxilResourceKind::Texture2D;
+  tex_decl.kind = dxp::sm6::ResourceKind::Texture2D;
   tex_decl.element_kind = dxp::ComponentType::F32;
   tex_decl.vector_width = 4;
   tex_decl.binding = dxp::sm6::ResourceBindingDesc{.resource_class = dxp::sm6::ResourceClass::SRV, .register_index = std::nullopt, .space = std::nullopt};
@@ -65,7 +65,7 @@ int main(int argc, char** argv_) {
   uint32_t srv_space = 0;
 
   for (const auto& [handle, binding] : result.value().new_bindings) {
-    if (binding.resource_kind == dxp::ResourceKind::Texture && binding.handle == "MyTex") {
+    if (binding.binding_class == dxp::BindingClass::Texture && binding.handle == "MyTex") {
       found_srv = true;
       srv_handle = binding.handle;
       srv_register = binding.register_index;

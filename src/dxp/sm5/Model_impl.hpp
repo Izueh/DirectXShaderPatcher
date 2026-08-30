@@ -26,7 +26,7 @@ struct meta<dxp::sm5::model::SelectionMode> {
 
 template <>
 struct meta<dxp::sm5::model::InterpolationMode> {
-  using T = dxp::sm5::model::InterpolationMode;
+  using T = dxp::sm5::model::InterpolationMode;  // alias of dxp::InterpolationMode
   static constexpr std::array keys = {"undefined",
                                       "constant",
                                       "linear",
@@ -34,7 +34,8 @@ struct meta<dxp::sm5::model::InterpolationMode> {
                                       "linear_noperspective",
                                       "linear_noperspective_centroid",
                                       "linear_sample",
-                                      "linear_noperspective_sample"};
+                                      "linear_noperspective_sample",
+                                      "invalid"};
   static constexpr std::array value = {T::Undefined,
                                        T::Constant,
                                        T::Linear,
@@ -42,7 +43,8 @@ struct meta<dxp::sm5::model::InterpolationMode> {
                                        T::LinearNoperspective,
                                        T::LinearNoperspectiveCentroid,
                                        T::LinearSample,
-                                       T::LinearNoperspectiveSample};
+                                       T::LinearNoperspectiveSample,
+                                       T::Invalid};
 };
 
 template <>

@@ -904,7 +904,7 @@ auto ShaderProgram::AddTextureSRV(const TextureResourceDesc& desc) -> std::expec
   tex->SetRangeSize(1);
   tex->SetID(static_cast<unsigned>(dxil_module->GetSRVs().size()));
   tex->SetKind(static_cast<hlsl::DXIL::ResourceKind>(static_cast<unsigned>(resolved.kind)));
-  if (resolved.kind == DxilResourceKind::StructuredBuffer) {
+  if (resolved.kind == ResourceKind::StructuredBuffer) {
     tex->SetElementStride(GetResourceElementStride(resolved));
   }
   tex->SetCompType(GetTextureCompType(static_cast<hlsl::DXIL::ComponentType>(static_cast<uint8_t>(resolved.element_kind))));
@@ -955,7 +955,7 @@ auto ShaderProgram::AddTextureUAV(const TextureResourceDesc& desc) -> std::expec
   tex->SetRangeSize(1);
   tex->SetID(static_cast<unsigned>(dxil_module->GetUAVs().size()));
   tex->SetKind(static_cast<hlsl::DXIL::ResourceKind>(static_cast<unsigned>(resolved.kind)));
-  if (resolved.kind == DxilResourceKind::StructuredBuffer) {
+  if (resolved.kind == ResourceKind::StructuredBuffer) {
     tex->SetElementStride(GetResourceElementStride(resolved));
   }
   tex->SetCompType(GetTextureCompType(static_cast<hlsl::DXIL::ComponentType>(static_cast<uint8_t>(resolved.element_kind))));

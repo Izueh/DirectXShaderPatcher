@@ -60,7 +60,7 @@ steps:
 
   auto binding_it = report.new_bindings.find("add_s11");
   constexpr uint32_t kExpectedBindPoint = 11u;
-  if (binding_it == report.new_bindings.end() || binding_it->second.resource_kind != dxp::ResourceKind::Sampler || binding_it->second.register_index != kExpectedBindPoint || binding_it->second.space != 0u) {
+  if (binding_it == report.new_bindings.end() || binding_it->second.binding_class != dxp::BindingClass::Sampler || binding_it->second.register_index != kExpectedBindPoint || binding_it->second.space != 0u) {
     std::cerr << "Expected sampler-add side effect to describe added s11.\n";
     return 1;
   }

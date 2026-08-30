@@ -18,7 +18,7 @@ enum class ResourceClass : uint8_t {
 };
 
 /// @brief Resource kind. Mirrors @c hlsl::DXIL::ResourceKind.
-enum class DxilResourceKind : uint8_t {
+enum class ResourceKind : uint8_t {
   Invalid = 0,
   Texture1D,
   Texture2D,
@@ -41,18 +41,8 @@ enum class DxilResourceKind : uint8_t {
   NumEntries,
 };
 
-/// @brief Interpolation mode. Mirrors @c hlsl::DXIL::InterpolationMode.
-enum class InterpolationMode : uint8_t {
-  Undefined = 0,
-  Constant = 1,
-  Linear = 2,
-  LinearCentroid = 3,
-  LinearNoperspective = 4,
-  LinearNoperspectiveCentroid = 5,
-  LinearSample = 6,
-  LinearNoperspectiveSample = 7,
-  Invalid = 8,
-};
+/// @brief Interpolation mode. See @c dxp::InterpolationMode.
+using InterpolationMode = dxp::InterpolationMode;
 
 /// @brief Resource binding descriptor. User-facing mirror of @c hlsl::DxilResourceBinding.
 struct ResourceBindingDesc {
@@ -88,7 +78,7 @@ struct CBufferSchema {
 struct TextureResourceDesc {
   std::string name;                                                                         ///< Texture name.
   ResourceBindingDesc binding = ResourceBindingDesc{.resource_class = ResourceClass::SRV};  ///< Binding info.
-  DxilResourceKind kind = DxilResourceKind::Texture2D;                                      ///< Texture kind.
+  ResourceKind kind = ResourceKind::Texture2D;                                      ///< Texture kind.
   dxp::ComponentType element_kind = dxp::ComponentType::F32;                                ///< Element type.
   uint32_t vector_width = 4;                                                                ///< Vector width.
   bool is_read_write = false;                                                               ///< Whether this is a UAV.

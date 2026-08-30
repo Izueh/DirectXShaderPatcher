@@ -33,7 +33,7 @@
                                  "type": "string"
                               },
                               "interp_mode": {
-                                 "$ref": "#/$defs/dxp::sm6::InterpolationMode"
+                                 "$ref": "#/$defs/dxp::InterpolationMode"
                               },
                               "register_index": {
                                  "anyOf": [
@@ -452,17 +452,7 @@
          },
          "additionalProperties": false
       },
-      "dxp::sm6::DxilResourceKind": {
-         "type": [
-            "number",
-            "string",
-            "boolean",
-            "object",
-            "array",
-            "null"
-         ]
-      },
-      "dxp::sm6::InterpolationMode": {
+      "dxp::InterpolationMode": {
          "type": [
             "number",
             "string",
@@ -473,6 +463,16 @@
          ]
       },
       "dxp::sm6::ResourceClass": {
+         "type": [
+            "number",
+            "string",
+            "boolean",
+            "object",
+            "array",
+            "null"
+         ]
+      },
+      "dxp::sm6::ResourceKind": {
          "type": [
             "number",
             "string",
@@ -573,7 +573,7 @@
                      "resource_kind": {
                         "anyOf": [
                            {
-                              "$ref": "#/$defs/dxp::sm6::DxilResourceKind"
+                              "$ref": "#/$defs/dxp::sm6::ResourceKind"
                            },
                            {
                               "type": "null"
@@ -771,7 +771,7 @@
                   "type": "boolean"
                },
                "kind": {
-                  "$ref": "#/$defs/dxp::sm6::DxilResourceKind"
+                  "$ref": "#/$defs/dxp::sm6::ResourceKind"
                },
                "register_index": {
                   "anyOf": [

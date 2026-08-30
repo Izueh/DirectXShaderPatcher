@@ -12,6 +12,8 @@
 
 #include "value_types/indirect.h"
 
+#include <dxp/ExportTypes.hpp>
+
 namespace dxp::sm5::model {
 
 /// @brief Number of components an operand uses.
@@ -149,18 +151,8 @@ enum class OperandRole : std::uint8_t {
   Destination = 1,
 };
 
-/// @brief Interpolation mode for DCL_INPUT declarations.
-/// Mirrors @c D3D10_SB_INTERPOLATION_MODE from the DXBC token format.
-enum class InterpolationMode : std::uint8_t {
-  Undefined = 0,                    ///< @c D3D10_SB_INTERPOLATION_UNDEFINED
-  Constant = 1,                     ///< @c D3D10_SB_INTERPOLATION_CONSTANT
-  Linear = 2,                       ///< @c D3D10_SB_INTERPOLATION_LINEAR
-  LinearCentroid = 3,               ///< @c D3D10_SB_INTERPOLATION_LINEAR_CENTROID
-  LinearNoperspective = 4,          ///< @c D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE
-  LinearNoperspectiveCentroid = 5,  ///< @c D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_CENTROID
-  LinearSample = 6,                 ///< @c D3D10_SB_INTERPOLATION_LINEAR_SAMPLE
-  LinearNoperspectiveSample = 7,    ///< @c D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_SAMPLE
-};
+/// @brief Interpolation mode for DCL_INPUT declarations. See @c dxp::InterpolationMode.
+using InterpolationMode = dxp::InterpolationMode;
 
 /// @brief Sampler mode for DCL_SAMPLER declarations.
 /// Mirrors @c D3D10_SB_SAMPLER_MODE from the DXBC token format.

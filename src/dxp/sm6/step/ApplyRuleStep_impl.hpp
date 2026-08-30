@@ -38,7 +38,7 @@ struct OperandPatternData {
   std::vector<double> constant_float_values;
   std::optional<dxp::ComponentType> component_type;  ///< Optional: restrict constant matching to this type.
   std::optional<ResourceClass> resource_class;
-  std::optional<DxilResourceKind> resource_kind;
+  std::optional<ResourceKind> resource_kind;
   std::string resource_name;
   std::string resource_name_like;
   std::optional<int> register_index;

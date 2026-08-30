@@ -101,7 +101,7 @@ steps:
 Common declaration fields:
 
 - `handle` — unique identifier; referenced by `apply_rule` emit operands.
-- `kind` — `DxilResourceKind` key. All texture and buffer SRV/UAV kinds are
+- `kind` — `ResourceKind` key. All texture and buffer SRV/UAV kinds are
   supported: `Texture1D`, `Texture2D`, `Texture2DMS`, `Texture3D`, `TextureCube`,
   `Texture1DArray`, `Texture2DArray`, `Texture2DMSArray`, `TextureCubeArray`,
   `TypedBuffer`, `RawBuffer`, `StructuredBuffer` (plus `CBuffer` and `Sampler`

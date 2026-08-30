@@ -223,7 +223,7 @@
                                     "interpolation": {
                                        "anyOf": [
                                           {
-                                             "$ref": "#/$defs/dxp::sm5::model::InterpolationMode"
+                                             "$ref": "#/$defs/dxp::InterpolationMode"
                                           },
                                           {
                                              "type": "null"
@@ -375,7 +375,7 @@
                                     "interpolation": {
                                        "anyOf": [
                                           {
-                                             "$ref": "#/$defs/dxp::sm5::model::InterpolationMode"
+                                             "$ref": "#/$defs/dxp::InterpolationMode"
                                           },
                                           {
                                              "type": "null"
@@ -575,6 +575,16 @@
          },
          "additionalProperties": false
       },
+      "dxp::InterpolationMode": {
+         "type": [
+            "number",
+            "string",
+            "boolean",
+            "object",
+            "array",
+            "null"
+         ]
+      },
       "dxp::sm5::model::CbufferAccessPattern": {
          "type": [
             "number",
@@ -604,16 +614,6 @@
                "title": "resource_type",
                "const": "resource_type"
             }
-         ]
-      },
-      "dxp::sm5::model::InterpolationMode": {
-         "type": [
-            "number",
-            "string",
-            "boolean",
-            "object",
-            "array",
-            "null"
          ]
       },
       "dxp::sm5::model::NumComponents": {
@@ -1196,7 +1196,7 @@
                "interpolation": {
                   "anyOf": [
                      {
-                        "$ref": "#/$defs/dxp::sm5::model::InterpolationMode"
+                        "$ref": "#/$defs/dxp::InterpolationMode"
                      },
                      {
                         "type": "null"

@@ -9,27 +9,27 @@
 
 namespace dxp::sm6 {
 
-// DxilResourceKind ↔ hlsl::DXIL::ResourceKind
-static_assert(static_cast<uint32_t>(DxilResourceKind::Invalid) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::Invalid));
-static_assert(static_cast<uint32_t>(DxilResourceKind::Texture1D) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::Texture1D));
-static_assert(static_cast<uint32_t>(DxilResourceKind::Texture2D) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::Texture2D));
-static_assert(static_cast<uint32_t>(DxilResourceKind::Texture2DMS) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::Texture2DMS));
-static_assert(static_cast<uint32_t>(DxilResourceKind::Texture3D) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::Texture3D));
-static_assert(static_cast<uint32_t>(DxilResourceKind::TextureCube) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::TextureCube));
-static_assert(static_cast<uint32_t>(DxilResourceKind::Texture1DArray) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::Texture1DArray));
-static_assert(static_cast<uint32_t>(DxilResourceKind::Texture2DArray) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::Texture2DArray));
-static_assert(static_cast<uint32_t>(DxilResourceKind::Texture2DMSArray) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::Texture2DMSArray));
-static_assert(static_cast<uint32_t>(DxilResourceKind::TextureCubeArray) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::TextureCubeArray));
-static_assert(static_cast<uint32_t>(DxilResourceKind::TypedBuffer) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::TypedBuffer));
-static_assert(static_cast<uint32_t>(DxilResourceKind::RawBuffer) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::RawBuffer));
-static_assert(static_cast<uint32_t>(DxilResourceKind::StructuredBuffer) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::StructuredBuffer));
-static_assert(static_cast<uint32_t>(DxilResourceKind::CBuffer) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::CBuffer));
-static_assert(static_cast<uint32_t>(DxilResourceKind::Sampler) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::Sampler));
-static_assert(static_cast<uint32_t>(DxilResourceKind::TBuffer) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::TBuffer));
-static_assert(static_cast<uint32_t>(DxilResourceKind::RTAccelerationStructure) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::RTAccelerationStructure));
-static_assert(static_cast<uint32_t>(DxilResourceKind::FeedbackTexture2D) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::FeedbackTexture2D));
-static_assert(static_cast<uint32_t>(DxilResourceKind::FeedbackTexture2DArray) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::FeedbackTexture2DArray));
-static_assert(static_cast<uint32_t>(DxilResourceKind::NumEntries) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::NumEntries));
+// ResourceKind ↔ hlsl::DXIL::ResourceKind
+static_assert(static_cast<uint32_t>(ResourceKind::Invalid) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::Invalid));
+static_assert(static_cast<uint32_t>(ResourceKind::Texture1D) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::Texture1D));
+static_assert(static_cast<uint32_t>(ResourceKind::Texture2D) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::Texture2D));
+static_assert(static_cast<uint32_t>(ResourceKind::Texture2DMS) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::Texture2DMS));
+static_assert(static_cast<uint32_t>(ResourceKind::Texture3D) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::Texture3D));
+static_assert(static_cast<uint32_t>(ResourceKind::TextureCube) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::TextureCube));
+static_assert(static_cast<uint32_t>(ResourceKind::Texture1DArray) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::Texture1DArray));
+static_assert(static_cast<uint32_t>(ResourceKind::Texture2DArray) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::Texture2DArray));
+static_assert(static_cast<uint32_t>(ResourceKind::Texture2DMSArray) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::Texture2DMSArray));
+static_assert(static_cast<uint32_t>(ResourceKind::TextureCubeArray) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::TextureCubeArray));
+static_assert(static_cast<uint32_t>(ResourceKind::TypedBuffer) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::TypedBuffer));
+static_assert(static_cast<uint32_t>(ResourceKind::RawBuffer) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::RawBuffer));
+static_assert(static_cast<uint32_t>(ResourceKind::StructuredBuffer) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::StructuredBuffer));
+static_assert(static_cast<uint32_t>(ResourceKind::CBuffer) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::CBuffer));
+static_assert(static_cast<uint32_t>(ResourceKind::Sampler) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::Sampler));
+static_assert(static_cast<uint32_t>(ResourceKind::TBuffer) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::TBuffer));
+static_assert(static_cast<uint32_t>(ResourceKind::RTAccelerationStructure) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::RTAccelerationStructure));
+static_assert(static_cast<uint32_t>(ResourceKind::FeedbackTexture2D) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::FeedbackTexture2D));
+static_assert(static_cast<uint32_t>(ResourceKind::FeedbackTexture2DArray) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::FeedbackTexture2DArray));
+static_assert(static_cast<uint32_t>(ResourceKind::NumEntries) == static_cast<uint32_t>(hlsl::DXIL::ResourceKind::NumEntries));
 
 // ResourceClass ↔ hlsl::DXIL::ResourceClass
 static_assert(static_cast<uint32_t>(ResourceClass::SRV) == static_cast<uint32_t>(hlsl::DXIL::ResourceClass::SRV));
@@ -65,14 +65,14 @@ static_assert(static_cast<uint32_t>(dxp::ComponentType::F8_E5M2) == static_cast<
 static_assert(static_cast<uint32_t>(dxp::ComponentType::LastEntry) == static_cast<uint32_t>(hlsl::DXIL::ComponentType::LastEntry));
 
 // InterpolationMode ↔ hlsl::DXIL::InterpolationMode
-static_assert(static_cast<uint32_t>(InterpolationMode::Undefined) == static_cast<uint32_t>(hlsl::DXIL::InterpolationMode::Undefined));
-static_assert(static_cast<uint32_t>(InterpolationMode::Constant) == static_cast<uint32_t>(hlsl::DXIL::InterpolationMode::Constant));
-static_assert(static_cast<uint32_t>(InterpolationMode::Linear) == static_cast<uint32_t>(hlsl::DXIL::InterpolationMode::Linear));
-static_assert(static_cast<uint32_t>(InterpolationMode::LinearCentroid) == static_cast<uint32_t>(hlsl::DXIL::InterpolationMode::LinearCentroid));
-static_assert(static_cast<uint32_t>(InterpolationMode::LinearNoperspective) == static_cast<uint32_t>(hlsl::DXIL::InterpolationMode::LinearNoperspective));
-static_assert(static_cast<uint32_t>(InterpolationMode::LinearNoperspectiveCentroid) == static_cast<uint32_t>(hlsl::DXIL::InterpolationMode::LinearNoperspectiveCentroid));
-static_assert(static_cast<uint32_t>(InterpolationMode::LinearSample) == static_cast<uint32_t>(hlsl::DXIL::InterpolationMode::LinearSample));
-static_assert(static_cast<uint32_t>(InterpolationMode::LinearNoperspectiveSample) == static_cast<uint32_t>(hlsl::DXIL::InterpolationMode::LinearNoperspectiveSample));
-static_assert(static_cast<uint32_t>(InterpolationMode::Invalid) == static_cast<uint32_t>(hlsl::DXIL::InterpolationMode::Invalid));
+static_assert(static_cast<uint32_t>(dxp::InterpolationMode::Undefined) == static_cast<uint32_t>(hlsl::DXIL::InterpolationMode::Undefined));
+static_assert(static_cast<uint32_t>(dxp::InterpolationMode::Constant) == static_cast<uint32_t>(hlsl::DXIL::InterpolationMode::Constant));
+static_assert(static_cast<uint32_t>(dxp::InterpolationMode::Linear) == static_cast<uint32_t>(hlsl::DXIL::InterpolationMode::Linear));
+static_assert(static_cast<uint32_t>(dxp::InterpolationMode::LinearCentroid) == static_cast<uint32_t>(hlsl::DXIL::InterpolationMode::LinearCentroid));
+static_assert(static_cast<uint32_t>(dxp::InterpolationMode::LinearNoperspective) == static_cast<uint32_t>(hlsl::DXIL::InterpolationMode::LinearNoperspective));
+static_assert(static_cast<uint32_t>(dxp::InterpolationMode::LinearNoperspectiveCentroid) == static_cast<uint32_t>(hlsl::DXIL::InterpolationMode::LinearNoperspectiveCentroid));
+static_assert(static_cast<uint32_t>(dxp::InterpolationMode::LinearSample) == static_cast<uint32_t>(hlsl::DXIL::InterpolationMode::LinearSample));
+static_assert(static_cast<uint32_t>(dxp::InterpolationMode::LinearNoperspectiveSample) == static_cast<uint32_t>(hlsl::DXIL::InterpolationMode::LinearNoperspectiveSample));
+static_assert(static_cast<uint32_t>(dxp::InterpolationMode::Invalid) == static_cast<uint32_t>(hlsl::DXIL::InterpolationMode::Invalid));
 
 }  // namespace dxp::sm6

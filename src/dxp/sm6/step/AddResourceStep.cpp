@@ -48,10 +48,10 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
     return true;
   };
 
-  auto addSideEffect = [&](dxp::ResourceKind kind, const std::string& handle,
+  auto addSideEffect = [&](dxp::BindingClass kind, const std::string& handle,
                            unsigned bind_point, unsigned space) {
     dxp::ResourceBinding binding;
-    binding.resource_kind = kind;
+    binding.binding_class = kind;
     binding.handle = handle;
     binding.register_index = bind_point;
     binding.space = space;
@@ -84,13 +84,13 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
       }
       const auto& handle = desc.name.empty() ? "" : desc.name;
       ctx.textures[handle] = resolved_desc;
-      addSideEffect(resolved_desc.kind == DxilResourceKind::RawBuffer          ? dxp::ResourceKind::RawResource
-                    : resolved_desc.kind == DxilResourceKind::StructuredBuffer ? dxp::ResourceKind::StructuredResource
-                                                                               : dxp::ResourceKind::Texture,
+      addSideEffect(resolved_desc.kind == ResourceKind::RawBuffer          ? dxp::BindingClass::RawResource
+                    : resolved_desc.kind == ResourceKind::StructuredBuffer ? dxp::BindingClass::StructuredResource
+                                                                               : dxp::BindingClass::Texture,
                     handle, *resolved_desc.binding.register_index, srv_space);
-      if (resolved_desc.kind == DxilResourceKind::RawBuffer) {
+      if (resolved_desc.kind == ResourceKind::RawBuffer) {
         ++result.raw_resources_added;
-      } else if (resolved_desc.kind == DxilResourceKind::StructuredBuffer) {
+      } else if (resolved_desc.kind == ResourceKind::StructuredBuffer) {
         ++result.structured_resources_added;
       } else {
         ++result.textures_added;
@@ -139,13 +139,13 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
       }
       const auto& handle = desc.name.empty() ? "" : desc.name;
       ctx.uavs[handle] = resolved_desc;
-      addSideEffect(resolved_desc.kind == DxilResourceKind::RawBuffer          ? dxp::ResourceKind::RawResource
-                    : resolved_desc.kind == DxilResourceKind::StructuredBuffer ? dxp::ResourceKind::StructuredResource
-                                                                               : dxp::ResourceKind::TextureUav,
+      addSideEffect(resolved_desc.kind == ResourceKind::RawBuffer          ? dxp::BindingClass::RawResource
+                    : resolved_desc.kind == ResourceKind::StructuredBuffer ? dxp::BindingClass::StructuredResource
+                                                                               : dxp::BindingClass::TextureUav,
                     handle, *resolved_desc.binding.register_index, uav_space);
-      if (resolved_desc.kind == DxilResourceKind::RawBuffer) {
+      if (resolved_desc.kind == ResourceKind::RawBuffer) {
         ++result.raw_resources_added;
-      } else if (resolved_desc.kind == DxilResourceKind::StructuredBuffer) {
+      } else if (resolved_desc.kind == ResourceKind::StructuredBuffer) {
         ++result.structured_resources_added;
       } else {
         ++result.uavs_added;
@@ -193,7 +193,7 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
       }
       const auto& handle = desc.name.empty() ? "" : desc.name;
       ctx.cbuffers[handle] = resolved_desc;
-      addSideEffect(dxp::ResourceKind::CBuffer, handle, *resolved_desc.binding.register_index, cbuf_space);
+      addSideEffect(dxp::BindingClass::CBuffer, handle, *resolved_desc.binding.register_index, cbuf_space);
       ++result.cbuffers_added;
       changed = true;
 
@@ -238,7 +238,7 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
       }
       const auto& handle = desc.name.empty() ? "" : desc.name;
       ctx.samplers[handle] = resolved_desc;
-      addSideEffect(dxp::ResourceKind::Sampler, handle, *resolved_desc.binding.register_index, sampler_space);
+      addSideEffect(dxp::BindingClass::Sampler, handle, *resolved_desc.binding.register_index, sampler_space);
       ++result.samplers_added;
       changed = true;
 
@@ -275,7 +275,7 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
       }
       const auto& handle = decl.handle.empty() ? "" : decl.handle;
       ctx.input_bindings[handle] = register_index;
-      addSideEffect(dxp::ResourceKind::Input, handle, register_index, 0);
+      addSideEffect(dxp::BindingClass::Input, handle, register_index, 0);
       ++result.inputs_added;
       changed = true;
     }
@@ -298,7 +298,7 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
       }
       const auto& handle = decl.handle.empty() ? "" : decl.handle;
       ctx.output_bindings[handle] = register_index;
-      addSideEffect(dxp::ResourceKind::Output, handle, register_index, 0);
+      addSideEffect(dxp::BindingClass::Output, handle, register_index, 0);
       ++result.outputs_added;
       changed = true;
     }

@@ -998,14 +998,8 @@ std::expected<void, std::string> ApplyDxilRewriteRules(llvm::Function& function,
         auto effective_kind = op_pattern.kind.value_or(OperandKind::Call);
         if (effective_kind == OperandKind::Resource || op_pattern.resource_class.has_value()) {
           dxp::ResourceUsage usage;
-          if (op_pattern.resource_kind.has_value()) {
-            auto rk = static_cast<int>(op_pattern.resource_kind.value());
-            constexpr int kResourceKindCount = 10;
-            if (rk >= 0 && rk < kResourceKindCount) {
-              usage.handle = "texture";
-            }
-          }
-          if (usage.handle.empty()) usage.handle = "resource";
+          usage.binding_class = dxp::BindingClass::Texture;
+          usage.handle = op_pattern.resource_kind.has_value() ? "texture" : "resource";
           usage.register_index = op_pattern.resource_register_index.value_or(0);
           ctx->resource_exports[export_key] = std::move(usage);
         } else if (effective_kind == OperandKind::Constant && !op_pattern.constant_int_values.empty()) {

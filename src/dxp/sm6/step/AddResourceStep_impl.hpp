@@ -31,7 +31,7 @@ struct AddResourceDeclData {
   std::string handle;
   std::optional<unsigned> register_index;
   std::optional<unsigned> space;
-  DxilResourceKind kind = DxilResourceKind::Texture2D;
+  ResourceKind kind = ResourceKind::Texture2D;
   dxp::ComponentType element_type = dxp::ComponentType::F32;
   unsigned vector_width = 4;
   unsigned size = 0;
@@ -75,8 +75,8 @@ struct meta<dxp::sm6::ResourceClass> {
 };
 
 template <>
-struct meta<dxp::sm6::DxilResourceKind> {
-  using T = dxp::sm6::DxilResourceKind;
+struct meta<dxp::sm6::ResourceKind> {
+  using T = dxp::sm6::ResourceKind;
   static constexpr auto keys = std::array{
       "Invalid", "Texture1D", "Texture2D", "Texture2DMS", "Texture3D",
       "TextureCube", "Texture1DArray", "Texture2DArray", "Texture2DMSArray",
@@ -104,19 +104,6 @@ struct meta<dxp::ComponentType> {
       T::F16, T::F32, T::F64, T::SNormF16, T::UNormF16, T::SNormF32, T::UNormF32,
       T::SNormF64, T::UNormF64, T::PackedS8x32, T::PackedU8x32, T::U8, T::I8,
       T::F8_E4M3FN, T::F8_E5M2};
-};
-
-template <>
-struct meta<dxp::sm6::InterpolationMode> {
-  using T = dxp::sm6::InterpolationMode;
-  static constexpr auto keys = std::array{
-      "Undefined", "Constant", "Linear", "LinearCentroid",
-      "LinearNoperspective", "LinearNoperspectiveCentroid",
-      "LinearSample", "LinearNoperspectiveSample", "Invalid"};
-  static constexpr auto value = std::array{
-      T::Undefined, T::Constant, T::Linear, T::LinearCentroid,
-      T::LinearNoperspective, T::LinearNoperspectiveCentroid,
-      T::LinearSample, T::LinearNoperspectiveSample, T::Invalid};
 };
 
 template <>

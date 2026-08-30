@@ -85,7 +85,7 @@ steps:
     const auto& report = patch_result.value();
     auto binding_it = report.new_bindings.find("gated_s11");
     constexpr uint32_t kExpectedBindPoint = 11u;
-    if (binding_it == report.new_bindings.end() || binding_it->second.resource_kind != dxp::ResourceKind::Sampler || binding_it->second.register_index != kExpectedBindPoint) {
+    if (binding_it == report.new_bindings.end() || binding_it->second.binding_class != dxp::BindingClass::Sampler || binding_it->second.register_index != kExpectedBindPoint) {
       std::cerr << "FAIL: gated add_resource did not run when both operands resolved to equal values.\n";
       return 1;
     }

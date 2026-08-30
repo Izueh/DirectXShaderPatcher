@@ -29,10 +29,8 @@ struct PatchContainerReport {
   std::vector<PatchChunkReport> chunks;
 };
 
-/// @brief Scalar component type vocabulary — the single shared mirror of
-/// @c hlsl::DXIL::ComponentType (value-identical; verified by static_assert in
-/// src/dxp/sm6/EnumMirrors.hpp). Used both for resource/signature descriptors
-/// (SM6) and for typed immediate exports on both backends.
+/// @brief Scalar component type vocabulary for resource/signature descriptors
+/// and typed immediate exports. Mirrors @c hlsl::DXIL::ComponentType.
 ///
 /// Values marked "not currently emitted" are not produced by the immediate
 /// capture engines yet; they exist for API completeness and future use.
@@ -63,11 +61,12 @@ enum class ComponentType : std::uint8_t {
   LastEntry = 23,  ///< Sentinel; mirrors @c hlsl::DXIL::ComponentType::LastEntry.
 };
 
-/// @brief Unified resource kind for typed exports.
-/// A deliberate cross-backend union (sm5 operand families + sm6 resource kinds),
-/// NOT a mirror of any single D3D/DXC enum — do not cast to/from token enums.
-enum class ResourceKind : std::uint8_t {
+/// @brief Register family (binding slot) a handle belongs to — t/s/b/u registers,
+/// temp registers, or signature slots. For the resource's shape, see
+/// @c dxp::sm6::ResourceKind or @c dxp::sm5::model::ResourceDimension.
+enum class BindingClass : std::uint8_t {
   Unknown,
+  Temp,
   Input,
   Output,
   Texture,
@@ -79,10 +78,23 @@ enum class ResourceKind : std::uint8_t {
   Uav,
 };
 
+/// @brief Interpolation mode for input-signature declarations.
+enum class InterpolationMode : std::uint8_t {
+  Undefined = 0,
+  Constant = 1,
+  Linear = 2,
+  LinearCentroid = 3,
+  LinearNoperspective = 4,
+  LinearNoperspectiveCentroid = 5,
+  LinearSample = 6,
+  LinearNoperspectiveSample = 7,
+  Invalid = 8,
+};
+
 /// @brief Resource binding produced by patching.
 struct ResourceBinding {
   std::string handle;
-  ResourceKind resource_kind = ResourceKind::Unknown;
+  BindingClass binding_class = BindingClass::Unknown;
   uint32_t register_index = 0;
   uint32_t space = 0;
 };
@@ -90,13 +102,9 @@ struct ResourceBinding {
 /// @brief Resources found during pattern matching.
 struct ResourceUsage {
   std::string handle;
-  std::string handle_name;
-  ResourceKind type = ResourceKind::Unknown;
-  std::string register_name;
+  BindingClass binding_class = BindingClass::Unknown;
   uint32_t register_index = 0;
   uint32_t space = 0;
-  uint32_t member_offset = 0;
-  uint32_t member_size = 0;
   std::bitset<4> accessed_components;
 };
 

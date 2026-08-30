@@ -43,9 +43,9 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
     return true;
   };
 
-  auto add_new_binding = [&](dxp::ResourceKind kind, const std::string& handle, uint32_t bind_point) {
+  auto add_new_binding = [&](dxp::BindingClass kind, const std::string& handle, uint32_t bind_point) {
     dxp::ResourceBinding binding;
-    binding.resource_kind = kind;
+    binding.binding_class = kind;
     binding.handle = handle;
     binding.register_index = bind_point;
     binding.space = 0;
@@ -53,7 +53,7 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
   };
 
   auto resolve_and_add = [&](const auto& decls, auto add_decl, auto find_next, auto& bindings,
-                             dxp::ResourceKind kind, uint32_t max_bind_point, const char* kind_name,
+                             dxp::BindingClass kind, uint32_t max_bind_point, const char* kind_name,
                              uint32_t* count_ptr) -> std::expected<void, std::string> {
     for (const auto& decl : decls) {
       uint32_t bind_point = 0;
@@ -92,22 +92,22 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
     return {};
   };
 
-  if (auto r = resolve_and_add(step.textures, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddTextureDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableTexture(preferred, from_high); }, ctx.Bindings(BindingKind::Texture), dxp::ResourceKind::Texture, kMaxTextureBindPoint, "texture", &result.textures_added); !r) {
+  if (auto r = resolve_and_add(step.textures, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddTextureDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableTexture(preferred, from_high); }, ctx.Bindings(BindingClass::Texture), dxp::BindingClass::Texture, kMaxTextureBindPoint, "texture", &result.textures_added); !r) {
     return std::unexpected(std::move(r.error()));
   }
-  if (auto r = resolve_and_add(step.raw_resources, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddRawResourceDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableTexture(preferred, from_high); }, ctx.Bindings(BindingKind::RawResource), dxp::ResourceKind::RawResource, kMaxTextureBindPoint, "raw_resource", &result.raw_resources_added); !r) {
+  if (auto r = resolve_and_add(step.raw_resources, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddRawResourceDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableTexture(preferred, from_high); }, ctx.Bindings(BindingClass::RawResource), dxp::BindingClass::RawResource, kMaxTextureBindPoint, "raw_resource", &result.raw_resources_added); !r) {
     return std::unexpected(std::move(r.error()));
   }
-  if (auto r = resolve_and_add(step.structured_resources, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddStructuredResourceDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableTexture(preferred, from_high); }, ctx.Bindings(BindingKind::StructuredResource), dxp::ResourceKind::StructuredResource, kMaxTextureBindPoint, "structured_resource", &result.structured_resources_added); !r) {
+  if (auto r = resolve_and_add(step.structured_resources, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddStructuredResourceDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableTexture(preferred, from_high); }, ctx.Bindings(BindingClass::StructuredResource), dxp::BindingClass::StructuredResource, kMaxTextureBindPoint, "structured_resource", &result.structured_resources_added); !r) {
     return std::unexpected(std::move(r.error()));
   }
-  if (auto r = resolve_and_add(step.cbuffers, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddCBufferDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableCBuffer(preferred, from_high); }, ctx.Bindings(BindingKind::CBuffer), dxp::ResourceKind::CBuffer, kMaxCBufferBindPoint, "cbuffer", &result.cbuffers_added); !r) {
+  if (auto r = resolve_and_add(step.cbuffers, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddCBufferDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableCBuffer(preferred, from_high); }, ctx.Bindings(BindingClass::CBuffer), dxp::BindingClass::CBuffer, kMaxCBufferBindPoint, "cbuffer", &result.cbuffers_added); !r) {
     return std::unexpected(std::move(r.error()));
   }
-  if (auto r = resolve_and_add(step.samplers, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddSamplerDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableSampler(preferred, from_high); }, ctx.Bindings(BindingKind::Sampler), dxp::ResourceKind::Sampler, kMaxSamplerBindPoint, "sampler", &result.samplers_added); !r) {
+  if (auto r = resolve_and_add(step.samplers, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddSamplerDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableSampler(preferred, from_high); }, ctx.Bindings(BindingClass::Sampler), dxp::BindingClass::Sampler, kMaxSamplerBindPoint, "sampler", &result.samplers_added); !r) {
     return std::unexpected(std::move(r.error()));
   }
-  if (auto r = resolve_and_add(step.uavs, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddUavDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableUAV(preferred, from_high); }, ctx.Bindings(BindingKind::Uav), dxp::ResourceKind::Uav, kMaxUavBindPoint, "uav", &result.uavs_added); !r) {
+  if (auto r = resolve_and_add(step.uavs, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddUavDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableUAV(preferred, from_high); }, ctx.Bindings(BindingClass::Uav), dxp::BindingClass::Uav, kMaxUavBindPoint, "uav", &result.uavs_added); !r) {
     return std::unexpected(std::move(r.error()));
   }
 
@@ -137,8 +137,8 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
         continue;
       }
       const auto handle = decl.handle.empty() ? "" : decl.handle;
-      ctx.Bindings(BindingKind::Input)[handle] = bind_point;
-      add_new_binding(dxp::ResourceKind::Input, handle, bind_point);
+      ctx.Bindings(BindingClass::Input)[handle] = bind_point;
+      add_new_binding(dxp::BindingClass::Input, handle, bind_point);
       ++result.inputs_added;
     }
   }
@@ -169,8 +169,8 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
         continue;
       }
       const auto handle = decl.handle.empty() ? "" : decl.handle;
-      ctx.Bindings(BindingKind::Output)[handle] = bind_point;
-      add_new_binding(dxp::ResourceKind::Output, handle, bind_point);
+      ctx.Bindings(BindingClass::Output)[handle] = bind_point;
+      add_new_binding(dxp::BindingClass::Output, handle, bind_point);
       ++result.outputs_added;
     }
   }
@@ -179,7 +179,7 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
     const uint32_t temp_base = ctx.program.temp_count;
     for (size_t i = 0; i < step.temps.size(); ++i) {
       const uint32_t bind_point = temp_base + static_cast<uint32_t>(i);
-      ctx.Bindings(BindingKind::Temp)[step.temps[i]] = bind_point;
+      ctx.Bindings(BindingClass::Temp)[step.temps[i]] = bind_point;
     }
     ctx.program.temp_count += static_cast<uint32_t>(step.temps.size());
     result.temps_added = static_cast<uint32_t>(step.temps.size());

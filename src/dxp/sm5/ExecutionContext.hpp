@@ -18,20 +18,10 @@
 namespace dxp::sm5 {
 using namespace dxp::sm5::model;
 
-/// @brief Binding namespace for handle→register maps (one per resource kind).
-/// Keeps handle names separate per kind (a texture and a raw buffer may share
-/// a handle name).
-enum class BindingKind : std::uint8_t {
-  Temp,
-  Input,
-  Output,
-  Texture,
-  RawResource,
-  StructuredResource,
-  CBuffer,
-  Sampler,
-  Uav,
-};
+/// @brief Binding namespace for handle→register maps (one per register family).
+/// Keeps handle names separate per class (a texture and a raw buffer may share
+/// a handle name). Uses the shared @c dxp::BindingClass vocabulary.
+using BindingClass = dxp::BindingClass;
 
 /// @brief Global capture store — stores captured operands, instructions, and
 /// index immediates as copies so they survive rewrites.
@@ -61,16 +51,16 @@ struct ExecutionContext : VariableStore {
   std::vector<std::string> diagnostics;
 
   /// @brief Named binding maps (handle → register index), one namespace per kind.
-  std::unordered_map<BindingKind, std::unordered_map<std::string, uint32_t>> bindings;
+  std::unordered_map<BindingClass, std::unordered_map<std::string, uint32_t>> bindings;
 
   /// @brief Accessor for a binding namespace (creates it on first use).
-  std::unordered_map<std::string, uint32_t>& Bindings(BindingKind kind) {
+  std::unordered_map<std::string, uint32_t>& Bindings(BindingClass kind) {
     return bindings[kind];
   }
 
   /// @brief Const accessor for a binding namespace. Returns an empty map when the
   /// namespace was never populated.
-  const std::unordered_map<std::string, uint32_t>& Bindings(BindingKind kind) const {
+  const std::unordered_map<std::string, uint32_t>& Bindings(BindingClass kind) const {
     static const std::unordered_map<std::string, uint32_t> kEmpty;
     auto it = bindings.find(kind);
     return it != bindings.end() ? it->second : kEmpty;

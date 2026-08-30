@@ -13,10 +13,6 @@ using namespace dxp::sm5::model;
 // These enums are cast directly into DXBC tokens (or index the instruction
 // layout table); value drift would silently corrupt output.
 
-// --- Mirror-enum static asserts: model enums ↔ D3D token format ---
-// These enums are cast directly into DXBC tokens (or index the instruction
-// layout table); value drift would silently corrupt output.
-
 static_assert(static_cast<uint8_t>(NumComponents::Zero) == static_cast<uint8_t>(D3D10_SB_OPERAND_0_COMPONENT));
 static_assert(static_cast<uint8_t>(NumComponents::One) == static_cast<uint8_t>(D3D10_SB_OPERAND_1_COMPONENT));
 static_assert(static_cast<uint8_t>(NumComponents::Four) == static_cast<uint8_t>(D3D10_SB_OPERAND_4_COMPONENT));
@@ -102,14 +98,14 @@ static_assert(static_cast<uint8_t>(ExtendedOpcodeType::SampleControls) == static
 static_assert(static_cast<uint8_t>(ExtendedOpcodeType::ResourceDim) == static_cast<uint8_t>(D3D11_SB_EXTENDED_OPCODE_RESOURCE_DIM));
 static_assert(static_cast<uint8_t>(ExtendedOpcodeType::ResourceType) == static_cast<uint8_t>(D3D11_SB_EXTENDED_OPCODE_RESOURCE_RETURN_TYPE));
 
-static_assert(static_cast<uint8_t>(InterpolationMode::Undefined) == static_cast<uint8_t>(D3D10_SB_INTERPOLATION_UNDEFINED));
-static_assert(static_cast<uint8_t>(InterpolationMode::Constant) == static_cast<uint8_t>(D3D10_SB_INTERPOLATION_CONSTANT));
-static_assert(static_cast<uint8_t>(InterpolationMode::Linear) == static_cast<uint8_t>(D3D10_SB_INTERPOLATION_LINEAR));
-static_assert(static_cast<uint8_t>(InterpolationMode::LinearCentroid) == static_cast<uint8_t>(D3D10_SB_INTERPOLATION_LINEAR_CENTROID));
-static_assert(static_cast<uint8_t>(InterpolationMode::LinearNoperspective) == static_cast<uint8_t>(D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE));
-static_assert(static_cast<uint8_t>(InterpolationMode::LinearNoperspectiveCentroid) == static_cast<uint8_t>(D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_CENTROID));
-static_assert(static_cast<uint8_t>(InterpolationMode::LinearSample) == static_cast<uint8_t>(D3D10_SB_INTERPOLATION_LINEAR_SAMPLE));
-static_assert(static_cast<uint8_t>(InterpolationMode::LinearNoperspectiveSample) == static_cast<uint8_t>(D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_SAMPLE));
+static_assert(static_cast<uint8_t>(dxp::InterpolationMode::Undefined) == static_cast<uint8_t>(D3D10_SB_INTERPOLATION_UNDEFINED));
+static_assert(static_cast<uint8_t>(dxp::InterpolationMode::Constant) == static_cast<uint8_t>(D3D10_SB_INTERPOLATION_CONSTANT));
+static_assert(static_cast<uint8_t>(dxp::InterpolationMode::Linear) == static_cast<uint8_t>(D3D10_SB_INTERPOLATION_LINEAR));
+static_assert(static_cast<uint8_t>(dxp::InterpolationMode::LinearCentroid) == static_cast<uint8_t>(D3D10_SB_INTERPOLATION_LINEAR_CENTROID));
+static_assert(static_cast<uint8_t>(dxp::InterpolationMode::LinearNoperspective) == static_cast<uint8_t>(D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE));
+static_assert(static_cast<uint8_t>(dxp::InterpolationMode::LinearNoperspectiveCentroid) == static_cast<uint8_t>(D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_CENTROID));
+static_assert(static_cast<uint8_t>(dxp::InterpolationMode::LinearSample) == static_cast<uint8_t>(D3D10_SB_INTERPOLATION_LINEAR_SAMPLE));
+static_assert(static_cast<uint8_t>(dxp::InterpolationMode::LinearNoperspectiveSample) == static_cast<uint8_t>(D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_SAMPLE));
 
 static_assert(static_cast<uint8_t>(SamplerMode::Default) == static_cast<uint8_t>(D3D10_SB_SAMPLER_MODE_DEFAULT));
 static_assert(static_cast<uint8_t>(SamplerMode::Comparison) == static_cast<uint8_t>(D3D10_SB_SAMPLER_MODE_COMPARISON));

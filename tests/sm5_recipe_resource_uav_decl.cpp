@@ -46,18 +46,18 @@ int main(int argc, char** argv_) {
     return 1;
   }
 
-  if (raw_srv_binding_it->second.resource_kind != dxp::ResourceKind::RawResource || raw_srv_binding_it->second.handle != "injected_raw_srv" || raw_srv_binding_it->second.space != 0u) {
+  if (raw_srv_binding_it->second.binding_class != dxp::BindingClass::RawResource || raw_srv_binding_it->second.handle != "injected_raw_srv" || raw_srv_binding_it->second.space != 0u) {
     std::cerr << "Expected raw SRV export to expose the resolved binding.\n";
     return 1;
   }
 
-  if (structured_srv_binding_it->second.resource_kind != dxp::ResourceKind::StructuredResource || structured_srv_binding_it->second.handle != "injected_structured_srv" || structured_srv_binding_it->second.space != 0u) {
+  if (structured_srv_binding_it->second.binding_class != dxp::BindingClass::StructuredResource || structured_srv_binding_it->second.handle != "injected_structured_srv" || structured_srv_binding_it->second.space != 0u) {
     std::cerr << "Expected structured SRV export to expose the resolved "
                  "binding.\n";
     return 1;
   }
 
-  if (raw_uav_binding_it->second.resource_kind != dxp::ResourceKind::Uav || raw_uav_binding_it->second.handle != "injected_raw_uav" || raw_uav_binding_it->second.space != 0u) {
+  if (raw_uav_binding_it->second.binding_class != dxp::BindingClass::Uav || raw_uav_binding_it->second.handle != "injected_raw_uav" || raw_uav_binding_it->second.space != 0u) {
     std::cerr << "Expected raw UAV export to expose the resolved binding.\n";
     return 1;
   }

@@ -529,6 +529,9 @@ auto ExecuteSingleRuleImpl(dxp::sm5::ShaderProgram& program, const std::string& 
       const std::string& export_key = *cap.export_as;
       if (cap.operand_data.type == OperandType::Resource || cap.operand_data.type == OperandType::Sampler || cap.operand_data.type == OperandType::CBuffer) {
         dxp::ResourceUsage usage;
+        usage.binding_class = cap.operand_data.type == OperandType::CBuffer   ? dxp::BindingClass::CBuffer
+                              : cap.operand_data.type == OperandType::Sampler ? dxp::BindingClass::Sampler
+                                                                              : dxp::BindingClass::Texture;
         usage.register_index = cap.operand_data.index_entries.empty() || !cap.operand_data.index_entries[0].immediate_lo.has_value() ? 0 : *cap.operand_data.index_entries[0].immediate_lo;
         if (cap.operand_data.type == OperandType::CBuffer) {
           usage.handle = "cbuffer";
@@ -1749,7 +1752,7 @@ auto ResolveOperand(const MatchResult& match, ExecutionContext& context, const O
     return {};
   }
   if (op.handle) {
-    const auto lookup = [&](BindingKind kind) -> const uint32_t* {
+    const auto lookup = [&](BindingClass kind) -> const uint32_t* {
       auto& m = context.Bindings(kind);
       auto it = m.find(op.handle->name);
       return it != m.end() ? &it->second : nullptr;
@@ -1760,17 +1763,17 @@ auto ResolveOperand(const MatchResult& match, ExecutionContext& context, const O
       return {};
     }
     switch (*op.type) {
-      case OperandType::Temp:   rbp = lookup(BindingKind::Temp); break;
-      case OperandType::Input:  rbp = lookup(BindingKind::Input); break;
-      case OperandType::Output: rbp = lookup(BindingKind::Output); break;
+      case OperandType::Temp:   rbp = lookup(BindingClass::Temp); break;
+      case OperandType::Input:  rbp = lookup(BindingClass::Input); break;
+      case OperandType::Output: rbp = lookup(BindingClass::Output); break;
       case OperandType::Resource:
-        rbp = lookup(BindingKind::Texture);
-        if (rbp == nullptr) rbp = lookup(BindingKind::RawResource);
-        if (rbp == nullptr) rbp = lookup(BindingKind::StructuredResource);
+        rbp = lookup(BindingClass::Texture);
+        if (rbp == nullptr) rbp = lookup(BindingClass::RawResource);
+        if (rbp == nullptr) rbp = lookup(BindingClass::StructuredResource);
         break;
-      case OperandType::Sampler: rbp = lookup(BindingKind::Sampler); break;
-      case OperandType::CBuffer: rbp = lookup(BindingKind::CBuffer); break;
-      case OperandType::UAV:     rbp = lookup(BindingKind::Uav); break;
+      case OperandType::Sampler: rbp = lookup(BindingClass::Sampler); break;
+      case OperandType::CBuffer: rbp = lookup(BindingClass::CBuffer); break;
+      case OperandType::UAV:     rbp = lookup(BindingClass::Uav); break;
       default:
         error = path + ": SM5 handle operand type is unsupported for resource binding";
         return {};
