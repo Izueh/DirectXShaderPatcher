@@ -58,6 +58,7 @@ steps:
                       capture: scale
         emit:
           - name: mul_result
+            replace_captured: outer_frc
             operands:
               - index: 0
                 kind: call

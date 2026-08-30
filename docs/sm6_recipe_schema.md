@@ -101,8 +101,11 @@ steps:
 Common declaration fields:
 
 - `handle` — unique identifier; referenced by `apply_rule` emit operands.
-- `kind` — `DxilResourceKind` key (`Texture2D`, `Texture2DArray`, `RawBuffer`,
-  `StructuredBuffer`, `CBuffer`, `Sampler`, …).
+- `kind` — `DxilResourceKind` key. All texture and buffer SRV/UAV kinds are
+  supported: `Texture1D`, `Texture2D`, `Texture2DMS`, `Texture3D`, `TextureCube`,
+  `Texture1DArray`, `Texture2DArray`, `Texture2DMSArray`, `TextureCubeArray`,
+  `TypedBuffer`, `RawBuffer`, `StructuredBuffer` (plus `CBuffer` and `Sampler`
+  in their own lists).
 - `element_type` — `ComponentType` key (`F32`, `U32`, …).
 - `vector_width` — element vector width (default 4).
 - `space` — register space (default 0).
@@ -149,7 +152,7 @@ steps:
 | `name` | required, unique |
 | `required` | optional, default `true` — stop-fast on no-match; the step is reported failed (success=false) and remaining steps do not run |
 | `match_mode` | optional: `first`, `last`, `match_all` (default `first`) |
-| `rewrite_mode` | optional: `none`, `replace`, `before`, `after`, `replace_range` (default `replace`). `replace` swaps the **entire matched sequence** with the emit block (uses of the first matched instruction's result are pointed at the first emitted value unless `replace_captured` is wired); `replace_range` replaces a custom sub-range via `range_start_offset`/`range_end_offset` (default end `-1` = whole window); `before`/`after` insert the emit relative to `insert_index` without erasing |
+| `rewrite_mode` | optional: `none`, `replace`, `before`, `after`, `replace_range` (default `replace`). `replace` swaps the **entire matched sequence** with the emit block. Replacement is wired explicitly: at least one emit must set `replace_captured` (or write to an output via `StoreOutput`/`TextureStore`/...) — matched values without a wired replacement are an error if still used; `replace_range` replaces a custom sub-range via `range_start_offset`/`range_end_offset` (default end `-1` = whole window); `before`/`after` insert the emit relative to `insert_index` without erasing |
 | `insert_index` | insertion position (used with `before`/`after`; defaults to `0` for `before`, last match for `after`) |
 | `range_start_offset` / `range_end_offset` | rewrite range (used with `rewrite_mode: replace_range`), relative to the first matched instruction |
 | `rule` | required — the rule object |
@@ -191,11 +194,22 @@ is refused with a clear error — a block cannot gain or lose a terminator.
 
 ### Replacement semantics (SSA)
 
-`replace`/`replace_range` point uses of the **first matched instruction's result**
-at the first emitted value (mirroring sm5's register semantics), then erase the
-matched instructions. `emit[].replace_captured` overrides this: the named capture's
-uses are rewired to the emitted value instead. `replace_captured` may reference
+`replace`/`replace_range` erase the matched instructions and require explicit
+replacement wiring: at least one emit must set `replace_captured` (the named
+capture's uses are rewired to the emitted value), unless the emit block writes
+to an output (`StoreOutput`, `TextureStore`, `BufferStore`, ...). A matched
+value that remains used without a wired replacement is a validation error. `replace_captured` may reference
 any capture from the rule's match **or a prior step's** (see cross-step captures).
+
+### Dominance
+
+SSA requires every consumed value to dominate the point of use. Emits are validated
+against this at apply time: a capture consumed by an emit must be defined before the
+emit's insertion point (in the same block, or in a block that dominates it). Likewise,
+`replace_captured` rewiring requires the emitted value to dominate every use it takes
+over in `before`/`after` modes (in `replace` mode the emit sits at the matched value's
+own position, so this holds by construction). Recipes that violate this fail with an
+error naming the capture and the blocks involved.
 
 ### Cross-step captures
 

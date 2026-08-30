@@ -69,7 +69,10 @@ auto Recipe::Execute(std::span<const uint8_t> input,
         ExecutionContext ctx;
         ctx.logger.sink = options.logger;
         ctx.logger.level = options.log_level;
-        if (auto load_result = ShaderProgram::FromBytes(bytes, ctx.program); !load_result) {
+        if (const std::string& runtime_error = DxcRuntime::Ensure(); !runtime_error.empty()) {
+          return std::unexpected("failed to initialize DXC runtime: " + runtime_error);
+        }
+        if (auto load_result = ShaderProgram::FromBytes(bytes, ctx.program, false); !load_result) {
           return std::unexpected(std::move(load_result.error()));
         }
         for (const auto& warning : ctx.program.warnings) {

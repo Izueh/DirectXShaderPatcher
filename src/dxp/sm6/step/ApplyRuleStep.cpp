@@ -1,8 +1,11 @@
 #include "dxp/sm6/step/ApplyRuleStep.hpp"
 #include <llvm/ADT/APFloat.h>
 #include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/SmallString.h>
+#include <llvm/IR/Dominators.h>
 #include <llvm/IR/InstrTypes.h>
 #include <format>
+#include "dxc/DxilValidation/DxilValidation.h"
 #include "dxp/Condition_impl.hpp"
 #include "dxp/ExportTypes.hpp"
 #include "dxp/ResultFieldTraits.hpp"
@@ -11,6 +14,7 @@
 #include "dxp/StepConcept.hpp"
 #include "dxp/StepResults.hpp"
 #include "dxp/ValidationContext.hpp"
+#include "llvm/Support/FileSystem.h"
 #include "value_types/indirect.h"
 
 #include <bit>
@@ -64,9 +68,10 @@ struct MatchResult {
   llvm::Instruction* ResolveAnchor(RewriteKind rewrite_mode, int32_t insert_index,
                                    llvm::Instruction* range_start,
                                    llvm::Instruction* range_end) const;
-  bool ApplyRule(RewriteKind rewrite_mode, const Rule& rule, int32_t insert_index, int32_t range_start_offset, int32_t range_end_offset, llvm::IRBuilder<>& builder,
-                 llvm::Module& module, hlsl::DxilModule& dxil_module,
-                 sm6::ExecutionContext* ctx = nullptr);
+  std::expected<void, std::string> ApplyRule(RewriteKind rewrite_mode, const Rule& rule, int32_t insert_index, int32_t range_start_offset, int32_t range_end_offset, llvm::IRBuilder<>& builder,
+                                             llvm::Module& module, hlsl::DxilModule& dxil_module,
+                                             sm6::ExecutionContext* ctx = nullptr,
+                                             std::vector<llvm::Value*>* rule_emitted = nullptr);
 
   [[nodiscard]] llvm::Value* GetCapture(const std::string& name) const {
     auto it = captures.find(name);
@@ -170,6 +175,12 @@ auto GetEmitValueScalarTypeFromPattern(const EmitPattern& pattern, llvm::LLVMCon
     default:
       return nullptr;
   }
+}
+
+/// @brief Formats and stores an emit error; always returns nullptr so callers can
+/// `return EmitError(emit_name, message);` from any resolve function.
+inline std::unexpected<std::string> EmitError(const std::string& emit_name, const std::string& message) {
+  return std::unexpected("emit '" + emit_name + "': " + message);
 }
 
 auto IsDxOpCall(const llvm::Instruction& instruction, llvm::StringRef function_name) -> bool {
@@ -338,11 +349,6 @@ auto EraseInstructionRange(llvm::Instruction* range_start, llvm::Instruction* ra
   return true;
 }
 
-static auto MatchOperandPattern(llvm::Value* value, const OperandPattern& pattern,
-                                std::unordered_map<std::string, llvm::Value*>& captures,
-                                hlsl::DxilModule* dxil_module,
-                                const std::unordered_map<std::string, llvm::Value*>* global_captures) -> bool;
-
 auto TryResolveResourceFromHandle(llvm::Value* value, hlsl::DxilModule& dxil_module,
                                   hlsl::DXIL::ResourceClass preferred_resource_class,
                                   const hlsl::DxilResourceBase*& resource) -> bool {
@@ -381,6 +387,11 @@ auto TryResolveResourceFromHandle(llvm::Value* value, hlsl::DxilModule& dxil_mod
   return resource != nullptr;
 }
 
+auto MatchOperandPattern(llvm::Value* value, const OperandPattern& pattern,
+                         std::unordered_map<std::string, llvm::Value*>& captures,
+                         hlsl::DxilModule* dxil_module,
+                         const std::unordered_map<std::string, llvm::Value*>* global_captures) -> bool;
+
 auto CheckMatchInstructionPattern(llvm::Value* value, const InstructionPattern& pattern,
                                   std::unordered_map<std::string, llvm::Value*>& captures,
                                   hlsl::DxilModule* dxil_module,
@@ -407,6 +418,15 @@ auto CheckMatchInstructionPattern(llvm::Value* value, const InstructionPattern& 
     for (const OperandPattern& operand_pattern : pattern.operand_patterns) {
       if (operand_pattern.operand_index >= call->getNumArgOperands() || !MatchOperandPattern(call->getArgOperand(operand_pattern.operand_index), operand_pattern, captures, dxil_module, global_captures)) {
         return false;
+      }
+    }
+  } else {
+    const auto* instruction = llvm::dyn_cast<llvm::Instruction>(value);
+    if (instruction != nullptr) {
+      for (const OperandPattern& operand_pattern : pattern.operand_patterns) {
+        if (operand_pattern.operand_index >= instruction->getNumOperands() || !MatchOperandPattern(instruction->getOperand(operand_pattern.operand_index), operand_pattern, captures, dxil_module, global_captures)) {
+          return false;
+        }
       }
     }
   }
@@ -551,18 +571,38 @@ llvm::Value* ResolveInstructionPattern(const InstructionPattern& pattern, const 
   return nullptr;
 }
 
-llvm::Value* ResolveEmitOperand(const EmitOperand& operand, llvm::Type* arg_type, llvm::IRBuilder<>& builder,
-                                llvm::Module& module, [[maybe_unused]] hlsl::DxilModule& dxil_module, const MatchResult& match,
-                                sm6::ExecutionContext* ctx) {
+std::expected<llvm::Value*, std::string> ResolveEmitOperand(const EmitOperand& operand, llvm::Type* arg_type, llvm::IRBuilder<>& builder,
+                                                            llvm::Module& module, hlsl::DxilModule& dxil_module, const MatchResult& match,
+                                                            sm6::ExecutionContext* ctx, const std::string& emit_name,
+                                                            std::vector<std::pair<std::string, llvm::Value*>>* consumed_captures = nullptr) {
+  const auto type_name = [](llvm::Type* type) {
+    std::string name;
+    llvm::raw_string_ostream stream(name);
+    stream << *type;
+    return stream.str();
+  };
   switch (operand.kind) {
-    case OperandKind::Call:
+    case OperandKind::Call: {
+      llvm::Value* value = nullptr;
       if (operand.capture.has_value()) {
-        return ResolveCapture(match, ctx, *operand.capture);
+        value = ResolveCapture(match, ctx, *operand.capture);
+        if (value == nullptr) return EmitError(emit_name, "operand " + std::to_string(operand.operand_index) + ": capture '" + *operand.capture + "' was not produced by any match or earlier emit");
+        if (consumed_captures != nullptr) consumed_captures->emplace_back(*operand.capture, value);
+      } else if (operand.instruction) {
+        value = ResolveInstructionPattern(**operand.instruction, match, ctx);
+        if (value == nullptr) return EmitError(emit_name, "operand " + std::to_string(operand.operand_index) + ": nested instruction pattern resolved to no value");
+      } else {
+        // Kind-less DXIL operands with no capture/instruction conventionally mean
+        // an undefined value (e.g. unused textureLoad offsets) � any other
+        // intentional operand kind must be stated explicitly.
+        return llvm::UndefValue::get(arg_type);
       }
-      if (operand.instruction) return ResolveInstructionPattern(**operand.instruction, match, ctx);
-      return nullptr;
-    case OperandKind::Constant:
-      // Optional explicit type overrides the signature-derived element type.
+      if (arg_type != nullptr && value->getType() != arg_type) {
+        return EmitError(emit_name, "operand " + std::to_string(operand.operand_index) + " type mismatch: expected " + type_name(arg_type) + ", captured value is " + type_name(value->getType()));
+      }
+      return value;
+    }
+    case OperandKind::Constant: {
       if (!operand.constant_int_values.empty() || !operand.constant_float_values.empty()) {
         const bool arg_is_vector = arg_type->isVectorTy();
         llvm::Type* elem_type = arg_is_vector ? arg_type->getVectorElementType() : arg_type;
@@ -579,6 +619,9 @@ llvm::Value* ResolveEmitOperand(const EmitOperand& operand, llvm::Type* arg_type
               for (unsigned j = 0; j < arg_type->getVectorNumElements(); j++) elems.push_back(elems[0]);
             }
             return llvm::ConstantVector::get(llvm::ArrayRef<llvm::Constant*>(elems));
+          }
+          if (!elem_type->isIntegerTy()) {
+            return EmitError(emit_name, "operand " + std::to_string(operand.operand_index) + ": integer constant but argument type is " + type_name(arg_type));
           }
           return llvm::ConstantInt::get(elem_type, operand.constant_int_values[0]);
         }
@@ -618,33 +661,66 @@ llvm::Value* ResolveEmitOperand(const EmitOperand& operand, llvm::Type* arg_type
           if (const auto* fp32 = std::any_cast<float>(&val)) return llvm::ConstantFP::get(module.getContext(), llvm::APFloat(static_cast<double>(*fp32)));
         }
       }
-      return nullptr;
-    case OperandKind::Resource:
-      if (!operand.handle.empty()) {
-        // Resolve add_resource-declared handles to their LLVM createHandle value
-        // (mirrors SM5's from_handle -> bind-point resolution via the context).
-        if (ctx != nullptr) {
-          auto it = ctx->resource_handle_values.find(operand.handle);
-          if (it != ctx->resource_handle_values.end()) return it->second;
-        }
-        auto it = match.captures.find(operand.handle);
-        if (it != match.captures.end()) return it->second;
+      return EmitError(emit_name, "operand " + std::to_string(operand.operand_index) + ": kind 'constant' requires 'constant_int_values', 'constant_float_values', or a resolvable variable capture");
+    }
+    case OperandKind::Resource: {
+      if (operand.handle.empty()) {
+        return EmitError(emit_name, "operand " + std::to_string(operand.operand_index) + ": kind 'resource' requires 'handle'");
       }
-      return nullptr;
+      // Resolve add_resource-declared handles to their LLVM createHandle value
+      // (mirrors SM5's from_handle -> bind-point resolution via the context).
+      if (ctx != nullptr) {
+        auto it = ctx->resource_handle_values.find(operand.handle);
+        if (it != ctx->resource_handle_values.end()) {
+          llvm::Value* handle_value = it->second;
+          if (arg_type != nullptr && handle_value->getType() != arg_type) {
+            return EmitError(emit_name, "operand " + std::to_string(operand.operand_index) + ": resource handle '" + operand.handle + "' type mismatch: expected " + type_name(arg_type) + ", handle is " + type_name(handle_value->getType()));
+          }
+          return handle_value;
+        }
+      }
+      auto it = match.captures.find(operand.handle);
+      if (it != match.captures.end()) {
+        llvm::Value* handle_value = it->second;
+        if (arg_type != nullptr && handle_value->getType() != arg_type) {
+          return EmitError(emit_name, "operand " + std::to_string(operand.operand_index) + ": captured handle '" + operand.handle + "' type mismatch: expected " + type_name(arg_type) + ", captured value is " + type_name(handle_value->getType()));
+        }
+        return handle_value;
+      }
+      return EmitError(emit_name, "operand " + std::to_string(operand.operand_index) + ": resource handle '" + operand.handle + "' was not declared by any add_resource step and not captured by this match");
+    }
     case OperandKind::Undefined:
       return llvm::UndefValue::get(arg_type);
   }
-  return nullptr;
+  return EmitError(emit_name, "operand " + std::to_string(operand.operand_index) + ": unknown operand kind");
 }
 
-llvm::Value* ResolveEmitPattern(const EmitPattern& pattern, llvm::IRBuilder<>& builder, llvm::Module& module,
-                                hlsl::DxilModule& dxil_module, const MatchResult& match, sm6::ExecutionContext* ctx) {
+std::expected<llvm::Value*, std::string> ResolveEmitPattern(const EmitPattern& pattern, llvm::IRBuilder<>& builder, llvm::Module& module,
+                                                            hlsl::DxilModule& dxil_module, const MatchResult& match, sm6::ExecutionContext* ctx,
+                                                            std::vector<std::pair<std::string, llvm::Value*>>* consumed_captures = nullptr) {
+  const std::string emit_name = pattern.name.empty() ? pattern.opcode.value_or("<unnamed>") : pattern.name;
   if (!pattern.capture.empty()) {
-    return ResolveCapture(match, ctx, pattern.capture);
+    llvm::Value* captured = ResolveCapture(match, ctx, pattern.capture);
+    if (captured == nullptr) return EmitError(emit_name, "capture '" + pattern.capture + "' was not produced by any match or earlier emit");
+    if (consumed_captures != nullptr) consumed_captures->emplace_back(pattern.capture, captured);
+    return captured;
+  }
+  // Aggregate extraction: pull one field out of a struct-producing emit
+  // (ResRet/CBufRet) captured by an earlier emit pattern in the same rule.
+  if (!pattern.aggregate.empty()) {
+    llvm::Value* aggregate = ResolveCapture(match, ctx, pattern.aggregate);
+    if (aggregate == nullptr) return EmitError(emit_name, "aggregate '" + pattern.aggregate + "' was not produced by any earlier emit");
+    if (consumed_captures != nullptr) consumed_captures->emplace_back(pattern.aggregate, aggregate);
+    auto* aggregate_type = llvm::dyn_cast<llvm::StructType>(aggregate->getType());
+    if (aggregate_type == nullptr) return EmitError(emit_name, "aggregate '" + pattern.aggregate + "' is " + aggregate->getType()->getStructName().str() + ", expected a struct (ResRet/CBufRet)");
+    if (pattern.extract_index >= aggregate_type->getNumElements()) {
+      return EmitError(emit_name, "extract_index " + std::to_string(pattern.extract_index) + " out of range for " + aggregate_type->getStructName().str() + " (" + std::to_string(aggregate_type->getNumElements()) + " fields)");
+    }
+    return builder.CreateExtractValue(aggregate, pattern.extract_index);
   }
   llvm::Type* result_type = GetEmitValueScalarTypeFromPattern(pattern, module.getContext(), llvm::Type::getVoidTy(module.getContext()));
   if (result_type == nullptr) {
-    // Unsupported component type — fall back to void, matching the previous inline behavior.
+    // Unsupported component type � fall back to void, matching the previous inline behavior.
     result_type = llvm::Type::getVoidTy(module.getContext());
   }
   std::optional<hlsl::OP::OpCode> resolved_dxil_op;
@@ -652,27 +728,46 @@ llvm::Value* ResolveEmitPattern(const EmitPattern& pattern, llvm::IRBuilder<>& b
   if (pattern.opcode.has_value() && !pattern.opcode->empty()) {
     std::tie(resolved_dxil_op, resolved_llvm_op) = ResolveOpCode(*pattern.opcode);
   }
+  // Opcode-less emit with operands: pass-through alias of the first captured
+  // operand value (re-exposes an earlier capture under pattern.name).
+  if (!resolved_dxil_op.has_value() && !resolved_llvm_op.has_value() && !pattern.operands.empty()) {
+    return ResolveEmitOperand(pattern.operands.front(), nullptr, builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+  }
   if (resolved_dxil_op.has_value()) {
-    hlsl::OP dxil_op(module.getContext(), &module);
-    dxil_op.InitWithMinPrecision(dxil_module.GetUseMinPrecision());
-    llvm::Function* emitted_function = dxil_op.GetOpFunc(*resolved_dxil_op, result_type);
-    if (emitted_function == nullptr) return nullptr;
+    hlsl::OP* dxil_op = dxil_module.GetOP();
+    if (dxil_op == nullptr) return EmitError(emit_name, "module has no DXIL OP table");
+    // GetOpFunc expects the scalar overload type (e.g. float) and creates the
+    // function with the correct signature: resource ops expand the return type
+    // to ResRet/CBufRet internally (see DxilOperations.cpp RRT/CBRT).
+    if (!hlsl::OP::IsOverloadLegal(*resolved_dxil_op, result_type)) {
+      const auto comp_name = pattern.result_component_type.has_value() ? std::to_string(static_cast<int>(*pattern.result_component_type)) : std::string("F32 (default)");
+      return EmitError(emit_name, "opcode '" + *pattern.opcode + "' does not support overload component type " + comp_name);
+    }
+    llvm::Function* emitted_function = dxil_op->GetOpFunc(*resolved_dxil_op, result_type);
+    if (emitted_function == nullptr) return EmitError(emit_name, "opcode '" + *pattern.opcode + "' could not be resolved to a DXIL function for the requested overload type");
+    // Operand index N maps directly to DXIL argument N (argument 0 is the opcode
+    // constant). DXIL signatures have no padding � Dot2/Dot3 repeat their
+    // operands, and each repeated component has its own argument index.
     std::vector<llvm::Value*> args;
     args.reserve(emitted_function->arg_size());
-    const llvm::Argument* opcode_arg = emitted_function->arg_begin();
-    args.push_back(llvm::ConstantInt::get(opcode_arg->getType(), static_cast<uint64_t>(*resolved_dxil_op)));
-    size_t operand_idx = 0;
-    unsigned arg_index = 1;
     for (auto& arg : emitted_function->args()) {
-      if (arg_index == 0) {
-        ++arg_index;
+      if (arg.getArgNo() == 0) {
+        args.push_back(llvm::ConstantInt::get(arg.getType(), static_cast<uint64_t>(*resolved_dxil_op)));
         continue;
       }
-      if (operand_idx >= pattern.operands.size() || pattern.operands[operand_idx].operand_index != arg_index) return nullptr;
-      llvm::Value* val = ResolveEmitOperand(pattern.operands[operand_idx++], arg.getType(), builder, module, dxil_module, match, ctx);
-      if ((val == nullptr) || val->getType() != arg.getType()) return nullptr;
-      args.push_back(val);
-      ++arg_index;
+      const EmitOperand* operand = nullptr;
+      for (const auto& op : pattern.operands) {
+        if (op.operand_index == arg.getArgNo()) {
+          operand = &op;
+          break;
+        }
+      }
+      if (operand == nullptr) {
+        return EmitError(emit_name, "opcode '" + *pattern.opcode + "' argument " + std::to_string(arg.getArgNo()) + " (" + hlsl::OP::GetOpCodeName(*resolved_dxil_op) + ") has no matching operand with index " + std::to_string(arg.getArgNo()));
+      }
+      auto value_result = ResolveEmitOperand(*operand, arg.getType(), builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+      if (!value_result) return std::unexpected(value_result.error());
+      args.push_back(*value_result);
     }
     return builder.CreateCall(emitted_function, args);
   }
@@ -699,9 +794,13 @@ llvm::Value* ResolveEmitPattern(const EmitPattern& pattern, llvm::IRBuilder<>& b
       case llvm::Instruction::Or:
       case llvm::Instruction::Xor:  {
         if (pattern.operands.size() != 2 || pattern.operands[0].operand_index != 0 || pattern.operands[1].operand_index != 1) return nullptr;
-        llvm::Value* lhs = ResolveEmitOperand(pattern.operands[0], result_type, builder, module, dxil_module, match, ctx);
-        llvm::Value* rhs = ResolveEmitOperand(pattern.operands[1], result_type, builder, module, dxil_module, match, ctx);
-        if ((lhs == nullptr) || (rhs == nullptr) || lhs->getType() != result_type || rhs->getType() != result_type) return nullptr;
+        auto lhs_result = ResolveEmitOperand(pattern.operands[0], result_type, builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+        if (!lhs_result) return std::unexpected(lhs_result.error());
+        llvm::Value* lhs = *lhs_result;
+        auto rhs_result = ResolveEmitOperand(pattern.operands[1], result_type, builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+        if (!rhs_result) return std::unexpected(rhs_result.error());
+        llvm::Value* rhs = *rhs_result;
+        if (lhs->getType() != result_type || rhs->getType() != result_type) return nullptr;
         return builder.CreateBinOp(static_cast<llvm::Instruction::BinaryOps>(*resolved_llvm_op), lhs, rhs);
       }
       case llvm::Instruction::Trunc:
@@ -718,78 +817,110 @@ llvm::Value* ResolveEmitPattern(const EmitPattern& pattern, llvm::IRBuilder<>& b
       case llvm::Instruction::BitCast:
       case llvm::Instruction::AddrSpaceCast: {
         if (pattern.operands.size() != 1 || pattern.operands[0].operand_index != 0) return nullptr;
-        llvm::Value* source = ResolveEmitOperand(pattern.operands[0], result_type, builder, module, dxil_module, match, ctx);
-        if (source == nullptr) return nullptr;
+        auto source_result = ResolveEmitOperand(pattern.operands[0], result_type, builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+        if (!source_result) return std::unexpected(source_result.error());
+        llvm::Value* source = *source_result;
         return builder.CreateCast(static_cast<llvm::Instruction::CastOps>(*resolved_llvm_op), source, result_type);
       }
       case llvm::Instruction::ICmp: {
         if (pattern.operands.size() != 2 || pattern.operands[0].operand_index != 0 || pattern.operands[1].operand_index != 1) return nullptr;
-        llvm::Value* lhs = ResolveEmitOperand(pattern.operands[0], result_type, builder, module, dxil_module, match, ctx);
-        llvm::Value* rhs = ResolveEmitOperand(pattern.operands[1], result_type, builder, module, dxil_module, match, ctx);
-        if ((lhs == nullptr) || (rhs == nullptr) || lhs->getType() != result_type || rhs->getType() != result_type) return nullptr;
+        auto lhs_result = ResolveEmitOperand(pattern.operands[0], result_type, builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+        if (!lhs_result) return std::unexpected(lhs_result.error());
+        llvm::Value* lhs = *lhs_result;
+        auto rhs_result = ResolveEmitOperand(pattern.operands[1], result_type, builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+        if (!rhs_result) return std::unexpected(rhs_result.error());
+        llvm::Value* rhs = *rhs_result;
+        if (lhs->getType() != result_type || rhs->getType() != result_type) return nullptr;
         return builder.CreateICmp(static_cast<llvm::CmpInst::Predicate>(0), lhs, rhs);
       }
       case llvm::Instruction::FCmp: {
         if (pattern.operands.size() != 2 || pattern.operands[0].operand_index != 0 || pattern.operands[1].operand_index != 1) return nullptr;
-        llvm::Value* lhs = ResolveEmitOperand(pattern.operands[0], result_type, builder, module, dxil_module, match, ctx);
-        llvm::Value* rhs = ResolveEmitOperand(pattern.operands[1], result_type, builder, module, dxil_module, match, ctx);
-        if ((lhs == nullptr) || (rhs == nullptr) || lhs->getType() != result_type || rhs->getType() != result_type) return nullptr;
+        auto lhs_result = ResolveEmitOperand(pattern.operands[0], result_type, builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+        if (!lhs_result) return std::unexpected(lhs_result.error());
+        llvm::Value* lhs = *lhs_result;
+        auto rhs_result = ResolveEmitOperand(pattern.operands[1], result_type, builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+        if (!rhs_result) return std::unexpected(rhs_result.error());
+        llvm::Value* rhs = *rhs_result;
+        if (lhs->getType() != result_type || rhs->getType() != result_type) return nullptr;
         return builder.CreateFCmp(static_cast<llvm::CmpInst::Predicate>(0), lhs, rhs);
       }
       case llvm::Instruction::ExtractElement: {
         if (pattern.operands.size() != 2 || pattern.operands[0].operand_index != 0 || pattern.operands[1].operand_index != 1) return nullptr;
-        llvm::Value* vec = ResolveEmitOperand(pattern.operands[0], result_type, builder, module, dxil_module, match, ctx);
-        llvm::Value* idx = ResolveEmitOperand(pattern.operands[1], llvm::Type::getInt32Ty(module.getContext()), builder, module, dxil_module, match, ctx);
-        if ((vec == nullptr) || (idx == nullptr)) return nullptr;
+        auto vec_result = ResolveEmitOperand(pattern.operands[0], result_type, builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+        if (!vec_result) return std::unexpected(vec_result.error());
+        llvm::Value* vec = *vec_result;
+        auto idx_result = ResolveEmitOperand(pattern.operands[1], llvm::Type::getInt32Ty(module.getContext()), builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+        if (!idx_result) return std::unexpected(idx_result.error());
+        llvm::Value* idx = *idx_result;
         return builder.CreateExtractElement(vec, idx);
       }
       case llvm::Instruction::InsertElement: {
         if (pattern.operands.size() != 3 || pattern.operands[0].operand_index != 0 || pattern.operands[1].operand_index != 1 || pattern.operands[2].operand_index != 2) return nullptr;
-        llvm::Value* vec = ResolveEmitOperand(pattern.operands[0], result_type, builder, module, dxil_module, match, ctx);
-        llvm::Value* val = ResolveEmitOperand(pattern.operands[1], result_type, builder, module, dxil_module, match, ctx);
-        llvm::Value* idx = ResolveEmitOperand(pattern.operands[2], llvm::Type::getInt32Ty(module.getContext()), builder, module, dxil_module, match, ctx);
-        if ((vec == nullptr) || (val == nullptr) || (idx == nullptr)) return nullptr;
+        auto vec_result = ResolveEmitOperand(pattern.operands[0], result_type, builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+        if (!vec_result) return std::unexpected(vec_result.error());
+        llvm::Value* vec = *vec_result;
+        auto val_result = ResolveEmitOperand(pattern.operands[1], result_type, builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+        if (!val_result) return std::unexpected(val_result.error());
+        llvm::Value* val = *val_result;
+        auto idx_result = ResolveEmitOperand(pattern.operands[2], llvm::Type::getInt32Ty(module.getContext()), builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+        if (!idx_result) return std::unexpected(idx_result.error());
+        llvm::Value* idx = *idx_result;
+
         return builder.CreateInsertElement(vec, val, idx);
       }
       case llvm::Instruction::Select: {
         if (pattern.operands.size() != 3 || pattern.operands[0].operand_index != 0 || pattern.operands[1].operand_index != 1 || pattern.operands[2].operand_index != 2) return nullptr;
-        llvm::Value* cond = ResolveEmitOperand(pattern.operands[0], llvm::Type::getInt1Ty(module.getContext()), builder, module, dxil_module, match, ctx);
-        llvm::Value* s1 = ResolveEmitOperand(pattern.operands[1], result_type, builder, module, dxil_module, match, ctx);
-        llvm::Value* s2 = ResolveEmitOperand(pattern.operands[2], result_type, builder, module, dxil_module, match, ctx);
-        if ((cond == nullptr) || (s1 == nullptr) || (s2 == nullptr)) return nullptr;
+        auto cond_result = ResolveEmitOperand(pattern.operands[0], llvm::Type::getInt1Ty(module.getContext()), builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+        if (!cond_result) return std::unexpected(cond_result.error());
+        llvm::Value* cond = *cond_result;
+        auto s1_result = ResolveEmitOperand(pattern.operands[1], result_type, builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+        if (!s1_result) return std::unexpected(s1_result.error());
+        llvm::Value* s1 = *s1_result;
+        auto s2_result = ResolveEmitOperand(pattern.operands[2], result_type, builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+        if (!s2_result) return std::unexpected(s2_result.error());
+        llvm::Value* s2 = *s2_result;
+
         return builder.CreateSelect(cond, s1, s2);
       }
       case llvm::Instruction::Load: {
         if (pattern.operands.size() != 1 || pattern.operands[0].operand_index != 0) return nullptr;
-        llvm::Value* ptr = ResolveEmitOperand(pattern.operands[0], llvm::Type::getInt8PtrTy(module.getContext()), builder, module, dxil_module, match, ctx);
-        if (ptr == nullptr) return nullptr;
+        auto ptr_result = ResolveEmitOperand(pattern.operands[0], llvm::Type::getInt8PtrTy(module.getContext()), builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+        if (!ptr_result) return std::unexpected(ptr_result.error());
+        llvm::Value* ptr = *ptr_result;
         return builder.CreateLoad(result_type, ptr);
       }
       case llvm::Instruction::Store: {
         if (pattern.operands.size() != 2 || pattern.operands[0].operand_index != 0 || pattern.operands[1].operand_index != 1) return nullptr;
-        llvm::Value* val = ResolveEmitOperand(pattern.operands[0], result_type, builder, module, dxil_module, match, ctx);
-        llvm::Value* ptr = ResolveEmitOperand(pattern.operands[1], llvm::Type::getInt8PtrTy(module.getContext()), builder, module, dxil_module, match, ctx);
-        if ((val == nullptr) || (ptr == nullptr)) return nullptr;
+        auto val_result = ResolveEmitOperand(pattern.operands[0], result_type, builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+        if (!val_result) return std::unexpected(val_result.error());
+        llvm::Value* val = *val_result;
+        auto ptr_result = ResolveEmitOperand(pattern.operands[1], llvm::Type::getInt8PtrTy(module.getContext()), builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+        if (!ptr_result) return std::unexpected(ptr_result.error());
+        llvm::Value* ptr = *ptr_result;
         builder.CreateStore(val, ptr);
         return nullptr;
       }
       case llvm::Instruction::GetElementPtr: {
         if (pattern.operands.empty() || pattern.operands[0].operand_index != 0) return nullptr;
-        llvm::Value* ptr = ResolveEmitOperand(pattern.operands[0], llvm::Type::getInt8PtrTy(module.getContext()), builder, module, dxil_module, match, ctx);
-        if (ptr == nullptr) return nullptr;
+        auto ptr_result = ResolveEmitOperand(pattern.operands[0], llvm::Type::getInt8PtrTy(module.getContext()), builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+        if (!ptr_result) return std::unexpected(ptr_result.error());
+        llvm::Value* ptr = *ptr_result;
         std::vector<llvm::Value*> indices;
         for (size_t i = 1; i < pattern.operands.size(); i++) {
-          llvm::Value* idx = ResolveEmitOperand(pattern.operands[i], llvm::Type::getInt32Ty(module.getContext()), builder, module, dxil_module, match, ctx);
-          if (idx == nullptr) return nullptr;
-          indices.push_back(idx);
+          auto idx_result = ResolveEmitOperand(pattern.operands[i], llvm::Type::getInt32Ty(module.getContext()), builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+          if (!idx_result) return std::unexpected(idx_result.error());
+          indices.push_back(*idx_result);
         }
         return builder.CreateGEP(result_type, ptr, indices);
       }
       case llvm::Instruction::Alloca: {
         if (pattern.operands.size() > 1) return nullptr;
-        llvm::Value* size = pattern.operands.size() == 1
-                                ? ResolveEmitOperand(pattern.operands[0], llvm::Type::getInt64Ty(module.getContext()), builder, module, dxil_module, match, ctx)
-                                : nullptr;
+        llvm::Value* size = nullptr;
+        if (pattern.operands.size() == 1) {
+          auto size_result = ResolveEmitOperand(pattern.operands[0], llvm::Type::getInt64Ty(module.getContext()), builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+          if (!size_result) return std::unexpected(size_result.error());
+          size = *size_result;
+        }
         return builder.CreateAlloca(result_type, size);
       }
       default:
@@ -800,8 +931,9 @@ llvm::Value* ResolveEmitPattern(const EmitPattern& pattern, llvm::IRBuilder<>& b
     auto [dxil_op, llvm_op] = ResolveOpCode(*pattern.cast_opcode);
     if (llvm_op.has_value()) {
       if (pattern.operands.size() != 1 || pattern.operands[0].operand_index != 0) return nullptr;
-      llvm::Value* source = ResolveEmitOperand(pattern.operands[0], result_type, builder, module, dxil_module, match, ctx);
-      if (source == nullptr) return nullptr;
+      auto source_result = ResolveEmitOperand(pattern.operands[0], result_type, builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+      if (!source_result) return std::unexpected(source_result.error());
+      llvm::Value* source = *source_result;
       return builder.CreateCast(static_cast<llvm::Instruction::CastOps>(*llvm_op), source, result_type);
     }
   }
@@ -829,13 +961,13 @@ void CollectAllMatches(llvm::Function& function, const InstructionPattern& patte
                  std::make_move_iterator(binary_op_matches.end()));
 }
 
-bool ApplyDxilRewriteRules(llvm::Function& function, llvm::Module& module, hlsl::DxilModule& dxil_module,
-                           const Rule& rule, MatchKind match_mode, RewriteKind rewrite_mode,
-                           int32_t insert_index, int32_t range_start_offset, int32_t range_end_offset,
-                           unsigned* applied_rule_count, unsigned* mutated_rule_count,
-                           [[maybe_unused]] const std::unordered_map<std::string, llvm::Value*>& captures,
-                           ::dxp::ApplyRuleResults* export_results,
-                           sm6::ExecutionContext* ctx) {
+std::expected<void, std::string> ApplyDxilRewriteRules(llvm::Function& function, llvm::Module& module, hlsl::DxilModule& dxil_module,
+                                                       const Rule& rule, MatchKind match_mode, RewriteKind rewrite_mode,
+                                                       int32_t insert_index, int32_t range_start_offset, int32_t range_end_offset,
+                                                       unsigned* applied_rule_count, unsigned* mutated_rule_count,
+                                                       [[maybe_unused]] const std::unordered_map<std::string, llvm::Value*>& captures,
+                                                       ::dxp::ApplyRuleResults* export_results,
+                                                       sm6::ExecutionContext* ctx) {
   unsigned applied_count = 0;
   unsigned mutation_count = 0;
   const bool rule_mutating = rewrite_mode != RewriteKind::None;
@@ -853,7 +985,7 @@ bool ApplyDxilRewriteRules(llvm::Function& function, llvm::Module& module, hlsl:
   if (matches.empty()) {
     if (applied_rule_count != nullptr) *applied_rule_count = 0;
     if (mutated_rule_count != nullptr) *mutated_rule_count = 0;
-    return true;
+    return {};
   }
 
   if ((export_results != nullptr) && !rule.match_patterns.empty()) {
@@ -914,7 +1046,10 @@ bool ApplyDxilRewriteRules(llvm::Function& function, llvm::Module& module, hlsl:
     }
   }
   std::vector<llvm::WeakTrackingVH> prune_roots;
+  std::vector<llvm::Value*> rule_emitted;
+  std::string apply_error;
   auto apply_single_match = [&](MatchResult& match) -> bool {
+    apply_error.clear();
     // Cross-step captures: persist this match's captures into the global store
     // (sm5-compatible), regardless of rewrite mode.
     if (ctx != nullptr) {
@@ -944,7 +1079,10 @@ bool ApplyDxilRewriteRules(llvm::Function& function, llvm::Module& module, hlsl:
       }
     }
     llvm::IRBuilder<> builder(match.instructions.front());
-    if (!match.ApplyRule(rewrite_mode, rule, insert_index, range_start_offset, range_end_offset, builder, module, dxil_module, ctx)) return false;
+    if (auto applied = match.ApplyRule(rewrite_mode, rule, insert_index, range_start_offset, range_end_offset, builder, module, dxil_module, ctx, &rule_emitted); !applied) {
+      apply_error = applied.error();
+      return false;
+    }
     ++applied_count;
     ++mutation_count;
     return true;
@@ -952,15 +1090,15 @@ bool ApplyDxilRewriteRules(llvm::Function& function, llvm::Module& module, hlsl:
   switch (match_mode) {
     case MatchKind::MatchAll:
       for (auto& match : matches) {
-        if (!apply_single_match(match)) return false;
+        if (!apply_single_match(match)) return std::unexpected(apply_error);
       }
       break;
     case MatchKind::Last:
-      if (!apply_single_match(matches.back())) return false;
+      if (!apply_single_match(matches.back())) return std::unexpected(apply_error);
       break;
     case MatchKind::First:
     default:
-      if (!apply_single_match(matches.front())) return false;
+      if (!apply_single_match(matches.front())) return std::unexpected(apply_error);
       break;
   }
   // End-of-step prune: one pass after all matches applied, capture-aware.
@@ -969,13 +1107,16 @@ bool ApplyDxilRewriteRules(llvm::Function& function, llvm::Module& module, hlsl:
   }
   if (applied_rule_count != nullptr) *applied_rule_count = applied_count;
   if (mutated_rule_count != nullptr) *mutated_rule_count = mutation_count;
-  return true;
+  return {};
 }
 
 unsigned CollectDxilCallMatches(llvm::Function& function, const InstructionPattern& pattern,
                                 std::vector<MatchResult>& results, hlsl::DxilModule* dxil_module,
                                 const std::unordered_map<std::string, llvm::Value*>* global_captures) {
   results.clear();
+  // Debug: log the pattern
+  if (pattern.opcode.has_value() && !pattern.opcode->empty()) {
+  }
   for (llvm::BasicBlock& basic_block : function) {
     for (llvm::Instruction& instruction : basic_block) {
       auto* const call = llvm::dyn_cast<llvm::CallInst>(&instruction);
@@ -1018,6 +1159,22 @@ unsigned CollectBinaryOpMatches(llvm::Function& function, const InstructionPatte
   return static_cast<unsigned>(results.size());
 }
 
+/// @brief Validates that every captured value an emit consumes dominates the
+/// emit's insertion point. Cross-block captures are the normal way recipes
+/// compose, but SSA requires the definition to dominate the use � a value
+/// defined in a later or sibling block cannot feed an emit placed here.
+std::expected<void, std::string> ValidateEmitDominance(
+    const std::vector<std::pair<std::string, llvm::Value*>>& consumed_captures,
+    const llvm::DominatorTree& dom_tree, llvm::Instruction& insertion_point) {
+  for (const auto& [name, value] : consumed_captures) {
+    auto* def = llvm::dyn_cast<llvm::Instruction>(value);
+    if (def == nullptr) continue;  // constants/arguments dominate everywhere
+    if (!dom_tree.dominates(def, &insertion_point)) {
+      return std::unexpected("capture '" + name + "' does not dominate the emit insertion point " + "(defined in block '" + def->getParent()->getName().str() + "', emit placed in block '" + insertion_point.getParent()->getName().str() + "'); restructure the recipe so the capture is defined before this emit");
+    }
+  }
+  return {};
+}
 }  // anonymous namespace
 
 /// @brief Matches a consecutive sequence of instruction patterns within a single
@@ -1121,10 +1278,11 @@ llvm::Instruction* MatchResult::ResolveAnchor(RewriteKind rewrite_mode, int32_t 
   return rootCall;
 }
 
-bool MatchResult::ApplyRule(RewriteKind rewrite_mode, const Rule& rule, int32_t insert_index, int32_t range_start_offset, int32_t range_end_offset, llvm::IRBuilder<>& builder,
-                            llvm::Module& module, hlsl::DxilModule& dxil_module,
-                            sm6::ExecutionContext* ctx) {
-  if (rewrite_mode == RewriteKind::None) return true;
+std::expected<void, std::string> MatchResult::ApplyRule(RewriteKind rewrite_mode, const Rule& rule, int32_t insert_index, int32_t range_start_offset, int32_t range_end_offset, llvm::IRBuilder<>& builder,
+                                                        llvm::Module& module, hlsl::DxilModule& dxil_module,
+                                                        sm6::ExecutionContext* ctx,
+                                                        std::vector<llvm::Value*>* rule_emitted) {
+  if (rewrite_mode == RewriteKind::None) return {};
 
   // Terminators can anchor Before-insertions (e.g. "insert before Ret"), but a
   // block cannot gain or lose a terminator through erasing, and nothing can be
@@ -1132,10 +1290,7 @@ bool MatchResult::ApplyRule(RewriteKind rewrite_mode, const Rule& rule, int32_t 
   if (rewrite_mode == RewriteKind::Replace || rewrite_mode == RewriteKind::ReplaceRange || rewrite_mode == RewriteKind::After) {
     for (llvm::Instruction* inst : instructions) {
       if (inst != nullptr && llvm::Instruction::isTerminator(inst->getOpcode())) {
-        if (ctx != nullptr) {
-          ctx->lastError = "cannot rewrite a terminator instruction (matched by this rule)";
-        }
-        return false;
+        return std::unexpected("cannot rewrite a terminator instruction (matched by this rule)");
       }
     }
   }
@@ -1146,51 +1301,118 @@ bool MatchResult::ApplyRule(RewriteKind rewrite_mode, const Rule& rule, int32_t 
   llvm::Instruction* range_start = nullptr;
   llvm::Instruction* range_end = nullptr;
   if (rewrite_mode == RewriteKind::ReplaceRange) {
-    if (!ResolveReplacementRange(rewrite_mode, range_start_offset, range_end_offset, range_target, range_start, range_end)) return false;
+    if (!ResolveReplacementRange(rewrite_mode, range_start_offset, range_end_offset, range_target, range_start, range_end)) {
+      return std::unexpected("replace_range offsets do not resolve to a valid instruction range");
+    }
   }
   llvm::Instruction* anchor = this->ResolveAnchor(rewrite_mode, insert_index, range_start, range_end);
-  if (anchor == nullptr) return false;
+  if (anchor == nullptr) return std::unexpected("failed to resolve a rewrite anchor instruction");
 
   const bool has_replace_captured =
       std::ranges::any_of(rule.emit_patterns, [](const EmitPattern& emit_pattern) {
         return !emit_pattern.replace_captured.empty();
       });
-  llvm::Value* first_emitted = nullptr;
+  std::string emit_error;
+  std::vector<llvm::Value*> emitted_values;
+  emitted_values.reserve(rule.emit_patterns.size());
   if (!rule.emit_patterns.empty()) {
     const bool insert_before = (rewrite_mode == RewriteKind::Before || rewrite_mode == RewriteKind::Replace || rewrite_mode == RewriteKind::ReplaceRange);
+    const llvm::DominatorTree dom_tree = llvm::DominatorTreeAnalysis().run(const_cast<llvm::Function&>(*anchor->getParent()->getParent()));
     for (const auto& emit_pattern : rule.emit_patterns) {
       if (insert_before) {
         builder.SetInsertPoint(anchor);
       } else {
-        auto* it = std::next(anchor);
-        builder.SetInsertPoint(anchor->getParent(), it);
+        // Insert after the anchor: create before the anchor (a point whose debug
+        // metadata is known-good) and move it into place afterwards. Reading the
+        // insertion point after the anchor can touch unrelated IR state, so avoid
+        // SetInsertPoint on it entirely.
+        builder.SetInsertPoint(anchor);
       }
-      llvm::Value* emitted = ResolveEmitPattern(emit_pattern, builder, module, dxil_module, const_cast<MatchResult&>(*this), ctx);
-      if (emitted == nullptr) return false;
-      if (first_emitted == nullptr) first_emitted = emitted;
+      std::vector<std::pair<std::string, llvm::Value*>> consumed_captures;
+      auto emitted_result = ResolveEmitPattern(emit_pattern, builder, module, dxil_module, *this, ctx, &consumed_captures);
+      if (!emitted_result) {
+        return std::unexpected(emitted_result.error());
+      }
+      llvm::Value* emitted = *emitted_result;
+      llvm::Instruction* dominance_point = anchor;
+      if (!insert_before) {
+        if (llvm::Instruction* next = anchor->getNextNode()) {
+          dominance_point = next;
+        }
+      }
+      if (auto dominance = ValidateEmitDominance(consumed_captures, dom_tree, *dominance_point); !dominance) {
+        return std::unexpected("'" + (emit_pattern.name.empty() ? emit_pattern.opcode.value_or("emit") : emit_pattern.name) + "': " + dominance.error());
+      }
+      if (!insert_before) {
+        if (auto* emitted_inst = llvm::dyn_cast<llvm::Instruction>(emitted)) {
+          emitted_inst->removeFromParent();
+          emitted_inst->insertAfter(anchor);
+        }
+      }
+      emitted_values.push_back(emitted);
+      if (rule_emitted != nullptr) rule_emitted->push_back(emitted);
       if (!emit_pattern.name.empty()) {
         this->captures[emit_pattern.name] = emitted;
       }
       if (!emit_pattern.replace_captured.empty()) {
         llvm::Value* to_replace = ResolveCapture(*this, ctx, emit_pattern.replace_captured);
         if (to_replace != nullptr) {
-          to_replace->replaceAllUsesWith(emitted);
+          // Rewire uses of the captured value except those introduced by THIS
+          // rule's own emits � otherwise emits that legitimately consume the
+          // captured value get rewritten into a use-cycle among themselves.
+          std::unordered_set<llvm::User*> own_uses;
+          const std::vector<llvm::Value*>& emitted_list = (rule_emitted != nullptr) ? *rule_emitted : emitted_values;
+          for (llvm::Value* emitted_value : emitted_list) {
+            if (emitted_value != nullptr && llvm::isa<llvm::Instruction>(emitted_value)) {
+              own_uses.insert(llvm::cast<llvm::User>(emitted_value));
+            }
+          }
+          std::vector<llvm::Use*> to_rewire;
+          for (llvm::Use& use : to_replace->uses()) {
+            if (own_uses.contains(use.getUser())) continue;
+            to_rewire.push_back(&use);
+          }
+          // The emitted value replaces the captured one at each use site, so it
+          // must dominate every use � otherwise the rewiring itself would break SSA.
+          // In replace mode the emit is created at the matched value's own position,
+          // so it dominates everything the matched value did; the check only matters
+          // when the emit is placed elsewhere (before/after modes).
+          if (rewrite_mode != RewriteKind::Replace && rewrite_mode != RewriteKind::ReplaceRange) {
+            // The emitted value replaces the captured one at each use site, so it
+            // must dominate every use � otherwise the rewiring itself would break
+            // SSA. In replace mode the emit is created at the matched value's own
+            // position, so it dominates everything the matched value did; the check
+            // only matters when the emit is placed elsewhere (before/after modes).
+            const llvm::DominatorTree rewire_dom_tree = llvm::DominatorTreeAnalysis().run(const_cast<llvm::Function&>(*anchor->getParent()->getParent()));
+            for (llvm::Use* use : to_rewire) {
+              if (auto* emitted_def = llvm::dyn_cast<llvm::Instruction>(emitted)) {
+                if (auto* user_inst = llvm::dyn_cast<llvm::Instruction>(use->getUser())) {
+                  if (!rewire_dom_tree.dominates(emitted_def, user_inst)) {
+                    return std::unexpected("replace_captured '" + emit_pattern.replace_captured + "': the emitted value (block '" + emitted_def->getParent()->getName().str() + "') does not dominate a use being rewired (block '" + user_inst->getParent()->getName().str() + "'); the captured value's consumers must come after the emit");
+                  }
+                }
+              }
+            }
+          }
+          for (llvm::Use* use : to_rewire) {
+            use->set(emitted);
+          }
         }
       }
       if (!insert_before) {
-        if (auto* inst = llvm::dyn_cast<llvm::Instruction>(emitted)) {
-          anchor = inst;
-        }
+        anchor = llvm::cast<llvm::Instruction>(emitted);
       }
     }
   }
 
   if (rewrite_mode == RewriteKind::Replace || rewrite_mode == RewriteKind::ReplaceRange) {
-    // SSA-correct replacement: point uses of the first matched instruction's
-    // result at the first emitted value (mirrors sm5's register semantics),
-    // unless the recipe explicitly wired replacements via replace_captured.
-    if (!instructions.empty() && first_emitted != nullptr && !has_replace_captured && !instructions.front()->use_empty()) {
-      instructions.front()->replaceAllUsesWith(first_emitted);
+    // Replacement is wired exclusively through replace_captured � an emit that
+    // leaves the matched value unreplaced would either produce dead code or,
+    // worse, erase a value that is still consumed downstream.
+    if (!instructions.empty() && !has_replace_captured && !instructions.front()->use_empty()) {
+      const auto& front_type = instructions.front()->getType();
+      return std::unexpected(
+          "replace mode requires a replace_captured emit: the matched value's type (" + (front_type->isStructTy() ? front_type->getStructName().str() : "scalar") + ") cannot be implicitly rewired");
     }
     if (rewrite_mode == RewriteKind::Replace) {
       for (auto* inst : instructions) {
@@ -1199,10 +1421,12 @@ bool MatchResult::ApplyRule(RewriteKind rewrite_mode, const Rule& rule, int32_t 
         if (inst != nullptr && inst->getParent() != nullptr && inst->use_empty()) inst->eraseFromParent();
       }
     } else if (range_start != nullptr && range_end != nullptr) {
-      if (!EraseInstructionRange(range_start, range_end, range_target)) return false;
+      if (!EraseInstructionRange(range_start, range_end, range_target)) {
+        return std::unexpected("replace_range failed to erase the matched instruction range (instructions still in use)");
+      }
     }
   }
-  return true;
+  return {};
 }
 
 void PruneFunctionDeadCode(llvm::Function& function) {
@@ -1355,15 +1579,13 @@ std::expected<::dxp::ApplyRuleResults, std::string> Execute(const ApplyRuleStep&
       }
     }
     if (!has_valid_opcode && (!pattern.callee_name.has_value() || pattern.callee_name->empty())) {
-      ctx.lastError = "'" + step.name + "': match pattern " + std::to_string(i) + " has no opcode and no callee_name";
-      return std::unexpected(ctx.lastError);
+      return std::unexpected("'" + step.name + "': match pattern " + std::to_string(i) + " has no opcode and no callee_name");
     }
     if (pattern.opcode.has_value() && !pattern.opcode->empty()) {
       auto [dxil_op, llvm_op] = ResolveOpCode(*pattern.opcode);
       // Terminators can anchor Before insertions but cannot be erased or inserted after.
       if (llvm_op.has_value() && llvm::Instruction::isTerminator(*llvm_op) && (step.rewrite_mode == RewriteKind::Replace || step.rewrite_mode == RewriteKind::ReplaceRange || step.rewrite_mode == RewriteKind::After)) {
-        ctx.lastError = "'" + step.name + "': cannot rewrite control flow instructions (Br, Ret, PHI, etc.) with this rewrite_mode";
-        return std::unexpected(ctx.lastError);
+        return std::unexpected("'" + step.name + "': cannot rewrite control flow instructions (Br, Ret, PHI, etc.) with this rewrite_mode");
       }
     }
   }
@@ -1378,8 +1600,7 @@ std::expected<::dxp::ApplyRuleResults, std::string> Execute(const ApplyRuleStep&
     }
     if (!has_valid_opcode && (!pattern.cast_opcode.has_value() || pattern.cast_opcode->empty())
         && pattern.capture.empty() && pattern.operands.empty() && pattern.aggregate.empty()) {
-      ctx.lastError = "'" + step.name + "': emit pattern " + std::to_string(i) + " has no opcode";
-      return std::unexpected(ctx.lastError);
+      return std::unexpected("'" + step.name + "': emit pattern " + std::to_string(i) + " has no opcode");
     }
   }
 
@@ -1387,18 +1608,19 @@ std::expected<::dxp::ApplyRuleResults, std::string> Execute(const ApplyRuleStep&
   auto* dxil = ctx.program.GetDxilModule();
   auto* entry = ctx.program.GetEntryFunction();
   if ((mod == nullptr) || (dxil == nullptr)) {
-    ctx.lastError = step.name + ": missing module state";
-    return std::unexpected(ctx.lastError);
+    return std::unexpected(step.name + ": missing module state");
   }
   if (entry == nullptr) {
-    ctx.lastError = step.name + ": failed to locate entry function";
-    return std::unexpected(ctx.lastError);
+    return std::unexpected(step.name + ": failed to locate entry function");
   }
   unsigned total_matches = 0;
   unsigned total_mutations = 0;
   ::dxp::ApplyRuleResults result;
-  ApplyDxilRewriteRules(*entry, *mod, *dxil, step.rule, step.match_mode, step.rewrite_mode, step.insert_index, step.range_start_offset, step.range_end_offset, &total_matches, &total_mutations,
-                        ctx.captures.values, &result, &ctx);
+  auto applied = ApplyDxilRewriteRules(*entry, *mod, *dxil, step.rule, step.match_mode, step.rewrite_mode, step.insert_index, step.range_start_offset, step.range_end_offset, &total_matches, &total_mutations,
+                                       ctx.captures.values, &result, &ctx);
+  if (!applied) {
+    return std::unexpected("'" + step.name + "': " + applied.error());
+  }
   result.match_count = total_matches;
   result.applied_count = total_mutations;
 
@@ -1426,8 +1648,24 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, ValidationC
     }
   }
 
-  if (step.rewrite_mode == RewriteKind::Replace && step.rule.emit_patterns.empty()) {
-    return std::unexpected("'" + step.name + "': Replace mode requires at least one emit value");
+  if (step.rewrite_mode == RewriteKind::Replace || step.rewrite_mode == RewriteKind::ReplaceRange) {
+    if (step.rule.emit_patterns.empty()) {
+      return std::unexpected("'" + step.name + "': Replace mode requires at least one emit value");
+    }
+    // Replacing a matched value is only observable through replace_captured (the
+    // emitted value takes over the matched value's uses) or an output write.
+    // Without one, the emit block is either dead code or erases a live value.
+    const bool wires_replacement =
+        std::ranges::any_of(step.rule.emit_patterns, [](const auto& emit) { return !emit.replace_captured.empty(); });
+    const bool writes_output =
+        std::ranges::any_of(step.rule.emit_patterns, [](const auto& emit) {
+          if (!emit.opcode.has_value() || emit.opcode->empty()) return false;
+          auto [dxil_op, llvm_op] = ResolveOpCode(*emit.opcode);
+          return dxil_op.has_value() && (dxil_op == hlsl::OP::OpCode::StoreOutput || dxil_op == hlsl::OP::OpCode::StoreVertexOutput || dxil_op == hlsl::OP::OpCode::StorePrimitiveOutput || dxil_op == hlsl::OP::OpCode::RawBufferStore || dxil_op == hlsl::OP::OpCode::BufferStore || dxil_op == hlsl::OP::OpCode::TextureStore);
+        });
+    if (!wires_replacement && !writes_output) {
+      return std::unexpected("'" + step.name + "': Replace mode requires at least one emit with 'replace_captured' " + "(or an output write such as StoreOutput) so the emitted code replaces existing values");
+    }
   }
 
   // Op/type consistency: for LLVM binary-op emits, the result and constant

@@ -26,6 +26,10 @@ struct CaptureStore {
 
 /// @brief Unified execution context for SM6 (DXIL) recipe step execution. Holds the ShaderProgram plus all transient execution state.
 struct ExecutionContext : VariableStore {
+  /// @brief Touches the per-thread DXC runtime (file system + thread malloc)
+  /// before the program is loaded. Declared before `program`.
+  DxcRuntime dxc_runtime;
+
   /// The shader program being modified.
   ShaderProgram program;
 
@@ -34,7 +38,6 @@ struct ExecutionContext : VariableStore {
 
   bool program_modified = false;
 
-  std::string lastError;
   std::vector<std::string> diagnostics;
 
   std::unordered_map<std::string, TextureResourceDesc> textures;

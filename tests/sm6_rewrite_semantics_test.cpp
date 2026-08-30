@@ -195,6 +195,7 @@ steps:
     rule:
       match:
         - opcode: FMax
+          capture: matched_fmax
           operands:
             - index: 1
               capture: a
@@ -202,6 +203,7 @@ steps:
         - opcode: fadd
           result_component_type: F32
           name: fmax_replacement
+          replace_captured: matched_fmax
           operands:
             - index: 0
               kind: call
@@ -247,11 +249,12 @@ steps:
           capture: shared_fmax
   - kind: apply_rule
     name: use_step
-    rewrite_mode: before
+    rewrite_mode: after
     match_mode: match_all
     rule:
       match:
-        - opcode: FMin
+        - opcode: FMax
+          match_capture: shared_fmax
       emit:
         - opcode: fadd
           result_component_type: F32
@@ -305,9 +308,11 @@ steps:
     rule:
       match:
         - opcode: Frc
+          capture: matched_frc
       emit:
         - opcode: add
           result_component_type: F32
+          replace_captured: matched_frc
           operands:
             - index: 0
               kind: constant

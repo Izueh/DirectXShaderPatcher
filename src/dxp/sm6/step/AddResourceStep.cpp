@@ -78,14 +78,23 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
         resolved_desc.binding.register_index = ctx.program.FindNextAvailableTexture(srv_space, 0);
       }
       if (auto add_result = ctx.program.AddTextureSRV(resolved_desc); !add_result) {
-        const std::string message = "add_resource: texture '" + desc.name + "': " + add_result.error();
+        const std::string message = "add_resource: resource '" + desc.name + "': " + add_result.error();
         if (!fail_or_warn(message)) return std::unexpected(message);
         continue;
       }
       const auto& handle = desc.name.empty() ? "" : desc.name;
       ctx.textures[handle] = resolved_desc;
-      addSideEffect(dxp::ResourceKind::Texture, handle, *resolved_desc.binding.register_index, srv_space);
-      ++result.textures_added;
+      addSideEffect(resolved_desc.kind == DxilResourceKind::RawBuffer          ? dxp::ResourceKind::RawResource
+                    : resolved_desc.kind == DxilResourceKind::StructuredBuffer ? dxp::ResourceKind::StructuredResource
+                                                                               : dxp::ResourceKind::Texture,
+                    handle, *resolved_desc.binding.register_index, srv_space);
+      if (resolved_desc.kind == DxilResourceKind::RawBuffer) {
+        ++result.raw_resources_added;
+      } else if (resolved_desc.kind == DxilResourceKind::StructuredBuffer) {
+        ++result.structured_resources_added;
+      } else {
+        ++result.textures_added;
+      }
       changed = true;
 
       if (!handle.empty()) {
@@ -130,8 +139,17 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
       }
       const auto& handle = desc.name.empty() ? "" : desc.name;
       ctx.uavs[handle] = resolved_desc;
-      addSideEffect(dxp::ResourceKind::TextureUav, handle, *resolved_desc.binding.register_index, uav_space);
-      ++result.uavs_added;
+      addSideEffect(resolved_desc.kind == DxilResourceKind::RawBuffer          ? dxp::ResourceKind::RawResource
+                    : resolved_desc.kind == DxilResourceKind::StructuredBuffer ? dxp::ResourceKind::StructuredResource
+                                                                               : dxp::ResourceKind::TextureUav,
+                    handle, *resolved_desc.binding.register_index, uav_space);
+      if (resolved_desc.kind == DxilResourceKind::RawBuffer) {
+        ++result.raw_resources_added;
+      } else if (resolved_desc.kind == DxilResourceKind::StructuredBuffer) {
+        ++result.structured_resources_added;
+      } else {
+        ++result.uavs_added;
+      }
       changed = true;
 
       if (!handle.empty()) {

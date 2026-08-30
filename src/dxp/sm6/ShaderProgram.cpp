@@ -18,6 +18,7 @@
 #include <dxc/DXIL/DxilResourceProperties.h>
 #include <intsafe.h>
 #include <llvm/IR/Argument.h>
+#include <llvm/IR/DebugInfo.h>
 #include <llvm/IR/GlobalValue.h>
 #include <llvm/IR/GlobalVariable.h>
 #include <llvm/IR/IRBuilder.h>
@@ -54,11 +55,14 @@
 #include "dxc/DxilContainer/DxilContainer.h"
 #include "dxc/DxilContainer/DxilContainerAssembler.h"
 #include "dxc/DxilContainer/DxilContainerReader.h"
+#include "dxc/DxilValidation/DxilValidation.h"
 #include "dxc/Support/FileIOHelper.h"
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/MSFileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/Local.h"
 
@@ -127,11 +131,21 @@ auto ValidateTextureResourceDesc(const dxp::sm6::TextureResourceDesc& desc, std:
     return false;
   }
   switch (static_cast<hlsl::DXIL::ResourceKind>(static_cast<unsigned>(desc.kind))) {
+    case hlsl::DXIL::ResourceKind::Texture1D:
     case hlsl::DXIL::ResourceKind::Texture2D:
+    case hlsl::DXIL::ResourceKind::Texture2DMS:
+    case hlsl::DXIL::ResourceKind::Texture3D:
+    case hlsl::DXIL::ResourceKind::TextureCube:
+    case hlsl::DXIL::ResourceKind::Texture1DArray:
     case hlsl::DXIL::ResourceKind::Texture2DArray:
+    case hlsl::DXIL::ResourceKind::Texture2DMSArray:
+    case hlsl::DXIL::ResourceKind::TextureCubeArray:
+    case hlsl::DXIL::ResourceKind::TypedBuffer:
+    case hlsl::DXIL::ResourceKind::RawBuffer:
+    case hlsl::DXIL::ResourceKind::StructuredBuffer:
       break;
     default:
-      error_message = "only Texture2D and Texture2DArray resource kinds are supported.";
+      error_message = "unsupported resource kind (only texture and buffer SRV/UAV kinds are supported).";
       return false;
   }
   switch (static_cast<hlsl::DXIL::ComponentType>(static_cast<uint8_t>(desc.element_kind))) {
@@ -162,14 +176,48 @@ auto GetTextureElementTypeDisplayName(const dxp::sm6::TextureResourceDesc& desc)
 auto GetTextureTypeName(const dxp::sm6::TextureResourceDesc& desc) -> std::string {
   using hlsl::DXIL::ResourceKind;
   const std::string el_type_name = GetTextureElementTypeDisplayName(desc);
+  const bool rw = desc.is_read_write;
+  const std::string& el = el_type_name;
   switch (static_cast<ResourceKind>(static_cast<unsigned>(desc.kind))) {
+    case ResourceKind::Texture1D:
+      return rw ? "class.RWTexture1D<" + el + " >" : "class.Texture1D<" + el + " >";
     case ResourceKind::Texture2D:
-      return desc.is_read_write ? "class.RWTexture2D<" + el_type_name + " >" : "class.Texture2D<" + el_type_name + " >";
+      return rw ? "class.RWTexture2D<" + el + " >" : "class.Texture2D<" + el + " >";
+    case ResourceKind::Texture2DMS:
+      return rw ? "class.RWTexture2DMS<" + el + " >" : "class.Texture2DMS<" + el + " >";
+    case ResourceKind::Texture3D:
+      return rw ? "class.RWTexture3D<" + el + " >" : "class.Texture3D<" + el + " >";
+    case ResourceKind::TextureCube:
+      return "class.TextureCube<" + el + " >";
+    case ResourceKind::Texture1DArray:
+      return rw ? "class.RWTexture1DArray<" + el + " >" : "class.Texture1DArray<" + el + " >";
     case ResourceKind::Texture2DArray:
-      return desc.is_read_write ? "class.RWTexture2DArray<" + el_type_name + " >" : "class.Texture2DArray<" + el_type_name + " >";
+      return rw ? "class.RWTexture2DArray<" + el + " >" : "class.Texture2DArray<" + el + " >";
+    case ResourceKind::Texture2DMSArray:
+      return rw ? "class.RWTexture2DMSArray<" + el + " >" : "class.Texture2DMSArray<" + el + " >";
+    case ResourceKind::TextureCubeArray:
+      return "class.TextureCubeArray<" + el + " >";
+    case ResourceKind::TypedBuffer:
+      return rw ? "class.RWBuffer<" + el + " >" : "class.Buffer<" + el + " >";
+    case ResourceKind::RawBuffer:
+      return rw ? "class.RWByteAddressBuffer" : "class.ByteAddressBuffer";
+    case ResourceKind::StructuredBuffer:
+      return rw ? "class.RWStructuredBuffer<" + el + " >" : "class.StructuredBuffer<" + el + " >";
     default:
       return "invalid";
   }
+}
+
+auto GetResourceElementStride(const dxp::sm6::TextureResourceDesc& desc) -> unsigned {
+  switch (static_cast<hlsl::DXIL::ComponentType>(static_cast<uint8_t>(desc.element_kind))) {
+    case hlsl::DXIL::ComponentType::F32:
+    case hlsl::DXIL::ComponentType::U32:
+    case hlsl::DXIL::ComponentType::I32:
+      break;
+    default:
+      return 4;
+  }
+  return 4 * desc.vector_width;
 }
 
 auto GetTextureMipsTypeName(const dxp::sm6::TextureResourceDesc& desc) -> std::string {
@@ -180,6 +228,10 @@ auto GetTextureMipsTypeName(const dxp::sm6::TextureResourceDesc& desc) -> std::s
 }
 
 auto GetTextureElementType(llvm::LLVMContext& ctx, const dxp::sm6::TextureResourceDesc& desc) -> llvm::Type* {
+  if (static_cast<hlsl::DXIL::ResourceKind>(static_cast<unsigned>(desc.kind)) == hlsl::DXIL::ResourceKind::RawBuffer) {
+    // ByteAddressBuffer's symbol type carries the raw byte payload.
+    return llvm::ArrayType::get(llvm::Type::getInt8Ty(ctx), 4);
+  }
   auto* scalar_type = GetTextureElementScalarType(ctx, static_cast<hlsl::DXIL::ComponentType>(static_cast<uint8_t>(desc.element_kind)));
   if (scalar_type == nullptr) {
     return nullptr;
@@ -280,11 +332,23 @@ void BuildCBufferSchemaLayout(const dxp::sm6::CBufferSchema& schema, llvm::LLVMC
   element_types.clear();
   field_mapping.clear();
   unsigned cur = 0;
+  // Padding is emitted as individual i32 scalars — one field_mapping entry each.
+  // Scalars only need 4-byte alignment, whereas arrays in cbuffers must start at
+  // 16-byte boundaries (Sm.CBufferArrayOffsetAlignment).
+  const auto push_padding = [&](unsigned padding_size) {
+    for (unsigned p = 0; p < padding_size / 4; ++p) {
+      element_types.push_back(llvm::Type::getInt32Ty(ctx));
+      field_mapping.push_back(-1);
+    }
+    for (unsigned p = 0; p < padding_size % 4; ++p) {
+      element_types.push_back(llvm::Type::getInt8Ty(ctx));
+      field_mapping.push_back(-1);
+    }
+  };
   for (size_t fi = 0; fi < schema.fields.size(); ++fi) {
     const auto& field = schema.fields[fi];
     if (field.offset > cur) {
-      element_types.push_back(llvm::ArrayType::get(llvm::Type::getInt8Ty(ctx), field.offset - cur));
-      field_mapping.push_back(-1);
+      push_padding(field.offset - cur);
       cur = field.offset;
     }
     element_types.push_back(GetCBufferFieldType(ctx, field));
@@ -292,8 +356,7 @@ void BuildCBufferSchemaLayout(const dxp::sm6::CBufferSchema& schema, llvm::LLVMC
     cur += GetCBufferFieldSize(field);
   }
   if (schema.size_in_bytes > cur) {
-    element_types.push_back(llvm::ArrayType::get(llvm::Type::getInt8Ty(ctx), schema.size_in_bytes - cur));
-    field_mapping.push_back(-1);
+    push_padding(schema.size_in_bytes - cur);
   }
 }
 
@@ -487,10 +550,18 @@ void MaybeAnnotateCBufferType(hlsl::DxilModule& dxm, llvm::StructType* struct_ty
     struct_annot = type_sys.AddStructAnnotation(struct_type);
   }
   struct_annot->SetCBufferSize(schema.size_in_bytes);
+  // Track running offsets so padding elements (fields with mapping -1) still get
+  // a valid offset/comp type — the DXIL validator rejects uninitialized ones.
+  unsigned cur_offset = 0;
   for (size_t fi = 0; fi < field_mapping.size(); ++fi) {
     auto& field_annot = struct_annot->GetFieldAnnotation(static_cast<unsigned>(fi));
     const int smi = field_mapping[fi];
     if (smi < 0) {
+      field_annot.SetFieldName("<padding>");
+      field_annot.SetCBufferOffset(cur_offset);
+      field_annot.SetCompType(hlsl::CompType::Kind::U32);
+      field_annot.SetCBVarUsed(false);
+      cur_offset += static_cast<unsigned>(element_types[fi]->getPrimitiveSizeInBits() / 8);
       continue;
     }
     const auto& field_desc = schema.fields[static_cast<size_t>(smi)];
@@ -499,6 +570,7 @@ void MaybeAnnotateCBufferType(hlsl::DxilModule& dxm, llvm::StructType* struct_ty
     field_annot.SetCompType(GetCBufferFieldCompKind(field_desc));
     field_annot.SetCBVarUsed(true);
     const unsigned vec_size = GetCBufferFieldVectorSize(field_desc);
+    cur_offset = field_desc.offset + GetCBufferFieldSize(field_desc);
     if (vec_size > 1) {
       field_annot.SetVectorSize(vec_size);
     }
@@ -552,6 +624,36 @@ llvm::LLVMContext& ThreadLocalContext() {
 }
 
 namespace dxp::sm6 {
+
+const std::string& DxcRuntime::Ensure() {
+  // The DXC-built LLVM routes all fd I/O (raw_fd_ostream, MemoryBuffer, the
+  // bitcode writer) through a per-thread MSFileSystem. Without one installed,
+  // writes silently fail with EBADF. The thread malloc likewise must stay
+  // installed for the thread's lifetime: DXC-owned allocations created under
+  // it are freed under it, so per-operation setup/teardown would corrupt the
+  // heap across allocator boundaries.
+  static thread_local std::string setup_error = []() -> std::string {
+    if (llvm::sys::fs::SetupPerThreadFileSystem()) {
+      return "failed to set up per-thread file system";
+    }
+    llvm::sys::fs::MSFileSystem* msf_ptr = nullptr;
+    if (FAILED(CreateMSFileSystemForDisk(&msf_ptr)) || msf_ptr == nullptr) {
+      llvm::sys::fs::CleanupPerThreadFileSystem();
+      return "failed to create disk file system";
+    }
+    if (llvm::sys::fs::SetCurrentThreadFileSystem(msf_ptr)) {
+      delete msf_ptr;
+      llvm::sys::fs::CleanupPerThreadFileSystem();
+      return "failed to install per-thread file system";
+    }
+    if (FAILED(DxcInitThreadMalloc())) {
+      return "failed to initialize DXC thread allocator";
+    }
+    DxcSetThreadMallocToDefault();
+    return {};
+  }();
+  return setup_error;
+}
 
 ShaderProgram::~ShaderProgram() {
   if (module && module->HasDxilModule()) {
@@ -613,9 +715,14 @@ auto ShaderProgram::ExtractDxilBitcode(DxilProgramBitcode& out) const -> bool {
 
 auto ShaderProgram::ParseBitcode(const DxilProgramBitcode& bitcode, llvm::LLVMContext& parse_context)
     -> std::expected<void, std::string> {
+  // Create a MemoryBuffer like DXC's ValidateLoadModule does
+  auto pBitcodeBuf = llvm::MemoryBuffer::getMemBuffer(
+      llvm::StringRef(reinterpret_cast<const char*>(bitcode.ptr), bitcode.size), "", false);
+
+  // Use TrackBitstream=true like DXC does â€” this is required for proper
+  // DxilModule initialization and metadata loading
   auto mod_or_err = llvm::parseBitcodeFile(
-      llvm::MemoryBufferRef(llvm::StringRef(reinterpret_cast<const char*>(bitcode.ptr), bitcode.size), "dxil-program"),
-      parse_context);
+      pBitcodeBuf.get()->getMemBufferRef(), parse_context, nullptr, true /*TrackBitstream*/);
   if (!mod_or_err) {
     return std::unexpected("failed to parse DXIL bitcode: " + mod_or_err.getError().message());
   }
@@ -797,6 +904,9 @@ auto ShaderProgram::AddTextureSRV(const TextureResourceDesc& desc) -> std::expec
   tex->SetRangeSize(1);
   tex->SetID(static_cast<unsigned>(dxil_module->GetSRVs().size()));
   tex->SetKind(static_cast<hlsl::DXIL::ResourceKind>(static_cast<unsigned>(resolved.kind)));
+  if (resolved.kind == DxilResourceKind::StructuredBuffer) {
+    tex->SetElementStride(GetResourceElementStride(resolved));
+  }
   tex->SetCompType(GetTextureCompType(static_cast<hlsl::DXIL::ComponentType>(static_cast<uint8_t>(resolved.element_kind))));
   tex->SetSampleCount(0);
   tex->SetRW(false);
@@ -845,6 +955,9 @@ auto ShaderProgram::AddTextureUAV(const TextureResourceDesc& desc) -> std::expec
   tex->SetRangeSize(1);
   tex->SetID(static_cast<unsigned>(dxil_module->GetUAVs().size()));
   tex->SetKind(static_cast<hlsl::DXIL::ResourceKind>(static_cast<unsigned>(resolved.kind)));
+  if (resolved.kind == DxilResourceKind::StructuredBuffer) {
+    tex->SetElementStride(GetResourceElementStride(resolved));
+  }
   tex->SetCompType(GetTextureCompType(static_cast<hlsl::DXIL::ComponentType>(static_cast<uint8_t>(resolved.element_kind))));
   tex->SetSampleCount(0);
   tex->SetRW(true);
@@ -988,17 +1101,15 @@ auto ShaderProgram::SerializeContainer(std::span<const uint8_t> bitcode, std::ve
       return std::unexpected("serialize: failed to write bitcode stream");
     }
   }
-  LARGE_INTEGER const zero = {};
-  if (DXC_FAILED(bitcode_stream->Seek(zero, STREAM_SEEK_SET, nullptr))) {
-    return std::unexpected("serialize: failed to seek bitcode stream");
-  }
 
   CComPtr<hlsl::AbstractMemoryStream> output_stream;
   if (DXC_FAILED(hlsl::CreateMemoryStream(malloc_interface, &output_stream)) || !output_stream) {
     return std::unexpected("serialize: failed to create output stream");
   }
 
-  constexpr auto kFlags = hlsl::SerializeDxilFlags::None;
+  // StripRootSignature prevents SerializeDxilContainerForModule from re-serializing
+  // the module mid-write (the passed stream is at its end position, matching DXC).
+  constexpr auto kFlags = hlsl::SerializeDxilFlags::StripRootSignature;
   hlsl::SerializeDxilContainerForModule(dxil_module, bitcode_stream, nullptr, output_stream, "", kFlags, nullptr, nullptr,
                                         nullptr, nullptr, 0);
 
@@ -1021,10 +1132,23 @@ auto ShaderProgram::Serialize() -> std::expected<std::vector<uint8_t>, std::stri
     dxil_module->ClearLLVMUsed();
     if (auto* op = dxil_module->GetOP()) op->RefreshCache();
   }
+  if (auto verify_result = Verify(); !verify_result) {
+    return std::unexpected("serialize: " + verify_result.error());
+  }
   auto bitcode = SerializeBitcode();
   std::vector<uint8_t> container;
   if (auto container_result = SerializeContainer(bitcode, container); !container_result) {
     return std::unexpected(std::move(container_result.error()));
+  }
+  // Unconditional full DXIL validation of the produced container. A patch that
+  // corrupts the shader must fail the operation here, not at runtime on the GPU.
+  llvm::LLVMContext validation_context;
+  std::string diagnostics;
+  llvm::raw_string_ostream diag_stream(diagnostics);
+  if (FAILED(hlsl::ValidateDxilContainer(container.data(), static_cast<uint32_t>(container.size()),
+                                         diag_stream))) {
+    diag_stream.flush();
+    return std::unexpected("serialize: DXIL validation failed: " + diagnostics);
   }
   return container;
 }
@@ -1143,7 +1267,9 @@ auto ShaderProgram::CreateResourceHandle(const hlsl::DxilResourceBase& resource,
   auto* mod = module.get();
   auto* dxil = dxil_module;
   auto* entry = dxil->GetEntryFunction();
-  if (entry == nullptr) return nullptr;
+  if (entry == nullptr) {
+    return nullptr;
+  }
 
   hlsl::OP dxil_op(mod->getContext(), mod);
   dxil_op.InitWithMinPrecision(dxil->GetUseMinPrecision());
@@ -1151,11 +1277,16 @@ auto ShaderProgram::CreateResourceHandle(const hlsl::DxilResourceBase& resource,
   llvm::Constant* resource_binding_constant =
       hlsl::resource_helper::getAsConstant(binding, dxil_op.GetResourceBindingType(),
                                            *dxil->GetShaderModel());
-  if (resource_binding_constant == nullptr) return nullptr;
+  if (resource_binding_constant == nullptr) {
+    return nullptr;
+  }
 
   llvm::Constant* resource_props_constant =
       hlsl::resource_helper::getAsConstant(hlsl::resource_helper::loadPropsFromResourceBase(&resource),
                                            dxil_op.GetResourcePropertiesType(), *dxil->GetShaderModel());
+  if (resource_props_constant == nullptr) {
+    return nullptr;
+  }
 
   llvm::Function* create_handle_function =
       mod->getFunction("dx.op.createHandleFromBinding");
@@ -1163,7 +1294,9 @@ auto ShaderProgram::CreateResourceHandle(const hlsl::DxilResourceBase& resource,
     create_handle_function = dxil_op.GetOpFunc(hlsl::OP::OpCode::CreateHandleFromBinding,
                                                llvm::Type::getVoidTy(dxil_op.GetCtx()));
   }
-  if (create_handle_function == nullptr) return nullptr;
+  if (create_handle_function == nullptr) {
+    return nullptr;
+  }
 
   auto get_arg = [create_handle_function](unsigned index) -> const llvm::Argument* {
     if (!create_handle_function || index >= create_handle_function->arg_size()) return nullptr;
@@ -1175,9 +1308,13 @@ auto ShaderProgram::CreateResourceHandle(const hlsl::DxilResourceBase& resource,
   const llvm::Argument* opcode_argument = get_arg(0);
   const llvm::Argument* index_argument = get_arg(2);
   const llvm::Argument* non_uniform_argument = get_arg(3);
-  if ((opcode_argument == nullptr) || (index_argument == nullptr) || (non_uniform_argument == nullptr)) return nullptr;
+  if ((opcode_argument == nullptr) || (index_argument == nullptr) || (non_uniform_argument == nullptr)) {
+    return nullptr;
+  }
 
-  llvm::IRBuilder<> builder(&entry->getEntryBlock());
+  // Insert at the entry block's first insertion point (after allocas), never at
+  // the end â€” appending after the block terminator produces invalid IR.
+  llvm::IRBuilder<> builder(&*entry->getEntryBlock().getFirstInsertionPt());
   llvm::Value* create_handle = builder.CreateCall(
       create_handle_function,
       {llvm::ConstantInt::get(opcode_argument->getType(),
@@ -1192,7 +1329,9 @@ auto ShaderProgram::CreateResourceHandle(const hlsl::DxilResourceBase& resource,
     annotate_handle_function = dxil_op.GetOpFunc(hlsl::OP::OpCode::AnnotateHandle,
                                                  llvm::Type::getVoidTy(dxil_op.GetCtx()));
   }
-  if (annotate_handle_function == nullptr) return nullptr;
+  if (annotate_handle_function == nullptr) {
+    return nullptr;
+  }
 
   auto get_annotate_arg = [annotate_handle_function](unsigned index) -> const llvm::Argument* {
     if (!annotate_handle_function || index >= annotate_handle_function->arg_size()) return nullptr;
@@ -1202,9 +1341,11 @@ auto ShaderProgram::CreateResourceHandle(const hlsl::DxilResourceBase& resource,
   };
 
   const llvm::Argument* annotate_opcode_arg = get_annotate_arg(0);
-  const llvm::Argument* annotate_handle_arg = get_annotate_arg(2);
-  const llvm::Argument* annotate_props_arg = get_annotate_arg(3);
-  if ((annotate_opcode_arg == nullptr) || (annotate_handle_arg == nullptr) || (annotate_props_arg == nullptr)) return nullptr;
+  const llvm::Argument* annotate_handle_arg = get_annotate_arg(1);
+  const llvm::Argument* annotate_props_arg = get_annotate_arg(2);
+  if ((annotate_opcode_arg == nullptr) || (annotate_handle_arg == nullptr) || (annotate_props_arg == nullptr)) {
+    return nullptr;
+  }
 
   return builder.CreateCall(
       annotate_handle_function,
@@ -1316,11 +1457,11 @@ auto ShaderProgram::Verify() const -> std::expected<void, std::string> {
   }
   std::string errors;
   llvm::raw_string_ostream ostream(errors);
-  if (!llvm::verifyModule(*module, &ostream)) {
-    return {};
+  if (llvm::verifyModule(*module, &ostream)) {
+    ostream.flush();
+    return std::unexpected("DXIL module verification failed: " + errors);
   }
-  ostream.flush();
-  return std::unexpected("DXIL module verification failed: " + errors);
+  return {};
 }
 
 auto ShaderProgram::GetEntryFunction() const -> llvm::Function* {

@@ -106,6 +106,7 @@ steps:
           - opcode: TextureLoad
             result_component_type: F32
             name: noise_load
+            replace_captured: texture_load
             operands:
               - index: 1
                 kind: resource

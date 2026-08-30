@@ -13,10 +13,16 @@
 #include "dxc/DXIL/DxilModule.h"
 #include "dxc/DXIL/DxilResourceBinding.h"
 #include "dxc/DxilContainer/DxilContainer.h"
+//clang-format off
+// WinIncludes must precede MSFileSystem.h — it declares the Win32 types the
+// MSFileSystem interface uses (HANDLE, LPCWSTR, ...).
+#include <dxc/Support/WinIncludes.h>
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/MSFileSystem.h"
+//clang-format on
 
 namespace dxp::sm6 {
 
@@ -141,5 +147,22 @@ struct ShaderProgram {
 const hlsl::DxilResourceBase* FindResourceByRegisterIndex(hlsl::DxilModule& dxil_module,
                                                           hlsl::DXIL::ResourceClass resource_class,
                                                           unsigned register_index, unsigned space);
+
+/// @brief Per-thread DXC runtime state that LLVM code relies on: the thread
+/// file system (needed by raw_fd_ostream — without it llvm::errs() and file
+/// I/O silently fail) and the thread malloc allocator.
+///
+/// The state is initialized once per thread and lives until thread exit —
+/// tearing it down mid-execution would leave DXC-owned allocations, created
+/// under the thread malloc, to be freed under a different allocator. Call
+/// DxcRuntime::Ensure() on every thread that loads or serializes a
+/// ShaderProgram before any DXC/LLVM work.
+struct DxcRuntime {
+  /// @brief Initialize this thread's runtime if not yet done. Returns the
+  /// setup error, empty on success.
+  static const std::string& Ensure();
+
+  DxcRuntime() { Ensure(); }
+};
 
 }  // namespace dxp::sm6

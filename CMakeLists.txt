@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.27)
-project(DirectXShaderPatcher VERSION 0.3.3 LANGUAGES CXX)
+project(DirectXShaderPatcher VERSION 0.4.0 LANGUAGES CXX)
 
 # ─── Versioning ──────────────────────────────────────────────────────────────
 # Single source of truth: project(VERSION) above. DXP_VERSION_STRING follows
@@ -248,12 +248,43 @@ else()
         LLVMDxilRootSignature
         LLVMDxcSupport
         LLVMHLSL
+        LLVMMSSupport
         LLVMPasses
         LLVMSupport
+        LLVMDxilValidation
         dxcompiler
         Ole32
         glaze
         value_types
+    )
+
+    # Merge every static LLVM/DXC dependency into dxpatcher.lib via lib.exe so the
+    # packaged artifact is self-contained (consumers link one lib, not the DXC tree).
+    # dxcompiler is SHARED (dll) � it stays a runtime dependency and is excluded.
+    set(DXP_MERGED_LIBS
+        LLVMBitReader LLVMBitWriter LLVMCore LLVMDXIL LLVMDxilContainer
+        LLVMDxilRootSignature LLVMDxcSupport LLVMHLSL LLVMMSSupport
+        LLVMPasses LLVMSupport LLVMDxilValidation)
+    set(DXP_MERGE_INPUTS "")
+    foreach(_lib ${DXP_MERGED_LIBS})
+        list(APPEND DXP_MERGE_INPUTS "$<TARGET_FILE:${_lib}>")
+    endforeach()
+
+    find_program(LIB_EXECUTABLE lib.exe PATHS
+        "C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/*/bin/Hostx64/x64"
+        "C:/Program Files/Microsoft Visual Studio/2022/*/VC/Tools/MSVC/*/bin/Hostx64/x64")
+    if(NOT LIB_EXECUTABLE)
+        message(FATAL_ERROR "lib.exe not found � required to merge dxpatcher.lib")
+    endif()
+
+    # Repack after each dxpatcher build: extract all members and combine them with
+    # dxpatcher's own objects into a single archive.
+    add_custom_command(TARGET dxpatcher POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "Merging LLVM/DXC static libs into dxpatcher.lib..."
+        COMMAND ${LIB_EXECUTABLE} /NOLOGO /OUT:$<TARGET_FILE:dxpatcher> $<TARGET_FILE:dxpatcher> ${DXP_MERGE_INPUTS}
+        DEPENDS ${DXP_MERGE_INPUTS}
+        COMMENT "Merging LLVM/DXC static libraries into dxpatcher.lib (lib.exe)"
+        VERBATIM
     )
 endif()
 
