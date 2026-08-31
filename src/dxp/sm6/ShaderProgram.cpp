@@ -2,6 +2,7 @@
 #include "dxp/ExportTypes.hpp"
 #include "dxp/sm6/EnumMirrors.hpp"
 #include "dxp/sm6/ResourceTypes.hpp"
+#include <mutex>
 // clang-format off
 // WinIncludes.h must precede dxcapi.h — dxcapi.h uses COM types but doesn't
 // include its own Windows dependencies. DXC's own code does the same.
@@ -332,7 +333,7 @@ void BuildCBufferSchemaLayout(const dxp::sm6::CBufferSchema& schema, llvm::LLVMC
   element_types.clear();
   field_mapping.clear();
   unsigned cur = 0;
-  // Padding is emitted as individual i32 scalars � one field_mapping entry each.
+  // Padding is emitted as individual i32 scalars � one field_mapping entry each.
   // Scalars only need 4-byte alignment, whereas arrays in cbuffers must start at
   // 16-byte boundaries (Sm.CBufferArrayOffsetAlignment).
   const auto push_padding = [&](unsigned padding_size) {
@@ -551,7 +552,7 @@ void MaybeAnnotateCBufferType(hlsl::DxilModule& dxm, llvm::StructType* struct_ty
   }
   struct_annot->SetCBufferSize(schema.size_in_bytes);
   // Track running offsets so padding elements (fields with mapping -1) still get
-  // a valid offset/comp type � the DXIL validator rejects uninitialized ones.
+  // a valid offset/comp type � the DXIL validator rejects uninitialized ones.
   unsigned cur_offset = 0;
   for (size_t fi = 0; fi < field_mapping.size(); ++fi) {
     auto& field_annot = struct_annot->GetFieldAnnotation(static_cast<unsigned>(fi));
@@ -626,28 +627,43 @@ llvm::LLVMContext& ThreadLocalContext() {
 namespace dxp::sm6 {
 
 const std::string& DxcRuntime::Ensure() {
-  // The DXC-built LLVM routes all fd I/O (raw_fd_ostream, MemoryBuffer, the
-  // bitcode writer) through a per-thread MSFileSystem. Without one installed,
-  // writes silently fail with EBADF. The thread malloc likewise must stay
-  // installed for the thread's lifetime: DXC-owned allocations created under
-  // it are freed under it, so per-operation setup/teardown would corrupt the
-  // heap across allocator boundaries.
-  static thread_local std::string setup_error = []() -> std::string {
+  // DXC's runtime setup has two layers with different lifetimes:
+  //
+  // Process-once: SetupPerThreadFileSystem allocates the single process-global
+  // TLS slot and DxcInitThreadMalloc allocates the shared ThreadLocal<IMalloc>
+  // holder. Both assert (Release builds silently corrupt state) when invoked a
+  // second time — they are once-per-process APIs, not per-thread setup.
+  static std::once_flag process_init_flag;
+  static std::string process_init_error;
+  std::call_once(process_init_flag, [] {
     if (llvm::sys::fs::SetupPerThreadFileSystem()) {
-      return "failed to set up per-thread file system";
+      process_init_error = "failed to set up per-thread file system";
+      return;
     }
+    if (FAILED(DxcInitThreadMalloc())) {
+      llvm::sys::fs::CleanupPerThreadFileSystem();
+      process_init_error = "failed to initialize DXC thread allocator";
+      return;
+    }
+  });
+  if (!process_init_error.empty()) {
+    return process_init_error;
+  }
+
+  // Per-thread: install this thread's filesystem and default malloc. The
+  // thread malloc must stay installed for the thread's lifetime — DXC-owned
+  // allocations created under it are freed under it — and LLVM fd I/O is
+  // routed through the per-thread MSFileSystem (without one, writes silently
+  // fail with EBADF). Per-operation setup/teardown would corrupt the heap
+  // across allocator boundaries.
+  static thread_local std::string setup_error = []() -> std::string {
     llvm::sys::fs::MSFileSystem* msf_ptr = nullptr;
     if (FAILED(CreateMSFileSystemForDisk(&msf_ptr)) || msf_ptr == nullptr) {
-      llvm::sys::fs::CleanupPerThreadFileSystem();
       return "failed to create disk file system";
     }
     if (llvm::sys::fs::SetCurrentThreadFileSystem(msf_ptr)) {
       delete msf_ptr;
-      llvm::sys::fs::CleanupPerThreadFileSystem();
       return "failed to install per-thread file system";
-    }
-    if (FAILED(DxcInitThreadMalloc())) {
-      return "failed to initialize DXC thread allocator";
     }
     DxcSetThreadMallocToDefault();
     return {};

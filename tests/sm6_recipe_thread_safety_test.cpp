@@ -22,8 +22,8 @@
 
 namespace {
 
-constexpr int kThreadCount = 8;
-constexpr int kIterations = 2;
+constexpr int kThreadCount = 16;
+constexpr int kIterations = 25;
 
 const char* kRecipeText = R"YAML(
 steps:
