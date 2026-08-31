@@ -54,6 +54,28 @@ Write-Host "Found: $vsPath" -ForegroundColor Gray
 # ─── 2. Initialize Developer Shell ────────────────────────────────────────────
 
 Write-Host "[2/6] Initializing Developer Shell Environment..." -ForegroundColor Cyan
+
+# Abort early when the Dev Shell env is missing: a failed configure would
+# otherwise persist empty per-config flag entries (CMAKE_C_FLAGS_RELWITHDEBINFO
+# etc.) into CMakeCache.txt, and those sticky entries corrupt later good
+# configures (DXC C build loses /O2 /DNDEBUG -> llvm_assert link errors).
+function Test-DevShellEnvironment {
+    $clCmd = Get-Command cl.exe -ErrorAction SilentlyContinue
+    if (-not $clCmd) {
+        Write-Host "ERROR: cl.exe is not on PATH - the Visual Studio Dev Shell environment is missing." -ForegroundColor Red
+        Write-Host "Re-run this script from a normal PowerShell; it imports the Dev Shell itself (Enter-VsDevShell)." -ForegroundColor Yellow
+        Write-Host "Do NOT run 'cmake --preset' from a shell where the Dev Shell import has not succeeded." -ForegroundColor Yellow
+        exit 1
+    }
+    $includeEnv = [System.Environment]::GetEnvironmentVariable("INCLUDE", "Process")
+    if (-not $includeEnv) {
+        Write-Host "ERROR: INCLUDE environment variable is empty - VC++ headers are not on the compiler's search path." -ForegroundColor Red
+        Write-Host "The Dev Shell import did not fully succeed; re-run this script (it sets the env up itself)." -ForegroundColor Yellow
+        exit 1
+    }
+    Write-Host "Dev Shell OK: cl.exe found, INCLUDE set." -ForegroundColor Gray
+}
+
 $devShellModule = Join-Path $vsPath "Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
 
 if (-not (Test-Path $devShellModule)) {
@@ -63,6 +85,9 @@ if (-not (Test-Path $devShellModule)) {
 Import-Module $devShellModule
 $arch = if ($Preset -eq "ninja-x86" -or $Preset -eq "clang-x86") { "x86" } else { "x64" }
 Enter-VsDevShell -VsInstallPath $vsPath -DevCmdArguments "-arch=$arch -host_arch=x64" -SkipAutomaticLocation
+
+# Verify AFTER the import: this is the check that prevents the sticky-cache corruption.
+Test-DevShellEnvironment
 
 # ─── 3. Optional pre-build cleaning ───────────────────────────────────────────
 

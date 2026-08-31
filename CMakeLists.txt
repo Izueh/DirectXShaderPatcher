@@ -63,7 +63,40 @@ if(SCCACHE_PROGRAM AND NOT CMAKE_GENERATOR MATCHES "Visual Studio")
     message(STATUS "Compiler cache enabled: Using sccache")
 endif()
 
+# Guard: a configure run without the VS Dev Shell environment fails at
+# project() ("cl.exe not found"), but CMake still persists empty per-config
+# flag cache entries (CMAKE_C_FLAGS_RELWITHDEBINFO etc.) before failing. Those
+# entries are sticky — the next GOOD configure reuses the wiped flags and the
+# DXC C build loses /O2 /DNDEBUG, breaking llvm_assert linkage (LNK2019).
+# Re-seed the standard MSVC per-config flags if they came back empty.
 if(MSVC)
+    foreach(_cfg RELEASE RELWITHDEBINFO DEBUG MINSIZEREL)
+        if("${CMAKE_C_FLAGS_${_cfg}}" STREQUAL "")
+            if(_cfg STREQUAL "DEBUG")
+                set(CMAKE_C_FLAGS_DEBUG "/MDd /Zi /Ob0 /Od /RTC1" CACHE STRING "" FORCE)
+            elseif(_cfg STREQUAL "RELWITHDEBINFO")
+                set(CMAKE_C_FLAGS_RELWITHDEBINFO "/MD /Zi /O2 /Ob1 /DNDEBUG" CACHE STRING "" FORCE)
+            elseif(_cfg STREQUAL "RELEASE")
+                set(CMAKE_C_FLAGS_RELEASE "/MD /O2 /Ob2 /DNDEBUG" CACHE STRING "" FORCE)
+            else()
+                set(CMAKE_C_FLAGS_MINSIZEREL "/MD /O1 /Ob1 /DNDEBUG" CACHE STRING "" FORCE)
+            endif()
+            message(WARNING "CMAKE_C_FLAGS_${_cfg} was empty in the cache (likely a previous failed configure without the Dev Shell) — re-seeded with the MSVC default.")
+        endif()
+        if("${CMAKE_CXX_FLAGS_${_cfg}}" STREQUAL "")
+            if(_cfg STREQUAL "DEBUG")
+                set(CMAKE_CXX_FLAGS_DEBUG "/MDd /Zi /Ob0 /Od /RTC1" CACHE STRING "" FORCE)
+            elseif(_cfg STREQUAL "RELWITHDEBINFO")
+                set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "/MD /Zi /O2 /Ob1 /DNDEBUG" CACHE STRING "" FORCE)
+            elseif(_cfg STREQUAL "RELEASE")
+                set(CMAKE_CXX_FLAGS_RELEASE "/MD /O2 /Ob2 /DNDEBUG" CACHE STRING "" FORCE)
+            else()
+                set(CMAKE_CXX_FLAGS_MINSIZEREL "/MD /O1 /Ob1 /DNDEBUG" CACHE STRING "" FORCE)
+            endif()
+            message(WARNING "CMAKE_CXX_FLAGS_${_cfg} was empty in the cache (likely a previous failed configure without the Dev Shell) — re-seeded with the MSVC default.")
+        endif()
+    endforeach()
+
     # Debug embeds full symbols so the self-contained static lib stays
     # debuggable for consumers; Release ships without debug info to keep the
     # SDK library small. CMake 4.4 ignores the per-config _<CONFIG> debug-format
