@@ -122,11 +122,79 @@ Matches instruction patterns and rewrites them (or probes without mutating).
 | `name` | required, unique |
 | `required` | optional, default `true` — stop-fast on no-match; the step is reported failed (success=false) and remaining steps do not run |
 | `match_mode` | optional: `first`, `last`, `match_all` (default `first`) |
-| `rewrite_mode` | optional: `none`, `replace`, `before`, `after`, `replace_range` (default `replace`). `replace` swaps the **entire matched sequence** with the emit block; `replace_range` replaces a custom sub-range via `range_start_offset`/`range_end_offset` (default end `-1` = whole window); `before`/`after` insert the emit relative to `insert_index` without erasing |
+| `rewrite_mode` | optional: `none`, `replace`, `before`, `after`, `replace_range`, `before_last_return` (default `replace`). `replace` swaps the **entire matched sequence** with the emit block; `replace_range` replaces a custom sub-range via `range_start_offset`/`range_end_offset` (default end `-1` = whole window); `before`/`after` insert the emit relative to `insert_index` without erasing; `before_last_return` inserts the emit before the **last** `ret`/`retc` in the program — match patterns are optional in this mode (usable as a guard) and it is designed for blob insertion via `blob:` emit entries |
 | `insert_index` | insertion position (used with `before`/`after`; defaults to `0` for `before`, last match for `after`) |
 | `range_start_offset` / `range_end_offset` | rewrite sub-range for `rewrite_mode: replace_range`, relative to the first matched instruction; `range_end_offset: -1` (default) extends to the last matched instruction |
-| `rule` | required — the rule object |
+| `rule` | required (optional when `match_blob` is used with no interior rewriting) — the rule object |
+| `match_blob` | optional blob window capture — see **Blob capture and reinsertion** below. XOR with `match` and `scope` |
+| `emit_blob` | optional window disposition, only valid with `match_blob`: `mode: none` (default), `replace`, `before`, `after` |
+| `scope` | optional name of a previously captured blob — the step's rule runs against the blob interior instead of the shader; the shader is never touched. XOR with `match` and `match_blob` |
 | `condition` | optional guard |
+
+## Blob capture and reinsertion
+
+`match_blob` captures a **window** of instructions delimited by a start and an end
+pattern: `match_start` matches at position *i*, `match_end` at position *j >= i*,
+and everything in between (inclusive) is the window. The window is stored **by
+value** under `match_blob.capture` in the global capture namespace.
+
+```yaml
+steps:
+  # capture + interior rewrite + splice back in one step
+  - kind: apply_rule
+    name: fix_window
+    match_blob:
+      match_start: {opcode: mov}
+      match_end: {opcode: sample_l}
+      capture: my_block
+    emit_blob:
+      mode: replace   # none (default) | replace | before | after
+    rule:             # scoped to the blob interior
+      match_mode: match_all
+      rewrite_mode: replace
+      match:
+        - opcode: frc
+      emit:
+        - opcode: mov
+          operands: [...]
+```
+
+Semantics:
+
+- **`emit_blob: mode`** controls what happens to the captured window after
+  interior rewriting: `none` (default — shader untouched, store updated with the
+  post-mutation copy), `replace` (transformed blob replaces the window in the
+  same execution pass), `before`/`after` (transformed blob inserted before the
+  window start / after the window end; the original window is preserved).
+- **Interior rules** run against the blob's own instruction vector with full
+  `rewrite_mode` freedom (including `insert_index` — the blob interior is
+  concrete at run time). An interior failure is a hard error naming the blob and
+  the rule.
+- **`scope:`** steps mutate a previously captured blob (the shader is never
+  touched). Reinsertion goes through a `blob:` emit entry in a later step.
+- **`blob: <name>` emit entries** expand a stored blob into any emit stream
+  (deep copy — each emit produces an independent duplicate). Mutually exclusive
+  with `opcode` and `capture` on the same emit entry.
+- The capture store always holds the **post-mutation** copy, so "modify in the
+  same step" and "save for later" compose predictably.
+- `before_last_return` pairs naturally with blob insertion: match patterns are
+  optional, and the emit stream (which may contain `blob:` entries) is inserted
+  before the program's last `ret`/`retc`.
+
+Example — capture a window, then insert it before the last return:
+
+```yaml
+steps:
+  - kind: apply_rule
+    name: stash_block
+    match_blob: {match_start: {opcode: mov}, match_end: {opcode: sample_l}, capture: stash}
+  - kind: apply_rule
+    name: insert_before_last_ret
+    rewrite_mode: before_last_return
+    rule:
+      emit:
+        - blob: stash
+```
 
 `rule` fields:
 

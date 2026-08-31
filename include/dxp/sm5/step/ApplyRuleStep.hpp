@@ -50,6 +50,7 @@ struct ApplyRuleStep {
     Before,
     After,
     ReplaceRange,
+    BeforeLastReturn,  ///< Anchor = last ret/retc in the program; match patterns optional (usable as a guard). Designed for blob insertion.
   };
 
   /// @brief Encoding used for one index slot in a recipe operand pattern.
@@ -196,7 +197,9 @@ struct ApplyRuleStep {
     std::optional<ResourceReturnTypePayload> resource_return_type;
   };
 
-  /// @brief Describes one instruction emitted by a rewrite rule.
+  /// @brief Describes one instruction emitted by a rewrite rule. Either an
+  /// explicit `opcode`, a replayed instruction `capture`, or a stored blob
+  /// expansion (`blob`) — exactly one source per entry.
   struct EmitPattern {
     std::optional<Opcode> opcode;
     std::optional<bool> saturate;
@@ -204,6 +207,7 @@ struct ApplyRuleStep {
     int32_t test_boolean = -1;
     std::vector<OperandPattern> operands;
     std::string capture;
+    std::string blob;  ///< Expand a stored blob (post-mutation copy, deep-copied on emit).
     std::vector<EmitExtendedOpcode> extended_opcodes;
     std::optional<model::ResourceDimension> dimension;
     std::array<std::optional<model::ResourceReturnType>, 4> return_type;
@@ -217,6 +221,40 @@ struct ApplyRuleStep {
   struct Rule {
     std::vector<InstructionPattern> match_patterns;
     std::vector<EmitPattern> emit_patterns;
+
+    // Per-rule execution modes — honored by blob/scope scoped execution. Plain
+    // match steps use the step-level fields instead (these default there).
+    MatchKind match_mode = MatchKind::First;
+    RewriteKind rewrite_mode = RewriteKind::Replace;
+    int32_t insert_index = -1;
+    int32_t range_start_offset = 0;
+    int32_t range_end_offset = -1;
+  };
+
+  /// @brief Blob window capture: a [match_start .. match_end] (inclusive) window
+  /// stored as an instruction sequence under `capture`. Present on a step, it
+  /// scopes the step's rule to the captured interior (same as `scope:` on a
+  /// previously captured blob).
+  struct MatchBlob {
+    InstructionPattern match_start;
+    InstructionPattern match_end;
+    std::string capture;
+  };
+
+  /// @brief What happens to the captured window after interior rewriting.
+  ///   - None (default): store updated with the post-mutation copy; shader untouched.
+  ///   - Replace: transformed blob replaces the window (same execution pass).
+  ///   - Before / After: transformed blob inserted before window start / after
+  ///     window end; the original window is preserved.
+  struct EmitBlob {
+    enum class Mode : std::uint8_t {
+      None = 0,
+      Replace = 1,
+      Before = 2,
+      After = 3,
+    };
+
+    Mode mode = Mode::None;
   };
 
   std::string name;
@@ -228,6 +266,9 @@ struct ApplyRuleStep {
   int32_t insert_index = -1;
   int32_t range_start_offset = 0;
   int32_t range_end_offset = -1;
+  std::optional<MatchBlob> match_blob;  ///< XOR with rule.match_patterns and scope.
+  std::optional<EmitBlob> emit_blob;    ///< Only valid with match_blob.
+  std::string scope;                    ///< Name of a stored blob this step's rule runs against (XOR with match/match_blob).
 
   ApplyRuleStep(std::string name_val, bool required, RewriteKind rewrite_mode_val, std::optional<ConditionNode> condition_val, Rule rule_val, MatchKind match_kind = MatchKind::First)
       : name(std::move(name_val)), required(required), rewrite_mode(rewrite_mode_val), condition(std::move(condition_val)), rule(std::move(rule_val)), match_mode(match_kind) {}

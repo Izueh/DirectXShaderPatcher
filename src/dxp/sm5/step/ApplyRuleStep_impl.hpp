@@ -14,6 +14,8 @@ using namespace dxp::sm5::model;
 // ApplyRuleStep so the step namespace holds only the step structs.
 using MatchKind = ApplyRuleStep::MatchKind;
 using RewriteKind = ApplyRuleStep::RewriteKind;
+using MatchBlob = ApplyRuleStep::MatchBlob;
+using EmitBlob = ApplyRuleStep::EmitBlob;
 using OperandIndexRepresentation = ApplyRuleStep::OperandIndexRepresentation;
 using ImmediateFamily = ApplyRuleStep::IndexImmediateType;
 using OperandIndexPattern = ApplyRuleStep::OperandIndexPattern;
@@ -120,6 +122,7 @@ struct EmitInstructionData {
   int32_t test_boolean = -1;
   std::vector<OperandData> operands;
   std::string capture;
+  std::string blob;  ///< Expand a stored blob (mutually exclusive with opcode/capture).
   std::vector<EmitExtendedOpcodeData> extended_opcodes;
   /// @brief Instruction-level fields for declaration opcodes (dcl_resource, dcl_constant_buffer, dcl_sampler, dcl_uav_*).
   std::optional<ResourceDimension> dimension;
@@ -134,11 +137,29 @@ struct RuleData {
   std::vector<InstructionMatchData> match;
   std::vector<EmitInstructionData> emit;
 
+  // Per-rule execution modes — honored by blob/scope scoped execution. Plain
+  // match steps use the step-level fields instead (these default there).
+  MatchKind match_mode = MatchKind::First;
+  RewriteKind rewrite_mode = RewriteKind::Replace;
+  int32_t insert_index = -1;
+  int32_t range_start_offset = 0;
+  int32_t range_end_offset = -1;
+
   /**
    * @brief Compile this YAML data into a Rule.
    * @return Compiled rule or error message.
    */
   [[nodiscard]] auto Compile() const -> std::expected<Rule, std::string>;
+};
+
+struct MatchBlobData {
+  InstructionMatchData match_start;
+  InstructionMatchData match_end;
+  std::string capture;
+};
+
+struct EmitBlobData {
+  ApplyRuleStep::EmitBlob::Mode mode = ApplyRuleStep::EmitBlob::Mode::None;
 };
 
 struct ApplyRuleData {
@@ -150,6 +171,9 @@ struct ApplyRuleData {
   int32_t insert_index = -1;
   int32_t range_start_offset = 0;
   int32_t range_end_offset = -1;
+  std::optional<MatchBlobData> match_blob;
+  std::optional<EmitBlobData> emit_blob;
+  std::string scope;
   RuleData rule;
 
   /**
@@ -170,7 +194,12 @@ struct meta<dxp::sm5::step::ApplyRuleStep::MatchKind> {
 
 template <>
 struct meta<dxp::sm5::step::ApplyRuleStep::RewriteKind> {
-  static constexpr auto value = enumerate("none", dxp::sm5::step::ApplyRuleStep::RewriteKind::None, "replace", dxp::sm5::step::ApplyRuleStep::RewriteKind::Replace, "before", dxp::sm5::step::ApplyRuleStep::RewriteKind::Before, "after", dxp::sm5::step::ApplyRuleStep::RewriteKind::After, "replace_range", dxp::sm5::step::ApplyRuleStep::RewriteKind::ReplaceRange);
+  static constexpr auto value = enumerate("none", dxp::sm5::step::ApplyRuleStep::RewriteKind::None, "replace", dxp::sm5::step::ApplyRuleStep::RewriteKind::Replace, "before", dxp::sm5::step::ApplyRuleStep::RewriteKind::Before, "after", dxp::sm5::step::ApplyRuleStep::RewriteKind::After, "replace_range", dxp::sm5::step::ApplyRuleStep::RewriteKind::ReplaceRange, "before_last_return", dxp::sm5::step::ApplyRuleStep::RewriteKind::BeforeLastReturn);
+};
+
+template <>
+struct meta<dxp::sm5::step::ApplyRuleStep::EmitBlob::Mode> {
+  static constexpr auto value = enumerate("none", dxp::sm5::step::ApplyRuleStep::EmitBlob::Mode::None, "replace", dxp::sm5::step::ApplyRuleStep::EmitBlob::Mode::Replace, "before", dxp::sm5::step::ApplyRuleStep::EmitBlob::Mode::Before, "after", dxp::sm5::step::ApplyRuleStep::EmitBlob::Mode::After);
 };
 
 template <>

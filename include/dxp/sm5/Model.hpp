@@ -590,6 +590,13 @@ struct CapturedInstruction {
   Instruction instruction_data;
 };
 
+/// @brief Captured instruction blob (match_blob window / scoped-edit target).
+/// Stored by value: cross-step, a blob is an independent instruction sequence,
+/// never a live view into the program (positions would go stale after splices).
+struct CapturedBlob {
+  std::vector<Instruction> instructions;
+};
+
 struct ResourceDecl {
   uint32_t register_bind_point = 0;
   uint32_t register_space = 0;

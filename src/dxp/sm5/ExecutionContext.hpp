@@ -23,17 +23,19 @@ using namespace dxp::sm5::model;
 /// a handle name). Uses the shared @c dxp::BindingClass vocabulary.
 using BindingClass = dxp::BindingClass;
 
-/// @brief Global capture store — stores captured operands, instructions, and
-/// index immediates as copies so they survive rewrites.
+/// @brief Global capture store — stores captured operands, instructions, index
+/// immediates, and instruction blobs as copies so they survive rewrites.
 struct CaptureStore {
   std::unordered_map<std::string, CapturedOperand> operands;          ///< Captured operands, keyed by their `capture` name.
   std::unordered_map<std::string, CapturedInstruction> instructions;  ///< Captured instructions (sequence matches), keyed by name.
   std::unordered_map<std::string, Operand::Index> index_values;       ///< Captured index values (full Operand::Index), keyed by name.
+  std::unordered_map<std::string, CapturedBlob> blobs;                ///< Captured instruction blobs (match_blob windows / scoped edits), keyed by name.
 
   void Clear() {
     operands.clear();
     instructions.clear();
     index_values.clear();
+    blobs.clear();
   }
 };
 
