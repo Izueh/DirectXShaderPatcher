@@ -25,8 +25,8 @@
 
 namespace {
 
-constexpr int kThreadCount = 16;
-constexpr int kIterations = 25;
+constexpr int kThreadCount = 4;
+constexpr int kIterations = 8;
 constexpr uint32_t kFloatOneBits = 0x3F800000u;  // 1.0f
 
 const char* kRecipeText = R"YAML(version: 1

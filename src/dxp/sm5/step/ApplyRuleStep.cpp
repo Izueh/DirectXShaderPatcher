@@ -1882,7 +1882,7 @@ auto CollectSequenceMatches(const std::vector<Instruction>& instructions, const 
 
 /// @brief Expands a stored blob into an emit stream (deep copy; the stored copy
 /// is never aliased — each emit produces an independent duplicate).
-auto ResolveEmitBlobEntry(const MatchResult& [[maybe_unused]] match, ExecutionContext& context, const std::string& blob_name,
+auto ResolveEmitBlobEntry([[maybe_unused]] const MatchResult& match, ExecutionContext& context, const std::string& blob_name,
                           const std::string& path, std::string& error) -> std::vector<Instruction> {
   auto it = context.captures.blobs.find(blob_name);
   if (it == context.captures.blobs.end()) {

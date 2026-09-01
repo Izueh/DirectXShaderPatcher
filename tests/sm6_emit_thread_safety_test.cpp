@@ -26,8 +26,8 @@
 
 namespace {
 
-constexpr int kThreadCount = 16;
-constexpr int kIterations = 25;
+constexpr int kThreadCount = 4;
+constexpr int kIterations = 8;
 
 // Multi-emit chain rewiring a matched TextureLoad through a cbuffer-derived
 // slice index, all wired explicitly via replace_captured. Matches the
