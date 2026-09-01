@@ -980,7 +980,7 @@ auto ShaderProgram::MakeConstantBufferDeclarationOperand(uint32_t register_index
   operand.type = OperandType::CBuffer;
   operand.components.num_components = NumComponents::Four;
   operand.component_mode =
-      ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE) | (ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE(D3D10_SB_4_COMPONENT_X, D3D10_SB_4_COMPONENT_Y, D3D10_SB_4_COMPONENT_Z, D3D10_SB_4_COMPONENT_W) << 4);
+      ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE) | ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE(D3D10_SB_4_COMPONENT_X, D3D10_SB_4_COMPONENT_Y, D3D10_SB_4_COMPONENT_Z, D3D10_SB_4_COMPONENT_W);
   Operand::Index bind_index;
   bind_index.representation = Operand::IndexRepresentation::Immediate32;
   bind_index.immediate_lo = register_index;
