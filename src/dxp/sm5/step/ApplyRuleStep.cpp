@@ -1319,6 +1319,12 @@ auto ResolveOperand(const MatchResult& match, ExecutionContext& context, const O
     if (op.type.has_value()) operand.type = *op.type;
     if (op.modifier.has_value()) operand.modifier = *op.modifier;
   }
+  // Explicit indices and typed immediates both surface through IndexPatterns()
+  // (indices take priority); resolving here replaces the operand's index entries
+  // wholesale. The raw op.indices rebuild below only applies when capture replay
+  // populated the entries instead (capture non-empty) — otherwise entries would
+  // be appended twice, turning v0 into the invalid 2D-indexed v[0][0] (AMD
+  // drivers crash compiling such pixel shaders; NVIDIA tolerates them).
   if (op.capture.empty() && !op.IndexPatterns().empty()) {
     const auto& patterns = op.IndexPatterns();
     operand.index_entries.clear();
@@ -1328,8 +1334,7 @@ auto ResolveOperand(const MatchResult& match, ExecutionContext& context, const O
       if (!error.empty()) return {};
       operand.index_entries.push_back(std::move(idx));
     }
-  }
-  if (!op.indices.empty()) {
+  } else if (!op.indices.empty()) {
     if (!op.capture.empty()) {
       operand.index_entries.clear();
     }
