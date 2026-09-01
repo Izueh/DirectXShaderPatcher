@@ -213,6 +213,7 @@ auto ResolveOperand(const MatchResult& match, ExecutionContext& context, const O
 auto ResolveOperandIndex(const MatchResult& match, ExecutionContext& context, const OperandIndexPattern& pattern, const std::string& path, std::string& error) -> Operand::Index;
 auto MatchesOperand(const Operand& operand, std::unordered_map<std::string, Operand::Index>& captured_index_values, const OperandPattern& op, const ExecutionContext& context) -> bool;
 auto MatchesOperandIndex(const Operand::Index& idx, const std::unordered_map<std::string, Operand::Index>& captured_index_values, const OperandIndexPattern& pattern, const ExecutionContext& context) -> bool;
+bool MatchesDeclConstraint(const Operand& operand, const ApplyRuleStep::OperandPattern::DeclConstraint& constraint, const ExecutionContext& context);
 auto MatchesInstruction(const Instruction& instr, std::unordered_map<std::string, Operand::Index>& captured_index_values, const InstructionPattern& pattern, const ExecutionContext& context) -> bool;
 bool ValidateOperandRole(const Operand& operand, OperandRole expected_role, const std::string& path, ExecutionContext& context, std::string& error);
 bool ResolveImmediateFromVariable(const std::string& path, const std::string& vn, const ExecutionContext& ctx, ImmediateFamily family, uint32_t& ol, uint32_t& oh, bool& hh, std::string& error);
@@ -595,7 +596,7 @@ auto ExecuteSingleRuleImpl(std::vector<Instruction>& instructions, const std::st
     if (!ApplyRewriteActions(instructions, {action})) {
       return std::unexpected("step[" + step_name + "]: failed to apply before_last_return action");
     }
-    ctx.program_modified = true;
+    ctx.MarkProgramMutated();
     ++result.applied_count;
     ctx.state[rule_name] = true;
     return result;
@@ -617,16 +618,19 @@ auto ExecuteSingleRuleImpl(std::vector<Instruction>& instructions, const std::st
     for (const auto& [cap_name, cap] : match.operands) {
       if (!cap.export_as.has_value()) continue;
       const std::string& export_key = *cap.export_as;
-      if (cap.operand_data.type == OperandType::Resource || cap.operand_data.type == OperandType::Sampler || cap.operand_data.type == OperandType::CBuffer) {
+      if (cap.operand_data.type == OperandType::Resource || cap.operand_data.type == OperandType::Sampler || cap.operand_data.type == OperandType::CBuffer || cap.operand_data.type == OperandType::UAV) {
         dxp::ResourceUsage usage;
         usage.binding_class = cap.operand_data.type == OperandType::CBuffer   ? dxp::BindingClass::CBuffer
                               : cap.operand_data.type == OperandType::Sampler ? dxp::BindingClass::Sampler
+                              : cap.operand_data.type == OperandType::UAV     ? dxp::BindingClass::Uav
                                                                               : dxp::BindingClass::Texture;
         usage.register_index = cap.operand_data.index_entries.empty() || !cap.operand_data.index_entries[0].immediate_lo.has_value() ? 0 : *cap.operand_data.index_entries[0].immediate_lo;
         if (cap.operand_data.type == OperandType::CBuffer) {
           usage.handle = "cbuffer";
         } else if (cap.operand_data.type == OperandType::Sampler) {
           usage.handle = "sampler";
+        } else if (cap.operand_data.type == OperandType::UAV) {
+          usage.handle = "uav";
         } else {
           usage.handle = "texture";
         }
@@ -635,6 +639,40 @@ auto ExecuteSingleRuleImpl(std::vector<Instruction>& instructions, const std::st
         } else {
           auto sel = DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(cap.operand_data.component_mode);
           usage.accessed_components = ExtractComponentMask(cap.operand_data.component_mode, sel);
+        }
+        // Enrich from the declaration when the register resolves.
+        if (cap.operand_data.type == OperandType::Resource || cap.operand_data.type == OperandType::UAV) {
+          const ResourceDeclInfo* decl = ctx.Declarations().FindResourceDecl(cap.operand_data.type, usage.register_index);
+          if (decl != nullptr) {
+            usage.dimension = decl->dimension;
+            usage.return_type = decl->return_types[0];
+            if (decl->structure_stride != 0) {
+              usage.structure_stride = decl->structure_stride;
+            }
+          }
+        }
+        ctx.resource_exports[export_key] = std::move(usage);
+      } else if (cap.operand_data.type == OperandType::Input || cap.operand_data.type == OperandType::Output) {
+        const auto& signatures = cap.operand_data.type == OperandType::Input ? ctx.Declarations().inputs : ctx.Declarations().outputs;
+        if (cap.operand_data.index_entries.empty() || !cap.operand_data.index_entries[0].immediate_lo.has_value()) continue;
+        const uint32_t register_index = *cap.operand_data.index_entries[0].immediate_lo;
+        auto it = signatures.find(register_index);
+        if (it == signatures.end()) continue;
+        dxp::ResourceUsage usage;
+        usage.binding_class = cap.operand_data.type == OperandType::Input ? dxp::BindingClass::Input : dxp::BindingClass::Output;
+        usage.register_index = register_index;
+        usage.handle = cap.operand_data.type == OperandType::Input ? "input" : "output";
+        if (cap.role == OperandRole::Destination && (cap.destination_mask != 0u)) {
+          usage.accessed_components = cap.destination_mask;
+        } else {
+          auto sel = DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(cap.operand_data.component_mode);
+          usage.accessed_components = ExtractComponentMask(cap.operand_data.component_mode, sel);
+        }
+        if (it->second.semantic.has_value()) {
+          usage.semantic = *it->second.semantic;
+        }
+        if (it->second.interpolation.has_value()) {
+          usage.interpolation = *it->second.interpolation;
         }
         ctx.resource_exports[export_key] = std::move(usage);
       } else if (cap.operand_data.type == OperandType::Immediate32 || cap.operand_data.type == OperandType::Immediate64) {
@@ -718,7 +756,7 @@ auto ExecuteSingleRuleImpl(std::vector<Instruction>& instructions, const std::st
     return std::unexpected("step[" + step_name + "]: failed to apply rewrite action");
   }
 
-  ctx.program_modified = true;
+  ctx.MarkProgramMutated();
 
   ctx.state[step_name] = true;
   return result;
@@ -795,7 +833,7 @@ auto ExecuteBlobStep(std::vector<Instruction>& program_instructions, const Apply
         break;
       }
       case EmitBlob::Mode::Before:
-      case EmitBlob::Mode::After: {
+      case EmitBlob::Mode::After:  {
         RewriteAction action;
         action.type = RewriteActionType::InsertBefore;
         action.insert_position = (kDisposition == EmitBlob::Mode::Before) ? match.range_start_index
@@ -815,7 +853,7 @@ auto ExecuteBlobStep(std::vector<Instruction>& program_instructions, const Apply
     if (!ApplyRewriteActions(program_instructions, actions)) {
       return std::unexpected("step[" + step.name + "]: failed to apply emit_blob action");
     }
-    ctx.program_modified = true;
+    ctx.MarkProgramMutated();
   }
 
   return result;
@@ -837,6 +875,830 @@ auto ExecuteScopeStep(const ApplyRuleStep& step, ExecutionContext& ctx) -> std::
     return std::unexpected("step[" + step.name + "] scope[" + step.scope + "]: " + r.error());
   }
   return r;
+}
+
+// Builds the emitted extended-opcode chain: explicit entries verbatim, then the
+// canonical ResourceDim/ResourceReturnType pair completed from the declaration.
+// Unresolvable declarations are a hard error (no silent bare emits).
+bool BuildExtendedOpcodeChain(ExecutionContext& context, Instruction& instr,
+                              const std::vector<ApplyRuleStep::EmitExtendedOpcode>& entries,
+                              const std::string& path, std::string& error) {
+  const auto kChain = RequiredExtendedChainForOpcode(instr.opcode);
+  std::vector<uint32_t> tokens;
+  tokens.reserve(entries.size() + 2);
+  for (const auto& entry : entries) {
+    if (entry.kind == ApplyRuleStep::EmitExtendedOpcode::Kind::Raw) {
+      tokens.push_back(entry.raw & ~D3D10_SB_OPCODE_EXTENDED_MASK);
+    } else {
+      auto token = static_cast<uint32_t>(entry.type);
+      if (entry.sample_controls.has_value()) {
+        const auto& sc = *entry.sample_controls;
+        token |= ENCODE_IMMEDIATE_D3D10_SB_ADDRESS_OFFSET(0, sc.u);
+        token |= ENCODE_IMMEDIATE_D3D10_SB_ADDRESS_OFFSET(1, sc.v);
+        token |= ENCODE_IMMEDIATE_D3D10_SB_ADDRESS_OFFSET(2, sc.w);
+      } else if (entry.resource_dim.has_value()) {
+        token |= ENCODE_D3D11_SB_EXTENDED_RESOURCE_DIMENSION(entry.resource_dim->dimension);
+        token |= ENCODE_D3D11_SB_EXTENDED_RESOURCE_DIMENSION_STRUCTURE_STRIDE(entry.resource_dim->structure_stride);
+      } else if (entry.resource_return_type.has_value()) {
+        uint32_t component = 0;
+        for (const uint32_t return_type : entry.resource_return_type->component_types) {
+          token |= ENCODE_D3D11_SB_EXTENDED_RESOURCE_RETURN_TYPE(return_type, component);
+          ++component;
+        }
+      }
+      tokens.push_back(token);
+    }
+  }
+
+  if (kChain.RequiresResourcePair()) {
+    bool has_dim = false;
+    bool has_return = false;
+    size_t return_pos = tokens.size();
+    for (size_t i = 0; i < tokens.size(); ++i) {
+      const uint32_t type = tokens[i] & kExtendedOpcodeTypeMask;
+      if (type == static_cast<uint32_t>(ExtendedOpcodeType::ResourceDim)) has_dim = true;
+      if (type == static_cast<uint32_t>(ExtendedOpcodeType::ResourceType)) {
+        has_return = true;
+        return_pos = i;
+      }
+    }
+    if (!has_dim || !has_return) {
+      uint32_t dimension = 0;
+      uint32_t packed_return = 0;
+      if (kChain.HasFixedMetadata()) {
+        dimension = kChain.fixed_dimension;
+        packed_return = kChain.fixed_return_type;
+      } else {
+        StampResourceAccessControls(context, instr);
+        if (!instr.controls.resource_dimension.has_value()) {
+          error = path
+                  +
+                  ": resource-access emit requires a declared resource to synthesize the canonical "
+                  "ResourceDim/ResourceReturnType extended pair (no silent bare emit)";
+          return false;
+        }
+        dimension = static_cast<uint32_t>(static_cast<uint8_t>(*instr.controls.resource_dimension));
+        for (uint32_t component = 0; component < 4; ++component) {
+          if (instr.controls.resource_return_type[component].has_value()) {
+            packed_return |= static_cast<uint32_t>(static_cast<uint8_t>(*instr.controls.resource_return_type[component])) << (component * D3D10_SB_RESOURCE_RETURN_TYPE_NUMBITS);
+          }
+        }
+      }
+      // Insert the missing members at their canonical positions (dim before
+      // return), never after the return token.
+      if (!has_dim) {
+        auto token = static_cast<uint32_t>(ExtendedOpcodeType::ResourceDim);
+        token |= ENCODE_D3D11_SB_EXTENDED_RESOURCE_DIMENSION(dimension);
+        token |= ENCODE_D3D11_SB_EXTENDED_RESOURCE_DIMENSION_STRUCTURE_STRIDE(instr.controls.structure_stride);
+        auto insert_at = tokens.begin();
+        std::advance(insert_at, has_return ? return_pos : tokens.size());
+        tokens.insert(insert_at, token);
+        if (has_return) {
+          ++return_pos;
+        }
+      }
+      if (!has_return) {
+        auto token = static_cast<uint32_t>(ExtendedOpcodeType::ResourceType);
+        for (uint32_t component = 0; component < 4; ++component) {
+          const uint32_t return_type = (packed_return >> (4 * component)) & 0xF;
+          token |= ENCODE_D3D11_SB_EXTENDED_RESOURCE_RETURN_TYPE(
+              return_type != 0 ? return_type : D3D10_SB_RETURN_TYPE_FLOAT, component);
+        }
+        tokens.push_back(token);
+      }
+      context.logger.Log(LogLevel::Warning,
+                         "[Patch] synthesized ResourceDim/ResourceReturnType for emitted opcode "
+                             + std::to_string(static_cast<uint32_t>(instr.opcode)) + " (" + path + ")");
+    }
+  }
+
+  for (size_t i = 0; i < tokens.size(); ++i) {
+    if (i + 1 < tokens.size()) {
+      tokens[i] |= D3D10_SB_OPCODE_EXTENDED_MASK;
+    }
+  }
+  instr.controls.extended_op_codes.clear();
+  instr.controls.extended_op_codes.reserve(tokens.size());
+  for (const uint32_t token : tokens) {
+    instr.controls.extended_op_codes.emplace_back(token);
+  }
+  return true;
+}
+
+auto IndexValueForCapture(const Operand::Index& index) -> const uint32_t* {
+  if (index.immediate_lo.has_value()) return &(*index.immediate_lo);
+  if (index.immediate_hi.has_value()) return &(*index.immediate_hi);
+  return nullptr;
+}
+
+auto CaptureOperands(const Instruction& instruction, const InstructionPattern& pattern,
+                     std::unordered_map<std::string, CapturedOperand>& local_operands,
+                     [[maybe_unused]] const CaptureStore& global_captures) {
+  for (size_t i = 0; i < pattern.operands.size(); ++i) {
+    const auto& op = pattern.operands[i];
+    const auto& opnd = instruction.operands[i];
+    if (op.capture.empty() && !op.export_as.has_value()) {
+      continue;  // neither captured nor exported — nothing to store
+    }
+    CapturedOperand cap;
+    cap.operand_data = opnd;
+    cap.role = GetOperandRole(instruction.opcode, i);
+    if (i == 0 && !instruction.operands.empty()) cap.destination_mask = ExtractComponentMask(instruction.operands[0].component_mode, DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(instruction.operands[0].component_mode));
+    cap.export_as = op.export_as;
+    // Export-only operands store under their export_as key.
+    local_operands[op.capture.empty() ? *op.export_as : op.capture] = std::move(cap);
+  }
+}
+
+auto CollectMatches(const std::vector<Instruction>& instructions, const InstructionPattern& pattern, CaptureStore& captures, const ExecutionContext& context) -> std::vector<MatchResult> {
+  std::vector<MatchResult> matches;
+  matches.reserve(instructions.size());
+  for (uint32_t i = 0; i < instructions.size(); ++i) {
+    std::unordered_map<std::string, Operand::Index> captured_index_values;
+    if (!MatchesInstruction(instructions[i], captured_index_values, pattern, context)) continue;
+    MatchResult r;
+    r.instruction_index = i;
+    r.instruction = &instructions[i];
+    r.range_start_index = i;
+    r.range_end_index = i;
+    CaptureOperands(instructions[i], pattern, r.operands, captures);
+    r.index_values = std::move(captured_index_values);
+    if (!pattern.capture.empty()) {
+      r.instructions[pattern.capture] = instructions[i];
+      Operand::Index idx;
+      idx.immediate_lo = i;
+      r.index_values[pattern.capture + "_index"] = std::move(idx);
+    }
+    matches.push_back(std::move(r));
+  }
+  return matches;
+}
+
+/// @brief Blob window matching: `match_start` pattern at i, `match_end` pattern at
+/// j >= i, everything between (inclusive) belongs to the window. Captures from both
+/// endpoint patterns are collected into the match result.
+auto CollectWindowMatches(const std::vector<Instruction>& instructions, const InstructionPattern& start_pattern,
+                          const InstructionPattern& end_pattern, CaptureStore& captures, const ExecutionContext& context) -> std::vector<MatchResult> {
+  std::vector<MatchResult> matches;
+  if (instructions.empty()) return matches;
+
+  for (uint32_t i = 0; i < instructions.size(); ++i) {
+    std::unordered_map<std::string, Operand::Index> start_index_values;
+    if (!MatchesInstruction(instructions[i], start_index_values, start_pattern, context)) continue;
+
+    for (uint32_t j = i; j < instructions.size(); ++j) {
+      std::unordered_map<std::string, Operand::Index> end_index_values;
+      if (!MatchesInstruction(instructions[j], end_index_values, end_pattern, context)) continue;
+
+      MatchResult r;
+      r.instruction_index = i;
+      r.instruction = &instructions[i];
+      r.range_start_index = i;
+      r.range_end_index = j;
+      r.index_values = std::move(start_index_values);
+      r.index_values.insert(end_index_values.begin(), end_index_values.end());
+      CaptureOperands(instructions[i], start_pattern, r.operands, captures);
+      CaptureOperands(instructions[j], end_pattern, r.operands, captures);
+      if (!start_pattern.capture.empty()) {
+        r.instructions[start_pattern.capture] = instructions[i];
+        Operand::Index idx;
+        idx.immediate_lo = i;
+        r.index_values[start_pattern.capture + "_index"] = std::move(idx);
+      }
+      if (!end_pattern.capture.empty()) {
+        r.instructions[end_pattern.capture] = instructions[j];
+        Operand::Index idx;
+        idx.immediate_lo = j;
+        r.index_values[end_pattern.capture + "_index"] = std::move(idx);
+      }
+      matches.push_back(std::move(r));
+      break;  // innermost end match for this start; next start index is a new window
+    }
+  }
+  return matches;
+}
+
+auto CollectSequenceMatches(const std::vector<Instruction>& instructions, const std::vector<InstructionPattern>& patterns, CaptureStore& captures, const ExecutionContext& context) -> std::vector<MatchResult> {
+  std::vector<MatchResult> matches;
+  if (patterns.empty() || patterns.size() > instructions.size()) return matches;
+  const auto limit = static_cast<uint32_t>(instructions.size() - patterns.size() + 1);
+  for (uint32_t start = 0; start < limit; ++start) {
+    std::unordered_map<std::string, Operand::Index> captured_index_values;
+    bool ok = true;
+    for (uint32_t pi = 0; pi < patterns.size(); ++pi) {
+      if (!MatchesInstruction(instructions[start + pi], captured_index_values, patterns[pi], context)) {
+        ok = false;
+        break;
+      }
+    }
+    if (!ok) continue;
+    MatchResult r;
+    r.instruction_index = start;
+    r.instruction = &instructions[start];
+    r.range_start_index = start;
+    r.range_end_index = start + static_cast<uint32_t>(patterns.size() - 1);
+    r.index_values = std::move(captured_index_values);
+    for (uint32_t pi = 0; pi < patterns.size(); ++pi) {
+      CaptureOperands(instructions[start + pi], patterns[pi], r.operands, captures);
+      if (!patterns[pi].capture.empty()) {
+        r.instructions[patterns[pi].capture] = instructions[start + pi];
+        Operand::Index idx;
+        idx.immediate_lo = start + pi;
+        r.index_values[patterns[pi].capture + "_index"] = std::move(idx);
+      }
+    }
+    matches.push_back(std::move(r));
+  }
+  return matches;
+}
+
+/// @brief Expands a stored blob into an emit stream (deep copy; the stored copy
+/// is never aliased — each emit produces an independent duplicate).
+auto ResolveEmitBlobEntry([[maybe_unused]] const MatchResult& match, ExecutionContext& context, const std::string& blob_name,
+                          const std::string& path, std::string& error) -> std::vector<Instruction> {
+  auto it = context.captures.blobs.find(blob_name);
+  if (it == context.captures.blobs.end()) {
+    error = path + ": unknown blob '" + blob_name + "'";
+    return {};
+  }
+  if (it->second.instructions.empty()) {
+    error = path + ": blob '" + blob_name + "' is empty";
+    return {};
+  }
+  std::vector<Instruction> expanded;
+  expanded.reserve(it->second.instructions.size());
+  for (const Instruction& instr : it->second.instructions) {
+    // FinalizeInstruction recomputes dword length; the copy is independent by value
+    expanded.push_back(ShaderProgram::FinalizeInstruction(instr));
+  }
+  return expanded;
+}
+
+auto ResolveEmit(const MatchResult& match, ExecutionContext& context, const EmitPattern& emit, const std::string& path, std::string& error) -> Instruction {
+  Instruction instr;
+  if (!emit.capture.empty()) {
+    auto it = context.captures.instructions.find(emit.capture);
+    if (it == context.captures.instructions.end()) {
+      error = path + ": unknown captured instruction '" + emit.capture + "'";
+      return {};
+    }
+    const auto& cap = it->second;
+    instr = cap.instruction_data;
+    if (emit.opcode.has_value()) instr.opcode = *emit.opcode;
+    if (emit.saturate.has_value()) instr.controls.saturate = *emit.saturate;
+    if (emit.test_boolean >= 0) {
+      instr.controls.test_boolean = static_cast<uint32_t>(emit.test_boolean);
+    }
+    if (emit.interpolation_mode.has_value()) {
+      instr.controls.input_interpolation_mode = static_cast<uint32_t>(*emit.interpolation_mode);
+    }
+    for (size_t oi = 0; oi < emit.operands.size(); ++oi) {
+      const std::string op = path + ".operands[" + std::to_string(oi) + "]";
+      Operand ro = ResolveOperand(match, context, emit.operands[oi], op, error, oi);
+      if (!error.empty()) return {};
+      instr.operands.push_back(std::move(ro));
+    }
+    return ShaderProgram::FinalizeInstruction(std::move(instr));
+  }
+  instr.opcode = emit.opcode.has_value() ? *emit.opcode : OpcodeUnknown();
+  instr.controls.saturate = emit.saturate.value_or(false);
+  instr.controls.test_boolean.reset();
+  if (emit.test_boolean >= 0) {
+    instr.controls.test_boolean = 1U;
+    instr.controls.test_boolean = static_cast<uint32_t>(emit.test_boolean);
+  }
+  if (emit.interpolation_mode.has_value()) {
+    instr.controls.input_interpolation_mode = static_cast<uint32_t>(*emit.interpolation_mode);
+  }
+  if (emit.dimension.has_value()) {
+    instr.controls.resource_dimension = emit.dimension;
+  }
+  for (uint32_t component = 0; component < 4; ++component) {
+    if (emit.return_type[component].has_value()) {
+      instr.controls.resource_return_type[component] = emit.return_type[component];
+    }
+  }
+  if (emit.structure_stride != 0) {
+    instr.controls.structure_stride = emit.structure_stride;
+  }
+  if (emit.access_pattern.has_value()) {
+    instr.controls.access_pattern = emit.access_pattern;
+    instr.controls.access_pattern_raw = static_cast<uint32_t>(static_cast<uint8_t>(*emit.access_pattern));
+  }
+  if (emit.mode.has_value()) {
+    instr.controls.mode = emit.mode;
+  }
+  if (emit.uav_flags != 0) {
+    instr.controls.uav_flags = emit.uav_flags;
+  }
+  instr.length_in_dwords = 0;
+  for (size_t oi = 0; oi < emit.operands.size(); ++oi) {
+    const std::string op = path + ".operands[" + std::to_string(oi) + "]";
+    Operand ro = ResolveOperand(match, context, emit.operands[oi], op, error, oi);
+    if (!error.empty()) return {};
+    instr.operands.push_back(std::move(ro));
+  }
+  for (size_t oi = 0; oi < emit.operands.size(); ++oi) {
+    const auto& op = emit.operands[oi];
+    const bool needs_idx = op.type.has_value() && (op.type == OperandType::Resource || op.type == OperandType::CBuffer || op.type == OperandType::Sampler || op.type == OperandType::UAV || op.type == OperandType::Stream);
+    if (instr.operands[oi].index_entries.empty() && op.capture.empty() && op.IndexPatterns().empty() && !op.handle && needs_idx) {
+      error = path + ".operands[" + std::to_string(oi) + "]" + ": emit operand has no index_entries source";
+      return {};
+    }
+  }
+  if (!BuildExtendedOpcodeChain(context, instr, emit.extended_opcodes, path, error)) {
+    return {};
+  }
+  return ShaderProgram::FinalizeInstruction(std::move(instr));
+}
+
+auto MatchesInstruction(const Instruction& instr, std::unordered_map<std::string, Operand::Index>& captured_index_values, const InstructionPattern& pattern, const ExecutionContext& context) -> bool {
+  if (pattern.opcode.has_value() && instr.opcode != *pattern.opcode) return false;
+  if (pattern.saturate.has_value() && instr.controls.saturate != *pattern.saturate) return false;
+  if (pattern.test_boolean >= 0 && instr.controls.test_boolean != static_cast<uint32_t>(pattern.test_boolean)) return false;
+  if (pattern.interpolation_mode.has_value()) {
+    if (instr.opcode != static_cast<uint32_t>(Opcode::DclInputPs) && instr.opcode != static_cast<uint32_t>(Opcode::DclInputPsSiv)) return false;
+    if (instr.controls.input_interpolation_mode.has_value() && *instr.controls.input_interpolation_mode != static_cast<uint32_t>(*pattern.interpolation_mode)) return false;
+  }
+  if (pattern.dimension.has_value() && instr.controls.resource_dimension != pattern.dimension) return false;
+  for (uint32_t component = 0; component < 4; ++component) {
+    if (pattern.return_type[component].has_value() && instr.controls.resource_return_type[component] != pattern.return_type[component]) return false;
+  }
+  if (pattern.structure_stride != 0 && instr.controls.structure_stride != pattern.structure_stride) return false;
+  if (pattern.access_pattern.has_value() && instr.controls.access_pattern != pattern.access_pattern) return false;
+  if (pattern.mode.has_value() && instr.controls.mode != pattern.mode) return false;
+  if (pattern.uav_flags != 0 && instr.controls.uav_flags != pattern.uav_flags) return false;
+  // Extended-opcode expectations: absent = wildcard (any chain, including
+  // none); present = exact full-chain match (count + per-entry rules).
+  if (pattern.extended_opcodes.has_value()) {
+    const auto& pattern_ext = *pattern.extended_opcodes;
+    if (pattern_ext.size() != instr.controls.extended_op_codes.size()) return false;
+    for (size_t i = 0; i < pattern_ext.size(); ++i) {
+      const auto& pattern_val = pattern_ext[i];
+      const auto& instr_val = instr.controls.extended_op_codes[i];
+      switch (pattern_val.kind) {
+        case ApplyRuleStep::ExtendedOpcodePattern::Kind::Any:
+          break;
+        case ApplyRuleStep::ExtendedOpcodePattern::Kind::Raw:
+          if (pattern_val.raw != instr_val.value) return false;
+          break;
+        case ApplyRuleStep::ExtendedOpcodePattern::Kind::Type: {
+          if (static_cast<dxp::sm5::ExtendedOpcodeType>(instr_val.value & kExtendedOpcodeMask) != pattern_val.type) {
+            return false;
+          }
+          // Structured payload expectations compare the decoded token.
+          if (pattern_val.sample_controls.has_value() || pattern_val.resource_dim.has_value()
+              || pattern_val.resource_return_type.has_value()) {
+            const auto kDecoded = ParseExtendedOpcodeToken(instr_val.value);
+            if (pattern_val.sample_controls.has_value()) {
+              const auto* kPayload = std::get_if<SampleControlsPayload>(&kDecoded.payload);
+              if (kPayload == nullptr) return false;
+              if (kPayload->u != pattern_val.sample_controls->u || kPayload->v != pattern_val.sample_controls->v
+                  || kPayload->w != pattern_val.sample_controls->w) {
+                return false;
+              }
+            }
+            if (pattern_val.resource_dim.has_value()) {
+              const auto* kPayload = std::get_if<ResourceDimPayload>(&kDecoded.payload);
+              if (kPayload == nullptr) return false;
+              if (kPayload->dimension != pattern_val.resource_dim->dimension
+                  || kPayload->structure_stride != pattern_val.resource_dim->structure_stride) {
+                return false;
+              }
+            }
+            if (pattern_val.resource_return_type.has_value()) {
+              const auto* kPayload = std::get_if<ResourceReturnTypePayload>(&kDecoded.payload);
+              if (kPayload == nullptr) return false;
+              if (kPayload->component_types != pattern_val.resource_return_type->component_types) {
+                return false;
+              }
+            }
+          }
+          break;
+        }
+      }
+    }
+  }
+  if (pattern.operands.size() > instr.operands.size()) return false;
+  for (size_t i = 0; i < pattern.operands.size(); ++i) {
+    if (!MatchesOperand(instr.operands[i], captured_index_values, pattern.operands[i], context)) return false;
+  }
+  return true;
+}
+
+auto ResolveOperand(const MatchResult& match, ExecutionContext& context, const OperandPattern& op, const std::string& path, std::string& error, size_t emit_operand_index) -> Operand {
+  Operand operand;
+  const CapturedOperand* co = nullptr;
+  OperandRole cr = OperandRole::Source;
+  if (!op.capture.empty()) {
+    // Prefer the current match's local captures (per-match correctness for
+    // match_all rewrites); fall back to the cross-step global store.
+    auto lit = match.operands.find(op.capture);
+    if (lit != match.operands.end()) {
+      co = &lit->second;
+    } else {
+      auto cit = context.captures.operands.find(op.capture);
+      if (cit == context.captures.operands.end()) {
+        error = path + ": missing captured operand '" + op.capture + "'";
+        return {};
+      }
+      co = &cit->second;
+    }
+    cr = co->role;
+    operand = co->operand_data;
+    if (op.type.has_value()) operand.type = *op.type;
+    if (op.modifier.has_value()) operand.modifier = *op.modifier;
+  }
+  if (co != nullptr && match.instruction != nullptr) {
+    const OperandRole er = (emit_operand_index == 0) ? OperandRole::Destination : OperandRole::Source;
+    if (!ValidateOperandRole(co->operand_data, cr, path, context, error)) return {};
+    if (cr != er) operand = co->ResolveForRole(er);
+    if (!ValidateOperandRole(operand, er, path, context, error)) return {};
+  }
+  if (op.capture.empty()) {
+    if (op.type.has_value()) operand.type = *op.type;
+    if (op.modifier.has_value()) operand.modifier = *op.modifier;
+  }
+  if (op.capture.empty() && !op.IndexPatterns().empty()) {
+    const auto& patterns = op.IndexPatterns();
+    operand.index_entries.clear();
+    for (size_t i = 0; i < patterns.size(); ++i) {
+      const std::string ip = path + ".indices[" + std::to_string(i) + "]";
+      Operand::Index idx = ResolveOperandIndex(match, context, patterns[i], ip, error);
+      if (!error.empty()) return {};
+      operand.index_entries.push_back(std::move(idx));
+    }
+  }
+  if (!op.indices.empty()) {
+    if (!op.capture.empty()) {
+      operand.index_entries.clear();
+    }
+    for (size_t i = 0; i < op.indices.size(); ++i) {
+      const std::string ip = path + ".indices[" + std::to_string(i) + "]";
+      Operand::Index idx;
+      idx.representation = static_cast<Operand::IndexRepresentation>(op.indices[i].representation);
+      idx.immediate_lo = op.indices[i].immediate_lo.value_or(0);
+      idx.immediate_hi = op.indices[i].immediate_hi.value_or(0);
+      operand.index_entries.push_back(std::move(idx));
+    }
+  }
+  if (op.handle && (!op.indices.empty() || !op.immediates_u32.empty() || !op.immediates_u64.empty() || !op.immediates_i32.empty() || !op.immediates_i64.empty() || !op.immediates_f32.empty() || !op.immediates_f64.empty())) {
+    error = path + ": handle cannot be combined with explicit indices or typed immediates";
+    return {};
+  }
+  if (!op.indices.empty() && (!op.immediates_u32.empty() || !op.immediates_u64.empty() || !op.immediates_i32.empty() || !op.immediates_i64.empty() || !op.immediates_f32.empty() || !op.immediates_f64.empty())) {
+    error = path + ": explicit indices and typed immediates cannot be combined";
+    return {};
+  }
+  if (op.handle) {
+    const auto lookup = [&](BindingClass kind) -> const uint32_t* {
+      auto& m = context.Bindings(kind);
+      auto it = m.find(op.handle->name);
+      return it != m.end() ? &it->second : nullptr;
+    };
+    const uint32_t* rbp = nullptr;
+    if (!op.type.has_value()) {
+      error = path + ": SM5 handle operand type is unsupported for resource binding";
+      return {};
+    }
+    switch (*op.type) {
+      case OperandType::Temp:   rbp = lookup(BindingClass::Temp); break;
+      case OperandType::Input:  rbp = lookup(BindingClass::Input); break;
+      case OperandType::Output: rbp = lookup(BindingClass::Output); break;
+      case OperandType::Resource:
+        rbp = lookup(BindingClass::Texture);
+        if (rbp == nullptr) rbp = lookup(BindingClass::RawResource);
+        if (rbp == nullptr) rbp = lookup(BindingClass::StructuredResource);
+        break;
+      case OperandType::Sampler: rbp = lookup(BindingClass::Sampler); break;
+      case OperandType::CBuffer: rbp = lookup(BindingClass::CBuffer); break;
+      case OperandType::UAV:     rbp = lookup(BindingClass::Uav); break;
+      default:
+        error = path + ": SM5 handle operand type is unsupported for resource binding";
+        return {};
+    }
+    if (rbp == nullptr) {
+      error = path + ": missing SM5 declaration handle binding '" + op.handle->name + "'";
+      return {};
+    }
+    // Handle overrides the register index (first entry) but preserves any
+    // subsequent entries (e.g. cbuffer element_index) from a captured operand.
+    if (!operand.index_entries.empty()) {
+      operand.index_entries[0].immediate_lo = *rbp;
+    } else {
+      Operand::Index operand_index;
+      operand_index.representation = Operand::IndexRepresentation::Immediate32;
+      operand_index.immediate_lo = *rbp;
+      operand.index_entries.push_back(std::move(operand_index));
+    }
+    if (op.handle->element_index.has_value()) {
+      uint32_t resolved_element = 0;
+      const auto& elem_idx = *op.handle->element_index;
+      if (std::holds_alternative<std::string>(elem_idx)) {
+        if (const auto* var = context.FindVariable(std::get<std::string>(elem_idx))) {
+          std::visit(
+              [&resolved_element](const auto& v) {
+                using T = std::decay_t<decltype(v)>;
+                if constexpr (std::is_integral_v<T> || std::is_floating_point_v<T>) {
+                  resolved_element = static_cast<uint32_t>(v);
+                }
+              },
+              *var);
+        }
+      } else {
+        resolved_element = std::get<uint32_t>(elem_idx);
+      }
+      Operand::Index element_index;
+      element_index.representation = Operand::IndexRepresentation::Immediate32;
+      element_index.immediate_lo = resolved_element;
+      operand.index_entries.push_back(std::move(element_index));
+    } else if (*op.type == OperandType::CBuffer) {
+      Operand::Index element_index;
+      element_index.representation = Operand::IndexRepresentation::Immediate32;
+      element_index.immediate_lo = 0U;
+      operand.index_entries.push_back(std::move(element_index));
+    }
+  }
+  // Component selection: an explicit recipe spec overrides; a capture replay
+  // inherits the captured operand's ground-truth component mode; immediates
+  // follow the D3D convention (mask mode, no mask bits).
+  if (const auto kSpecMode = PatternComponentMode(op)) {
+    operand.component_mode = *kSpecMode;
+  }
+  if (op.num_components >= 0) {
+    operand.components.num_components = static_cast<NumComponents>(op.num_components);
+  }
+  if (op.type.has_value() && (*op.type == OperandType::Immediate32 || *op.type == OperandType::Immediate64)) {
+    // Immediates carry no component selection; the component count derives from
+    // the value list (1 value -> One, 4 -> Four), matching the D3D convention.
+    operand.component_mode = 0;
+    operand.components.num_components =
+        (operand.index_entries.size() == 1) ? NumComponents::One : NumComponents::Four;
+  } else if (op.type.has_value() && *op.type == OperandType::Sampler && !PatternComponentMode(op)) {
+    // Sampler operands carry no component selection in DXBC (bare s# token).
+    operand.component_mode = 0;
+    operand.components.num_components = NumComponents::Zero;
+  }
+  return operand;
+}
+
+/// @brief Resolves the operand's register through the declaration index and
+/// compares every specified constraint field. Missing declaration = no match.
+bool MatchesDeclConstraint(const Operand& operand, const ApplyRuleStep::OperandPattern::DeclConstraint& constraint, const ExecutionContext& context) {
+  if (operand.index_entries.empty() || !operand.index_entries.front().immediate_lo.has_value()) {
+    return false;
+  }
+  const uint32_t register_index = *operand.index_entries.front().immediate_lo;
+  const auto& index = context.Declarations();
+
+  switch (operand.type) {
+    case OperandType::Resource:
+    case OperandType::UAV:      {
+      const ResourceDeclInfo* decl = index.FindResourceDecl(operand.type, register_index);
+      if (decl == nullptr) return false;
+      if (constraint.dimension.has_value() && decl->dimension != *constraint.dimension) return false;
+      for (uint32_t component = 0; component < 4; ++component) {
+        if (constraint.return_type[component].has_value() && decl->return_types[component] != *constraint.return_type[component]) return false;
+      }
+      if (constraint.structure_stride.has_value() && decl->structure_stride != *constraint.structure_stride) return false;
+      if (constraint.mode.has_value() || constraint.access_pattern.has_value()
+          || constraint.semantic.has_value() || constraint.interpolation.has_value()) {
+        return false;  // fields invalid for this operand type never match
+      }
+      return true;
+    }
+    case OperandType::Sampler: {
+      auto it = index.samplers.find(register_index);
+      if (it == index.samplers.end()) return false;
+      if (constraint.mode.has_value() && it->second != *constraint.mode) return false;
+      if (constraint.dimension.has_value() || constraint.structure_stride.has_value()
+          || constraint.access_pattern.has_value() || constraint.semantic.has_value() || constraint.interpolation.has_value()) {
+        return false;
+      }
+      for (uint32_t component = 0; component < 4; ++component) {
+        if (constraint.return_type[component].has_value()) return false;
+      }
+      return true;
+    }
+    case OperandType::CBuffer: {
+      auto it = index.cbuffers.find(register_index);
+      if (it == index.cbuffers.end()) return false;
+      if (constraint.access_pattern.has_value() && it->second.access_pattern != *constraint.access_pattern) return false;
+      if (constraint.dimension.has_value() || constraint.structure_stride.has_value()
+          || constraint.mode.has_value() || constraint.semantic.has_value() || constraint.interpolation.has_value()) {
+        return false;
+      }
+      for (uint32_t component = 0; component < 4; ++component) {
+        if (constraint.return_type[component].has_value()) return false;
+      }
+      return true;
+    }
+    case OperandType::Input:
+    case OperandType::Output: {
+      const auto& signatures = operand.type == OperandType::Input ? index.inputs : index.outputs;
+      auto it = signatures.find(register_index);
+      if (it == signatures.end()) return false;
+      if (constraint.semantic.has_value() && (!it->second.semantic.has_value() || *it->second.semantic != *constraint.semantic)) return false;
+      if (constraint.interpolation.has_value() && (!it->second.interpolation.has_value() || *it->second.interpolation != *constraint.interpolation)) return false;
+      if (constraint.dimension.has_value() || constraint.structure_stride.has_value()
+          || constraint.mode.has_value() || constraint.access_pattern.has_value()) {
+        return false;
+      }
+      for (uint32_t component = 0; component < 4; ++component) {
+        if (constraint.return_type[component].has_value()) return false;
+      }
+      return true;
+    }
+    default:
+      return false;  // decl constraints only apply to declaration-backed operand types
+  }
+}
+
+auto MatchesOperand(const Operand& operand, std::unordered_map<std::string, Operand::Index>& captured_index_values, const OperandPattern& op, const ExecutionContext& context) -> bool {
+  if (op.any) return true;
+  if (op.type.has_value() && operand.type != *op.type) return false;
+  if (op.num_components >= 0 && static_cast<uint32_t>(operand.components.num_components) != static_cast<uint32_t>(op.num_components)) return false;
+  if (const auto kExpectedMode = PatternComponentMode(op)) {
+    if (operand.component_mode != *kExpectedMode) return false;
+  }
+  if (op.modifier.has_value() && operand.modifier != *op.modifier) return false;
+  // decl constraint: the operand's register must resolve to a declaration whose
+  // payload matches all specified fields. Missing declaration/index = no match.
+  if (op.decl.has_value()) {
+    if (!MatchesDeclConstraint(operand, *op.decl, context)) return false;
+  }
+  // match_capture: the operand must equal a previously captured operand. The
+  // cross-step global store (captured by a prior step's match) is authoritative;
+  // same-match references are resolved the same way once earlier patterns store.
+  if (!op.match_capture.empty()) {
+    auto git = context.captures.operands.find(op.match_capture);
+    if (git == context.captures.operands.end()) return false;
+    if (operand != git->second.operand_data) return false;
+  }
+  if (!op.IndexPatterns().empty()) {
+    const auto& patterns = op.IndexPatterns();
+    if (operand.index_entries.size() != patterns.size()) return false;
+    for (size_t i = 0; i < patterns.size(); ++i) {
+      if (!MatchesOperandIndex(operand.index_entries[i], captured_index_values, patterns[i], context)) return false;
+      const auto& ip = patterns[i];
+      if (!ip.capture.empty()) {
+        const uint32_t* cur = IndexValueForCapture(operand.index_entries[i]);
+        if (cur != nullptr) captured_index_values[ip.capture] = operand.index_entries[i];
+      }
+    }
+  }
+  return true;
+}
+
+auto ResolveOperandIndex(const MatchResult& match, ExecutionContext& context, const OperandIndexPattern& pattern, const std::string& path, std::string& error) -> Operand::Index {
+  Operand::Index idx;
+  switch (pattern.representation) {
+    case OperandIndexRepresentation::Immediate32:             idx.representation = Operand::IndexRepresentation::Immediate32; break;
+    case OperandIndexRepresentation::Immediate64:             idx.representation = Operand::IndexRepresentation::Immediate64; break;
+    case OperandIndexRepresentation::Relative:                idx.representation = Operand::IndexRepresentation::Relative; break;
+    case OperandIndexRepresentation::Immediate32PlusRelative: idx.representation = Operand::IndexRepresentation::Immediate32PlusRelative; break;
+    case OperandIndexRepresentation::Immediate64PlusRelative: idx.representation = Operand::IndexRepresentation::Immediate64PlusRelative; break;
+  }
+  idx.immediate_lo = pattern.immediate_lo;
+  idx.immediate_hi = pattern.immediate_hi;
+  // capture: emit a previously captured index value (from a match's index capture).
+  if (!pattern.capture.empty()) {
+    auto it = context.captures.index_values.find(pattern.capture);
+    if (it == context.captures.index_values.end()) {
+      error = path + ": missing captured operand index '" + pattern.capture + "'";
+      return {};
+    }
+    idx = it->second;
+  }
+  if (pattern.relative_operand) {
+    Operand ro = ResolveOperand(match, context, **pattern.relative_operand, path + ".relative_operand", error, 0);
+    if (!error.empty()) return {};
+    idx.relative_operand = xyz::indirect<Operand>(std::move(ro));
+  }
+  return idx;
+}
+
+auto MatchesOperandIndex(const Operand::Index& idx, const std::unordered_map<std::string, Operand::Index>& captured_index_values, const OperandIndexPattern& pattern, const ExecutionContext& context) -> bool {
+  if (pattern.any) return true;
+  if (static_cast<uint32_t>(idx.representation) != static_cast<uint32_t>(pattern.representation)) return false;
+  if (pattern.immediate_lo.has_value() && idx.immediate_lo != pattern.immediate_lo) return false;
+  if (pattern.immediate_hi.has_value() && idx.immediate_hi != pattern.immediate_hi) return false;
+  if (!pattern.match_capture.empty()) {
+    // Same-match equality first (a value captured earlier in this match), then
+    // the cross-step global store (captured by a prior step).
+    const uint32_t* cv = nullptr;
+    auto it = captured_index_values.find(pattern.match_capture);
+    if (it != captured_index_values.end()) {
+      cv = IndexValueForCapture(it->second);
+    } else {
+      auto git = context.captures.index_values.find(pattern.match_capture);
+      if (git != context.captures.index_values.end()) cv = IndexValueForCapture(git->second);
+    }
+    const uint32_t* cur = IndexValueForCapture(idx);
+    if ((cv == nullptr) || (cur == nullptr) || *cv != *cur) return false;
+  }
+  return true;
+}
+
+bool ValidateOperandRole(const Operand& operand, OperandRole expected_role, const std::string& path, [[maybe_unused]] ExecutionContext& context, std::string& error) {
+  if (operand.components.num_components != NumComponents::Four) return true;
+  const uint32_t sm = DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(operand.component_mode);
+  if (expected_role == OperandRole::Destination && sm != static_cast<uint32_t>(D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE)) {
+    error = path + ": destination operand uses non-mask selection mode";
+    return false;
+  }
+  if (sm == static_cast<uint32_t>(D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE)) {
+    for (int i = 0; i < 4; ++i) {
+      if (DECODE_D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_SOURCE(operand.component_mode, i) > 3) {
+        error = path + ": operand swizzle selector out of range";
+        return false;
+      }
+    }
+  }
+  if (expected_role == OperandRole::Destination && operand.type == OperandType::UAV) {
+    error = path + ": UAV cannot be used as destination operand";
+    return false;
+  }
+  return true;
+}
+
+template <typename TD, typename TS>
+auto BitCastValue(TS v) -> TD {
+  static_assert(sizeof(TD) == sizeof(TS), "size mismatch");
+  TD r{};
+  std::memcpy(&r, &v, sizeof(r));
+  return r;
+}
+
+bool ResolveImmediateFromVariable(const std::string& path, const std::string& vn, const ExecutionContext& ctx, ImmediateFamily family, uint32_t& ol, uint32_t& oh, bool& hh, std::string& error) {
+  const auto* v = ctx.FindVariable(vn);
+  if (v == nullptr) {
+    error = path + ": missing variable '" + vn + "'";
+    return false;
+  }
+  hh = false;
+
+  // The typed immediates array declares the target type (immediates_u32 -> 32-bit int, etc.);
+  // the variable's value is converted to that target, or the resolution fails clearly.
+  auto fail = [&]() {
+    error = path + ": variable '" + vn + "' type does not match its typed immediates array";
+    return false;
+  };
+  auto visit_primitive = [&](const auto& pv) -> bool {
+    using T = std::decay_t<decltype(pv)>;
+    if constexpr (std::is_same_v<T, bool> || std::is_same_v<T, int32_t> || std::is_same_v<T, uint32_t> || std::is_same_v<T, int64_t> || std::is_same_v<T, uint64_t> || std::is_same_v<T, double>) {
+      switch (family) {
+        case ImmediateFamily::U32:
+        case ImmediateFamily::I32: {
+          if constexpr (std::is_same_v<T, bool>) {
+            ol = pv ? 1U : 0U;
+            return true;
+          } else if constexpr (std::is_same_v<T, int32_t> || std::is_same_v<T, uint32_t>) {
+            ol = BitCastValue<uint32_t>(pv);
+            return true;
+          } else {
+            return fail();
+          }
+        }
+        case ImmediateFamily::U64:
+        case ImmediateFamily::I64: {
+          if constexpr (std::is_same_v<T, int64_t> || std::is_same_v<T, uint64_t>) {
+            auto r = BitCastValue<uint64_t>(pv);
+            ol = static_cast<uint32_t>(r & kU32Mask);
+            oh = static_cast<uint32_t>(r >> kBitsPerDword);
+            hh = true;
+            return true;
+          } else {
+            return fail();
+          }
+        }
+        case ImmediateFamily::F32: {
+          if constexpr (std::is_same_v<T, double> || std::is_same_v<T, float>) {
+            ol = BitCastValue<uint32_t>(static_cast<float>(pv));
+            return true;
+          } else {
+            return fail();
+          }
+        }
+        case ImmediateFamily::F64: {
+          if constexpr (std::is_same_v<T, double>) {
+            auto r = BitCastValue<uint64_t>(pv);
+            ol = static_cast<uint32_t>(r & kU32Mask);
+            oh = static_cast<uint32_t>(r >> kBitsPerDword);
+            hh = true;
+            return true;
+          } else {
+            return fail();
+          }
+        }
+        default:
+          return fail();
+      }
+    }
+    return fail();
+  };
+
+  return std::visit(visit_primitive, *v);
 }
 
 }  // namespace
@@ -868,6 +1730,17 @@ auto CompileOperandPattern(const OperandData& operand_data, bool is_emit_operand
         .name = operand_data.handle->name,
         .element_index = operand_data.handle->element_index,
     };
+  }
+  if (operand_data.decl.has_value()) {
+    OperandPattern::DeclConstraint constraint;
+    constraint.dimension = operand_data.decl->dimension;
+    constraint.return_type = operand_data.decl->return_type;
+    constraint.structure_stride = operand_data.decl->structure_stride;
+    constraint.mode = operand_data.decl->mode;
+    constraint.access_pattern = operand_data.decl->access_pattern;
+    constraint.semantic = operand_data.decl->semantic;
+    constraint.interpolation = operand_data.decl->interpolation;
+    op_pattern.decl = std::move(constraint);
   }
   op_pattern.export_as = operand_data.export_as;
   if (operand_data.components.selection_mode == SelectionMode::Mask) {
@@ -1466,6 +2339,9 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, dxp::Valida
     if (!op.match_capture.empty()) {
       return std::unexpected(path + ": match_capture is match-only; use capture to replay a captured operand in emit");
     }
+    if (op.decl.has_value()) {
+      return std::unexpected(path + ": decl is match-only — declaration constraints cannot be used in emit operands");
+    }
     if (op.any) {
       return std::unexpected(path + ": any is not valid in emit operands");
     }
@@ -1623,6 +2499,31 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, dxp::Valida
           return std::unexpected(opPath + ": index match_capture references unknown captured index '" + idx.match_capture + "'");
         }
       }
+      if (op.decl.has_value()) {
+        if (!op.decl->AnyFieldSet()) {
+          return std::unexpected(opPath + ": decl constraint specifies no fields");
+        }
+        if (op.type.has_value()) {
+          const OperandType kType = *op.type;
+          const bool kResourceFields = op.decl->dimension.has_value() || op.decl->structure_stride.has_value()
+                                       || std::any_of(op.decl->return_type.begin(), op.decl->return_type.end(),
+                                                      [](const auto& t) { return t.has_value(); });
+          const bool kResourceType = kType == OperandType::Resource || kType == OperandType::UAV;
+          if (kResourceFields && !kResourceType) {
+            return std::unexpected(opPath + ": decl dimension/return_type/structure_stride are only valid on resource and unordered_access_view operands");
+          }
+          if (op.decl->mode.has_value() && kType != OperandType::Sampler) {
+            return std::unexpected(opPath + ": decl mode is only valid on sampler operands");
+          }
+          if (op.decl->access_pattern.has_value() && kType != OperandType::CBuffer) {
+            return std::unexpected(opPath + ": decl access_pattern is only valid on constant_buffer operands");
+          }
+          if ((op.decl->semantic.has_value() || op.decl->interpolation.has_value())
+              && kType != OperandType::Input && kType != OperandType::Output) {
+            return std::unexpected(opPath + ": decl semantic/interpolation are only valid on input and output operands");
+          }
+        }
+      }
     }
   }
 
@@ -1643,782 +2544,31 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, dxp::Valida
   return {};
 }
 
-namespace {
-
-void StampResourceAccessControls(ExecutionContext& context, Instruction& instr);
-
-// Builds the emitted extended-opcode chain: explicit entries verbatim, then the
-// canonical ResourceDim/ResourceReturnType pair completed from the declaration.
-// Unresolvable declarations are a hard error (no silent bare emits).
-bool BuildExtendedOpcodeChain(ExecutionContext& context, Instruction& instr,
-                              const std::vector<ApplyRuleStep::EmitExtendedOpcode>& entries,
-                              const std::string& path, std::string& error) {
-  const auto kChain = RequiredExtendedChainForOpcode(instr.opcode);
-  std::vector<uint32_t> tokens;
-  tokens.reserve(entries.size() + 2);
-  for (const auto& entry : entries) {
-    if (entry.kind == ApplyRuleStep::EmitExtendedOpcode::Kind::Raw) {
-      tokens.push_back(entry.raw & ~D3D10_SB_OPCODE_EXTENDED_MASK);
-    } else {
-      auto token = static_cast<uint32_t>(entry.type);
-      if (entry.sample_controls.has_value()) {
-        const auto& sc = *entry.sample_controls;
-        token |= ENCODE_IMMEDIATE_D3D10_SB_ADDRESS_OFFSET(0, sc.u);
-        token |= ENCODE_IMMEDIATE_D3D10_SB_ADDRESS_OFFSET(1, sc.v);
-        token |= ENCODE_IMMEDIATE_D3D10_SB_ADDRESS_OFFSET(2, sc.w);
-      } else if (entry.resource_dim.has_value()) {
-        token |= ENCODE_D3D11_SB_EXTENDED_RESOURCE_DIMENSION(entry.resource_dim->dimension);
-        token |= ENCODE_D3D11_SB_EXTENDED_RESOURCE_DIMENSION_STRUCTURE_STRIDE(entry.resource_dim->structure_stride);
-      } else if (entry.resource_return_type.has_value()) {
-        uint32_t component = 0;
-        for (const uint32_t return_type : entry.resource_return_type->component_types) {
-          token |= ENCODE_D3D11_SB_EXTENDED_RESOURCE_RETURN_TYPE(return_type, component);
-          ++component;
-        }
-      }
-      tokens.push_back(token);
-    }
-  }
-
-  if (kChain.RequiresResourcePair()) {
-    bool has_dim = false;
-    bool has_return = false;
-    size_t return_pos = tokens.size();
-    for (size_t i = 0; i < tokens.size(); ++i) {
-      const uint32_t type = tokens[i] & kExtendedOpcodeTypeMask;
-      if (type == static_cast<uint32_t>(ExtendedOpcodeType::ResourceDim)) has_dim = true;
-      if (type == static_cast<uint32_t>(ExtendedOpcodeType::ResourceType)) {
-        has_return = true;
-        return_pos = i;
-      }
-    }
-    if (!has_dim || !has_return) {
-      uint32_t dimension = 0;
-      uint32_t packed_return = 0;
-      if (kChain.HasFixedMetadata()) {
-        dimension = kChain.fixed_dimension;
-        packed_return = kChain.fixed_return_type;
-      } else {
-        StampResourceAccessControls(context, instr);
-        if (!instr.controls.resource_dimension.has_value()) {
-          error = path
-                  +
-                  ": resource-access emit requires a declared resource to synthesize the canonical "
-                  "ResourceDim/ResourceReturnType extended pair (no silent bare emit)";
-          return false;
-        }
-        dimension = static_cast<uint32_t>(static_cast<uint8_t>(*instr.controls.resource_dimension));
-        for (uint32_t component = 0; component < 4; ++component) {
-          if (instr.controls.resource_return_type[component].has_value()) {
-            packed_return |= static_cast<uint32_t>(static_cast<uint8_t>(*instr.controls.resource_return_type[component])) << (component * D3D10_SB_RESOURCE_RETURN_TYPE_NUMBITS);
-          }
-        }
-      }
-      // Insert the missing members at their canonical positions (dim before
-      // return), never after the return token.
-      if (!has_dim) {
-        auto token = static_cast<uint32_t>(ExtendedOpcodeType::ResourceDim);
-        token |= ENCODE_D3D11_SB_EXTENDED_RESOURCE_DIMENSION(dimension);
-        token |= ENCODE_D3D11_SB_EXTENDED_RESOURCE_DIMENSION_STRUCTURE_STRIDE(instr.controls.structure_stride);
-        auto insert_at = tokens.begin();
-        std::advance(insert_at, has_return ? return_pos : tokens.size());
-        tokens.insert(insert_at, token);
-        if (has_return) {
-          ++return_pos;
-        }
-      }
-      if (!has_return) {
-        auto token = static_cast<uint32_t>(ExtendedOpcodeType::ResourceType);
-        for (uint32_t component = 0; component < 4; ++component) {
-          const uint32_t return_type = (packed_return >> (4 * component)) & 0xF;
-          token |= ENCODE_D3D11_SB_EXTENDED_RESOURCE_RETURN_TYPE(
-              return_type != 0 ? return_type : D3D10_SB_RETURN_TYPE_FLOAT, component);
-        }
-        tokens.push_back(token);
-      }
-      context.logger.Log(LogLevel::Warning,
-                         "[Patch] synthesized ResourceDim/ResourceReturnType for emitted opcode "
-                             + std::to_string(static_cast<uint32_t>(instr.opcode)) + " (" + path + ")");
-    }
-  }
-
-  for (size_t i = 0; i < tokens.size(); ++i) {
-    if (i + 1 < tokens.size()) {
-      tokens[i] |= D3D10_SB_OPCODE_EXTENDED_MASK;
-    }
-  }
-  instr.controls.extended_op_codes.clear();
-  instr.controls.extended_op_codes.reserve(tokens.size());
-  for (const uint32_t token : tokens) {
-    instr.controls.extended_op_codes.emplace_back(token);
-  }
-  return true;
-}
-
-auto IndexValueForCapture(const Operand::Index& index) -> const uint32_t* {
-  if (index.immediate_lo.has_value()) return &(*index.immediate_lo);
-  if (index.immediate_hi.has_value()) return &(*index.immediate_hi);
-  return nullptr;
-}
-
-auto CaptureOperands(const Instruction& instruction, const InstructionPattern& pattern,
-                     std::unordered_map<std::string, CapturedOperand>& local_operands,
-                     [[maybe_unused]] const CaptureStore& global_captures) {
-  for (size_t i = 0; i < pattern.operands.size(); ++i) {
-    const auto& op = pattern.operands[i];
-    const auto& opnd = instruction.operands[i];
-    if (!op.capture.empty()) {
-      CapturedOperand cap;
-      cap.operand_data = opnd;
-      cap.role = GetOperandRole(instruction.opcode, i);
-      if (i == 0 && !instruction.operands.empty()) cap.destination_mask = ExtractComponentMask(instruction.operands[0].component_mode, DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(instruction.operands[0].component_mode));
-      cap.export_as = op.export_as;
-      local_operands[op.capture] = std::move(cap);
-    }
-  }
-}
-
-auto CollectMatches(const std::vector<Instruction>& instructions, const InstructionPattern& pattern, CaptureStore& captures, const ExecutionContext& context) -> std::vector<MatchResult> {
-  std::vector<MatchResult> matches;
-  matches.reserve(instructions.size());
-  for (uint32_t i = 0; i < instructions.size(); ++i) {
-    std::unordered_map<std::string, Operand::Index> captured_index_values;
-    if (!MatchesInstruction(instructions[i], captured_index_values, pattern, context)) continue;
-    MatchResult r;
-    r.instruction_index = i;
-    r.instruction = &instructions[i];
-    r.range_start_index = i;
-    r.range_end_index = i;
-    CaptureOperands(instructions[i], pattern, r.operands, captures);
-    r.index_values = std::move(captured_index_values);
-    if (!pattern.capture.empty()) {
-      r.instructions[pattern.capture] = instructions[i];
-      Operand::Index idx;
-      idx.immediate_lo = i;
-      r.index_values[pattern.capture + "_index"] = std::move(idx);
-    }
-    matches.push_back(std::move(r));
-  }
-  return matches;
-}
-
-/// @brief Blob window matching: `match_start` pattern at i, `match_end` pattern at
-/// j >= i, everything between (inclusive) belongs to the window. Captures from both
-/// endpoint patterns are collected into the match result.
-auto CollectWindowMatches(const std::vector<Instruction>& instructions, const InstructionPattern& start_pattern,
-                          const InstructionPattern& end_pattern, CaptureStore& captures, const ExecutionContext& context) -> std::vector<MatchResult> {
-  std::vector<MatchResult> matches;
-  if (instructions.empty()) return matches;
-
-  for (uint32_t i = 0; i < instructions.size(); ++i) {
-    std::unordered_map<std::string, Operand::Index> start_index_values;
-    if (!MatchesInstruction(instructions[i], start_index_values, start_pattern, context)) continue;
-
-    for (uint32_t j = i; j < instructions.size(); ++j) {
-      std::unordered_map<std::string, Operand::Index> end_index_values;
-      if (!MatchesInstruction(instructions[j], end_index_values, end_pattern, context)) continue;
-
-      MatchResult r;
-      r.instruction_index = i;
-      r.instruction = &instructions[i];
-      r.range_start_index = i;
-      r.range_end_index = j;
-      r.index_values = std::move(start_index_values);
-      r.index_values.insert(end_index_values.begin(), end_index_values.end());
-      CaptureOperands(instructions[i], start_pattern, r.operands, captures);
-      CaptureOperands(instructions[j], end_pattern, r.operands, captures);
-      if (!start_pattern.capture.empty()) {
-        r.instructions[start_pattern.capture] = instructions[i];
-        Operand::Index idx;
-        idx.immediate_lo = i;
-        r.index_values[start_pattern.capture + "_index"] = std::move(idx);
-      }
-      if (!end_pattern.capture.empty()) {
-        r.instructions[end_pattern.capture] = instructions[j];
-        Operand::Index idx;
-        idx.immediate_lo = j;
-        r.index_values[end_pattern.capture + "_index"] = std::move(idx);
-      }
-      matches.push_back(std::move(r));
-      break;  // innermost end match for this start; next start index is a new window
-    }
-  }
-  return matches;
-}
-
-auto CollectSequenceMatches(const std::vector<Instruction>& instructions, const std::vector<InstructionPattern>& patterns, CaptureStore& captures, const ExecutionContext& context) -> std::vector<MatchResult> {
-  std::vector<MatchResult> matches;
-  if (patterns.empty() || patterns.size() > instructions.size()) return matches;
-  const auto limit = static_cast<uint32_t>(instructions.size() - patterns.size() + 1);
-  for (uint32_t start = 0; start < limit; ++start) {
-    std::unordered_map<std::string, Operand::Index> captured_index_values;
-    bool ok = true;
-    for (uint32_t pi = 0; pi < patterns.size(); ++pi) {
-      if (!MatchesInstruction(instructions[start + pi], captured_index_values, patterns[pi], context)) {
-        ok = false;
-        break;
-      }
-    }
-    if (!ok) continue;
-    MatchResult r;
-    r.instruction_index = start;
-    r.instruction = &instructions[start];
-    r.range_start_index = start;
-    r.range_end_index = start + static_cast<uint32_t>(patterns.size() - 1);
-    r.index_values = std::move(captured_index_values);
-    for (uint32_t pi = 0; pi < patterns.size(); ++pi) {
-      CaptureOperands(instructions[start + pi], patterns[pi], r.operands, captures);
-      if (!patterns[pi].capture.empty()) {
-        r.instructions[patterns[pi].capture] = instructions[start + pi];
-        Operand::Index idx;
-        idx.immediate_lo = start + pi;
-        r.index_values[patterns[pi].capture + "_index"] = std::move(idx);
-      }
-    }
-    matches.push_back(std::move(r));
-  }
-  return matches;
-}
-
-/// @brief Expands a stored blob into an emit stream (deep copy; the stored copy
-/// is never aliased — each emit produces an independent duplicate).
-auto ResolveEmitBlobEntry([[maybe_unused]] const MatchResult& match, ExecutionContext& context, const std::string& blob_name,
-                          const std::string& path, std::string& error) -> std::vector<Instruction> {
-  auto it = context.captures.blobs.find(blob_name);
-  if (it == context.captures.blobs.end()) {
-    error = path + ": unknown blob '" + blob_name + "'";
-    return {};
-  }
-  if (it->second.instructions.empty()) {
-    error = path + ": blob '" + blob_name + "' is empty";
-    return {};
-  }
-  std::vector<Instruction> expanded;
-  expanded.reserve(it->second.instructions.size());
-  for (const Instruction& instr : it->second.instructions) {
-    // FinalizeInstruction recomputes dword length; the copy is independent by value
-    expanded.push_back(ShaderProgram::FinalizeInstruction(instr));
-  }
-  return expanded;
-}
-
-auto ResolveEmit(const MatchResult& match, ExecutionContext& context, const EmitPattern& emit, const std::string& path, std::string& error) -> Instruction {
-  Instruction instr;
-  if (!emit.capture.empty()) {
-    auto it = context.captures.instructions.find(emit.capture);
-    if (it == context.captures.instructions.end()) {
-      error = path + ": unknown captured instruction '" + emit.capture + "'";
-      return {};
-    }
-    const auto& cap = it->second;
-    instr = cap.instruction_data;
-    if (emit.opcode.has_value()) instr.opcode = *emit.opcode;
-    if (emit.saturate.has_value()) instr.controls.saturate = *emit.saturate;
-    if (emit.test_boolean >= 0) {
-      instr.controls.test_boolean = static_cast<uint32_t>(emit.test_boolean);
-    }
-    if (emit.interpolation_mode.has_value()) {
-      instr.controls.input_interpolation_mode = static_cast<uint32_t>(*emit.interpolation_mode);
-    }
-    for (size_t oi = 0; oi < emit.operands.size(); ++oi) {
-      const std::string op = path + ".operands[" + std::to_string(oi) + "]";
-      Operand ro = ResolveOperand(match, context, emit.operands[oi], op, error, oi);
-      if (!error.empty()) return {};
-      instr.operands.push_back(std::move(ro));
-    }
-    return ShaderProgram::FinalizeInstruction(std::move(instr));
-  }
-  instr.opcode = emit.opcode.has_value() ? *emit.opcode : OpcodeUnknown();
-  instr.controls.saturate = emit.saturate.value_or(false);
-  instr.controls.test_boolean.reset();
-  if (emit.test_boolean >= 0) {
-    instr.controls.test_boolean = 1U;
-    instr.controls.test_boolean = static_cast<uint32_t>(emit.test_boolean);
-  }
-  if (emit.interpolation_mode.has_value()) {
-    instr.controls.input_interpolation_mode = static_cast<uint32_t>(*emit.interpolation_mode);
-  }
-  if (emit.dimension.has_value()) {
-    instr.controls.resource_dimension = emit.dimension;
-  }
-  for (uint32_t component = 0; component < 4; ++component) {
-    if (emit.return_type[component].has_value()) {
-      instr.controls.resource_return_type[component] = emit.return_type[component];
-    }
-  }
-  if (emit.structure_stride != 0) {
-    instr.controls.structure_stride = emit.structure_stride;
-  }
-  if (emit.access_pattern.has_value()) {
-    instr.controls.access_pattern = emit.access_pattern;
-    instr.controls.access_pattern_raw = static_cast<uint32_t>(static_cast<uint8_t>(*emit.access_pattern));
-  }
-  if (emit.mode.has_value()) {
-    instr.controls.mode = emit.mode;
-  }
-  if (emit.uav_flags != 0) {
-    instr.controls.uav_flags = emit.uav_flags;
-  }
-  instr.length_in_dwords = 0;
-  for (size_t oi = 0; oi < emit.operands.size(); ++oi) {
-    const std::string op = path + ".operands[" + std::to_string(oi) + "]";
-    Operand ro = ResolveOperand(match, context, emit.operands[oi], op, error, oi);
-    if (!error.empty()) return {};
-    instr.operands.push_back(std::move(ro));
-  }
-  for (size_t oi = 0; oi < emit.operands.size(); ++oi) {
-    const auto& op = emit.operands[oi];
-    const bool needs_idx = op.type.has_value() && (op.type == OperandType::Resource || op.type == OperandType::CBuffer || op.type == OperandType::Sampler || op.type == OperandType::UAV || op.type == OperandType::Stream);
-    if (instr.operands[oi].index_entries.empty() && op.capture.empty() && op.IndexPatterns().empty() && !op.handle && needs_idx) {
-      error = path + ".operands[" + std::to_string(oi) + "]" + ": emit operand has no index_entries source";
-      return {};
-    }
-  }
-  if (!BuildExtendedOpcodeChain(context, instr, emit.extended_opcodes, path, error)) {
-    return {};
-  }
-  return ShaderProgram::FinalizeInstruction(std::move(instr));
-}
-
-// Stamps resource dimension/return type from the DclResource declaration so the
+// Stamps resource dimension/return type from the operand's declaration so the
 // canonical extended pair can be synthesized. Parsed instructions are untouched.
 void StampResourceAccessControls(ExecutionContext& context, Instruction& instr) {
   if (!instr.controls.extended_op_codes.empty() || !RequiredExtendedChainForOpcode(instr.opcode).RequiresResourcePair()) {
     return;
   }
   for (const auto& operand : instr.operands) {
-    if (operand.type != OperandType::Resource || operand.index_entries.empty() || !operand.index_entries[0].immediate_lo.has_value()) {
+    if (operand.type != OperandType::Resource && operand.type != OperandType::UAV) {
+      continue;
+    }
+    if (operand.index_entries.empty() || !operand.index_entries[0].immediate_lo.has_value()) {
       continue;
     }
     const uint32_t register_index = *operand.index_entries[0].immediate_lo;
-    for (const auto& dcl : context.program.instructions) {
-      if (dcl.opcode != Opcode::DclResource || dcl.operands.empty() || dcl.operands[0].type != OperandType::Resource
-          || dcl.operands[0].index_entries.empty() || !dcl.operands[0].index_entries[0].immediate_lo.has_value()) {
-        continue;
-      }
-      if (*dcl.operands[0].index_entries[0].immediate_lo == register_index) {
-        instr.controls.resource_dimension = dcl.controls.resource_dimension;
-        instr.controls.resource_return_type = dcl.controls.resource_return_type;
-        return;
-      }
+    const ResourceDeclInfo* decl = context.Declarations().FindResourceDecl(operand.type, register_index);
+    if (decl == nullptr) {
+      continue;
     }
-    break;
+    instr.controls.resource_dimension = decl->dimension;
+    for (uint32_t component = 0; component < 4; ++component) {
+      instr.controls.resource_return_type[component] = decl->return_types[component];
+    }
+    return;
   }
 }
-
-auto MatchesInstruction(const Instruction& instr, std::unordered_map<std::string, Operand::Index>& captured_index_values, const InstructionPattern& pattern, const ExecutionContext& context) -> bool {
-  if (pattern.opcode.has_value() && instr.opcode != *pattern.opcode) return false;
-  if (pattern.saturate.has_value() && instr.controls.saturate != *pattern.saturate) return false;
-  if (pattern.test_boolean >= 0 && instr.controls.test_boolean != static_cast<uint32_t>(pattern.test_boolean)) return false;
-  if (pattern.interpolation_mode.has_value()) {
-    if (instr.opcode != static_cast<uint32_t>(Opcode::DclInputPs) && instr.opcode != static_cast<uint32_t>(Opcode::DclInputPsSiv)) return false;
-    if (instr.controls.input_interpolation_mode.has_value() && *instr.controls.input_interpolation_mode != static_cast<uint32_t>(*pattern.interpolation_mode)) return false;
-  }
-  if (pattern.dimension.has_value() && instr.controls.resource_dimension != pattern.dimension) return false;
-  for (uint32_t component = 0; component < 4; ++component) {
-    if (pattern.return_type[component].has_value() && instr.controls.resource_return_type[component] != pattern.return_type[component]) return false;
-  }
-  if (pattern.structure_stride != 0 && instr.controls.structure_stride != pattern.structure_stride) return false;
-  if (pattern.access_pattern.has_value() && instr.controls.access_pattern != pattern.access_pattern) return false;
-  if (pattern.mode.has_value() && instr.controls.mode != pattern.mode) return false;
-  if (pattern.uav_flags != 0 && instr.controls.uav_flags != pattern.uav_flags) return false;
-  // Extended-opcode expectations: absent = wildcard (any chain, including
-  // none); present = exact full-chain match (count + per-entry rules).
-  if (pattern.extended_opcodes.has_value()) {
-    const auto& pattern_ext = *pattern.extended_opcodes;
-    if (pattern_ext.size() != instr.controls.extended_op_codes.size()) return false;
-    for (size_t i = 0; i < pattern_ext.size(); ++i) {
-      const auto& pattern_val = pattern_ext[i];
-      const auto& instr_val = instr.controls.extended_op_codes[i];
-      switch (pattern_val.kind) {
-        case ApplyRuleStep::ExtendedOpcodePattern::Kind::Any:
-          break;
-        case ApplyRuleStep::ExtendedOpcodePattern::Kind::Raw:
-          if (pattern_val.raw != instr_val.value) return false;
-          break;
-        case ApplyRuleStep::ExtendedOpcodePattern::Kind::Type: {
-          if (static_cast<dxp::sm5::ExtendedOpcodeType>(instr_val.value & kExtendedOpcodeMask) != pattern_val.type) {
-            return false;
-          }
-          // Structured payload expectations compare the decoded token.
-          if (pattern_val.sample_controls.has_value() || pattern_val.resource_dim.has_value()
-              || pattern_val.resource_return_type.has_value()) {
-            const auto kDecoded = ParseExtendedOpcodeToken(instr_val.value);
-            if (pattern_val.sample_controls.has_value()) {
-              const auto* kPayload = std::get_if<SampleControlsPayload>(&kDecoded.payload);
-              if (kPayload == nullptr) return false;
-              if (kPayload->u != pattern_val.sample_controls->u || kPayload->v != pattern_val.sample_controls->v
-                  || kPayload->w != pattern_val.sample_controls->w) {
-                return false;
-              }
-            }
-            if (pattern_val.resource_dim.has_value()) {
-              const auto* kPayload = std::get_if<ResourceDimPayload>(&kDecoded.payload);
-              if (kPayload == nullptr) return false;
-              if (kPayload->dimension != pattern_val.resource_dim->dimension
-                  || kPayload->structure_stride != pattern_val.resource_dim->structure_stride) {
-                return false;
-              }
-            }
-            if (pattern_val.resource_return_type.has_value()) {
-              const auto* kPayload = std::get_if<ResourceReturnTypePayload>(&kDecoded.payload);
-              if (kPayload == nullptr) return false;
-              if (kPayload->component_types != pattern_val.resource_return_type->component_types) {
-                return false;
-              }
-            }
-          }
-          break;
-        }
-      }
-    }
-  }
-  if (pattern.operands.size() > instr.operands.size()) return false;
-  for (size_t i = 0; i < pattern.operands.size(); ++i) {
-    if (!MatchesOperand(instr.operands[i], captured_index_values, pattern.operands[i], context)) return false;
-  }
-  return true;
-}
-
-auto ResolveOperand(const MatchResult& match, ExecutionContext& context, const OperandPattern& op, const std::string& path, std::string& error, size_t emit_operand_index) -> Operand {
-  Operand operand;
-  const CapturedOperand* co = nullptr;
-  OperandRole cr = OperandRole::Source;
-  if (!op.capture.empty()) {
-    // Prefer the current match's local captures (per-match correctness for
-    // match_all rewrites); fall back to the cross-step global store.
-    auto lit = match.operands.find(op.capture);
-    if (lit != match.operands.end()) {
-      co = &lit->second;
-    } else {
-      auto cit = context.captures.operands.find(op.capture);
-      if (cit == context.captures.operands.end()) {
-        error = path + ": missing captured operand '" + op.capture + "'";
-        return {};
-      }
-      co = &cit->second;
-    }
-    cr = co->role;
-    operand = co->operand_data;
-    if (op.type.has_value()) operand.type = *op.type;
-    if (op.modifier.has_value()) operand.modifier = *op.modifier;
-  }
-  if (co != nullptr && match.instruction != nullptr) {
-    const OperandRole er = (emit_operand_index == 0) ? OperandRole::Destination : OperandRole::Source;
-    if (!ValidateOperandRole(co->operand_data, cr, path, context, error)) return {};
-    if (cr != er) operand = co->ResolveForRole(er);
-    if (!ValidateOperandRole(operand, er, path, context, error)) return {};
-  }
-  if (op.capture.empty()) {
-    if (op.type.has_value()) operand.type = *op.type;
-    if (op.modifier.has_value()) operand.modifier = *op.modifier;
-  }
-  if (op.capture.empty() && !op.IndexPatterns().empty()) {
-    const auto& patterns = op.IndexPatterns();
-    operand.index_entries.clear();
-    for (size_t i = 0; i < patterns.size(); ++i) {
-      const std::string ip = path + ".indices[" + std::to_string(i) + "]";
-      Operand::Index idx = ResolveOperandIndex(match, context, patterns[i], ip, error);
-      if (!error.empty()) return {};
-      operand.index_entries.push_back(std::move(idx));
-    }
-  }
-  if (!op.indices.empty()) {
-    if (!op.capture.empty()) {
-      operand.index_entries.clear();
-    }
-    for (size_t i = 0; i < op.indices.size(); ++i) {
-      const std::string ip = path + ".indices[" + std::to_string(i) + "]";
-      Operand::Index idx;
-      idx.representation = static_cast<Operand::IndexRepresentation>(op.indices[i].representation);
-      idx.immediate_lo = op.indices[i].immediate_lo.value_or(0);
-      idx.immediate_hi = op.indices[i].immediate_hi.value_or(0);
-      operand.index_entries.push_back(std::move(idx));
-    }
-  }
-  if (op.handle && (!op.indices.empty() || !op.immediates_u32.empty() || !op.immediates_u64.empty() || !op.immediates_i32.empty() || !op.immediates_i64.empty() || !op.immediates_f32.empty() || !op.immediates_f64.empty())) {
-    error = path + ": handle cannot be combined with explicit indices or typed immediates";
-    return {};
-  }
-  if (!op.indices.empty() && (!op.immediates_u32.empty() || !op.immediates_u64.empty() || !op.immediates_i32.empty() || !op.immediates_i64.empty() || !op.immediates_f32.empty() || !op.immediates_f64.empty())) {
-    error = path + ": explicit indices and typed immediates cannot be combined";
-    return {};
-  }
-  if (op.handle) {
-    const auto lookup = [&](BindingClass kind) -> const uint32_t* {
-      auto& m = context.Bindings(kind);
-      auto it = m.find(op.handle->name);
-      return it != m.end() ? &it->second : nullptr;
-    };
-    const uint32_t* rbp = nullptr;
-    if (!op.type.has_value()) {
-      error = path + ": SM5 handle operand type is unsupported for resource binding";
-      return {};
-    }
-    switch (*op.type) {
-      case OperandType::Temp:   rbp = lookup(BindingClass::Temp); break;
-      case OperandType::Input:  rbp = lookup(BindingClass::Input); break;
-      case OperandType::Output: rbp = lookup(BindingClass::Output); break;
-      case OperandType::Resource:
-        rbp = lookup(BindingClass::Texture);
-        if (rbp == nullptr) rbp = lookup(BindingClass::RawResource);
-        if (rbp == nullptr) rbp = lookup(BindingClass::StructuredResource);
-        break;
-      case OperandType::Sampler: rbp = lookup(BindingClass::Sampler); break;
-      case OperandType::CBuffer: rbp = lookup(BindingClass::CBuffer); break;
-      case OperandType::UAV:     rbp = lookup(BindingClass::Uav); break;
-      default:
-        error = path + ": SM5 handle operand type is unsupported for resource binding";
-        return {};
-    }
-    if (rbp == nullptr) {
-      error = path + ": missing SM5 declaration handle binding '" + op.handle->name + "'";
-      return {};
-    }
-    // Handle overrides the register index (first entry) but preserves any
-    // subsequent entries (e.g. cbuffer element_index) from a captured operand.
-    if (!operand.index_entries.empty()) {
-      operand.index_entries[0].immediate_lo = *rbp;
-    } else {
-      Operand::Index operand_index;
-      operand_index.representation = Operand::IndexRepresentation::Immediate32;
-      operand_index.immediate_lo = *rbp;
-      operand.index_entries.push_back(std::move(operand_index));
-    }
-    if (op.handle->element_index.has_value()) {
-      uint32_t resolved_element = 0;
-      const auto& elem_idx = *op.handle->element_index;
-      if (std::holds_alternative<std::string>(elem_idx)) {
-        if (const auto* var = context.FindVariable(std::get<std::string>(elem_idx))) {
-          std::visit(
-              [&resolved_element](const auto& v) {
-                using T = std::decay_t<decltype(v)>;
-                if constexpr (std::is_integral_v<T> || std::is_floating_point_v<T>) {
-                  resolved_element = static_cast<uint32_t>(v);
-                }
-              },
-              *var);
-        }
-      } else {
-        resolved_element = std::get<uint32_t>(elem_idx);
-      }
-      Operand::Index element_index;
-      element_index.representation = Operand::IndexRepresentation::Immediate32;
-      element_index.immediate_lo = resolved_element;
-      operand.index_entries.push_back(std::move(element_index));
-    } else if (*op.type == OperandType::CBuffer) {
-      Operand::Index element_index;
-      element_index.representation = Operand::IndexRepresentation::Immediate32;
-      element_index.immediate_lo = 0U;
-      operand.index_entries.push_back(std::move(element_index));
-    }
-  }
-  // Component selection: an explicit recipe spec overrides; a capture replay
-  // inherits the captured operand's ground-truth component mode; immediates
-  // follow the D3D convention (mask mode, no mask bits).
-  if (const auto kSpecMode = PatternComponentMode(op)) {
-    operand.component_mode = *kSpecMode;
-  }
-  if (op.num_components >= 0) {
-    operand.components.num_components = static_cast<NumComponents>(op.num_components);
-  }
-  if (op.type.has_value() && (*op.type == OperandType::Immediate32 || *op.type == OperandType::Immediate64)) {
-    // Immediates carry no component selection; the component count derives from
-    // the value list (1 value -> One, 4 -> Four), matching the D3D convention.
-    operand.component_mode = 0;
-    operand.components.num_components =
-        (operand.index_entries.size() == 1) ? NumComponents::One : NumComponents::Four;
-  } else if (op.type.has_value() && *op.type == OperandType::Sampler && !PatternComponentMode(op)) {
-    // Sampler operands carry no component selection in DXBC (bare s# token).
-    operand.component_mode = 0;
-    operand.components.num_components = NumComponents::Zero;
-  }
-  return operand;
-}
-
-auto MatchesOperand(const Operand& operand, std::unordered_map<std::string, Operand::Index>& captured_index_values, const OperandPattern& op, const ExecutionContext& context) -> bool {
-  if (op.any) return true;
-  if (op.type.has_value() && operand.type != *op.type) return false;
-  if (op.num_components >= 0 && static_cast<uint32_t>(operand.components.num_components) != static_cast<uint32_t>(op.num_components)) return false;
-  if (const auto kExpectedMode = PatternComponentMode(op)) {
-    if (operand.component_mode != *kExpectedMode) return false;
-  }
-  if (op.modifier.has_value() && operand.modifier != *op.modifier) return false;
-  // match_capture: the operand must equal a previously captured operand. The
-  // cross-step global store (captured by a prior step's match) is authoritative;
-  // same-match references are resolved the same way once earlier patterns store.
-  if (!op.match_capture.empty()) {
-    auto git = context.captures.operands.find(op.match_capture);
-    if (git == context.captures.operands.end()) return false;
-    if (operand != git->second.operand_data) return false;
-  }
-  if (!op.IndexPatterns().empty()) {
-    const auto& patterns = op.IndexPatterns();
-    if (operand.index_entries.size() != patterns.size()) return false;
-    for (size_t i = 0; i < patterns.size(); ++i) {
-      if (!MatchesOperandIndex(operand.index_entries[i], captured_index_values, patterns[i], context)) return false;
-      const auto& ip = patterns[i];
-      if (!ip.capture.empty()) {
-        const uint32_t* cur = IndexValueForCapture(operand.index_entries[i]);
-        if (cur != nullptr) captured_index_values[ip.capture] = operand.index_entries[i];
-      }
-    }
-  }
-  return true;
-}
-
-auto ResolveOperandIndex(const MatchResult& match, ExecutionContext& context, const OperandIndexPattern& pattern, const std::string& path, std::string& error) -> Operand::Index {
-  Operand::Index idx;
-  switch (pattern.representation) {
-    case OperandIndexRepresentation::Immediate32:             idx.representation = Operand::IndexRepresentation::Immediate32; break;
-    case OperandIndexRepresentation::Immediate64:             idx.representation = Operand::IndexRepresentation::Immediate64; break;
-    case OperandIndexRepresentation::Relative:                idx.representation = Operand::IndexRepresentation::Relative; break;
-    case OperandIndexRepresentation::Immediate32PlusRelative: idx.representation = Operand::IndexRepresentation::Immediate32PlusRelative; break;
-    case OperandIndexRepresentation::Immediate64PlusRelative: idx.representation = Operand::IndexRepresentation::Immediate64PlusRelative; break;
-  }
-  idx.immediate_lo = pattern.immediate_lo;
-  idx.immediate_hi = pattern.immediate_hi;
-  // capture: emit a previously captured index value (from a match's index capture).
-  if (!pattern.capture.empty()) {
-    auto it = context.captures.index_values.find(pattern.capture);
-    if (it == context.captures.index_values.end()) {
-      error = path + ": missing captured operand index '" + pattern.capture + "'";
-      return {};
-    }
-    idx = it->second;
-  }
-  if (pattern.relative_operand) {
-    Operand ro = ResolveOperand(match, context, **pattern.relative_operand, path + ".relative_operand", error, 0);
-    if (!error.empty()) return {};
-    idx.relative_operand = xyz::indirect<Operand>(std::move(ro));
-  }
-  return idx;
-}
-
-auto MatchesOperandIndex(const Operand::Index& idx, const std::unordered_map<std::string, Operand::Index>& captured_index_values, const OperandIndexPattern& pattern, const ExecutionContext& context) -> bool {
-  if (pattern.any) return true;
-  if (static_cast<uint32_t>(idx.representation) != static_cast<uint32_t>(pattern.representation)) return false;
-  if (pattern.immediate_lo.has_value() && idx.immediate_lo != pattern.immediate_lo) return false;
-  if (pattern.immediate_hi.has_value() && idx.immediate_hi != pattern.immediate_hi) return false;
-  if (!pattern.match_capture.empty()) {
-    // Same-match equality first (a value captured earlier in this match), then
-    // the cross-step global store (captured by a prior step).
-    const uint32_t* cv = nullptr;
-    auto it = captured_index_values.find(pattern.match_capture);
-    if (it != captured_index_values.end()) {
-      cv = IndexValueForCapture(it->second);
-    } else {
-      auto git = context.captures.index_values.find(pattern.match_capture);
-      if (git != context.captures.index_values.end()) cv = IndexValueForCapture(git->second);
-    }
-    const uint32_t* cur = IndexValueForCapture(idx);
-    if ((cv == nullptr) || (cur == nullptr) || *cv != *cur) return false;
-  }
-  return true;
-}
-
-bool ValidateOperandRole(const Operand& operand, OperandRole expected_role, const std::string& path, [[maybe_unused]] ExecutionContext& context, std::string& error) {
-  if (operand.components.num_components != NumComponents::Four) return true;
-  const uint32_t sm = DECODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(operand.component_mode);
-  if (expected_role == OperandRole::Destination && sm != static_cast<uint32_t>(D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE)) {
-    error = path + ": destination operand uses non-mask selection mode";
-    return false;
-  }
-  if (sm == static_cast<uint32_t>(D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE)) {
-    for (int i = 0; i < 4; ++i) {
-      if (DECODE_D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_SOURCE(operand.component_mode, i) > 3) {
-        error = path + ": operand swizzle selector out of range";
-        return false;
-      }
-    }
-  }
-  if (expected_role == OperandRole::Destination && operand.type == OperandType::UAV) {
-    error = path + ": UAV cannot be used as destination operand";
-    return false;
-  }
-  return true;
-}
-
-template <typename TD, typename TS>
-auto BitCastValue(TS v) -> TD {
-  static_assert(sizeof(TD) == sizeof(TS), "size mismatch");
-  TD r{};
-  std::memcpy(&r, &v, sizeof(r));
-  return r;
-}
-
-bool ResolveImmediateFromVariable(const std::string& path, const std::string& vn, const ExecutionContext& ctx, ImmediateFamily family, uint32_t& ol, uint32_t& oh, bool& hh, std::string& error) {
-  const auto* v = ctx.FindVariable(vn);
-  if (v == nullptr) {
-    error = path + ": missing variable '" + vn + "'";
-    return false;
-  }
-  hh = false;
-
-  // The typed immediates array declares the target type (immediates_u32 -> 32-bit int, etc.);
-  // the variable's value is converted to that target, or the resolution fails clearly.
-  auto fail = [&]() {
-    error = path + ": variable '" + vn + "' type does not match its typed immediates array";
-    return false;
-  };
-  auto visit_primitive = [&](const auto& pv) -> bool {
-    using T = std::decay_t<decltype(pv)>;
-    if constexpr (std::is_same_v<T, bool> || std::is_same_v<T, int32_t> || std::is_same_v<T, uint32_t> || std::is_same_v<T, int64_t> || std::is_same_v<T, uint64_t> || std::is_same_v<T, double>) {
-      switch (family) {
-        case ImmediateFamily::U32:
-        case ImmediateFamily::I32: {
-          if constexpr (std::is_same_v<T, bool>) {
-            ol = pv ? 1U : 0U;
-            return true;
-          } else if constexpr (std::is_same_v<T, int32_t> || std::is_same_v<T, uint32_t>) {
-            ol = BitCastValue<uint32_t>(pv);
-            return true;
-          } else {
-            return fail();
-          }
-        }
-        case ImmediateFamily::U64:
-        case ImmediateFamily::I64: {
-          if constexpr (std::is_same_v<T, int64_t> || std::is_same_v<T, uint64_t>) {
-            auto r = BitCastValue<uint64_t>(pv);
-            ol = static_cast<uint32_t>(r & kU32Mask);
-            oh = static_cast<uint32_t>(r >> kBitsPerDword);
-            hh = true;
-            return true;
-          } else {
-            return fail();
-          }
-        }
-        case ImmediateFamily::F32: {
-          if constexpr (std::is_same_v<T, double> || std::is_same_v<T, float>) {
-            ol = BitCastValue<uint32_t>(static_cast<float>(pv));
-            return true;
-          } else {
-            return fail();
-          }
-        }
-        case ImmediateFamily::F64: {
-          if constexpr (std::is_same_v<T, double>) {
-            auto r = BitCastValue<uint64_t>(pv);
-            ol = static_cast<uint32_t>(r & kU32Mask);
-            oh = static_cast<uint32_t>(r >> kBitsPerDword);
-            hh = true;
-            return true;
-          } else {
-            return fail();
-          }
-        }
-        default:
-          return fail();
-      }
-    }
-    return fail();
-  };
-
-  return std::visit(visit_primitive, *v);
-}
-
-}  // namespace
 
 std::string DescribeOutcome(const ApplyRuleStep& step, const dxp::ApplyRuleResults& results,
                             const ExecutionContext& /*ctx*/) {

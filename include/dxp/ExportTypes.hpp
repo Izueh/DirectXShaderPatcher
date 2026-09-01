@@ -1,12 +1,32 @@
 #pragma once
 
+#include <array>
 #include <bitset>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
 
+#include <dxp/sm5/Model.hpp>
+
 namespace dxp {
+
+/// @brief Interpolation mode for input-signature declarations. Shared vocabulary:
+/// alias of @c dxp::sm5::model::InterpolationMode.
+using InterpolationMode = sm5::model::InterpolationMode;
+
+/// @brief Resource shape declared for a texture/UAV register. Shared vocabulary:
+/// alias of @c dxp::sm5::model::ResourceDimension.
+using ResourceDimension = sm5::model::ResourceDimension;
+
+/// @brief Data type a resource read returns. Shared vocabulary:
+/// alias of @c dxp::sm5::model::ResourceReturnType.
+using ResourceReturnType = sm5::model::ResourceReturnType;
+
+/// @brief Semantic name of SIV/SGV signature declarations. Shared vocabulary:
+/// alias of @c dxp::sm5::model::SignatureSemantic.
+using SignatureSemantic = sm5::model::SignatureSemantic;
 
 /// @brief Variant of primitive literal value types.
 /// Absence/unset is expressed by map-absence or std::optional, never by a variant
@@ -78,19 +98,6 @@ enum class BindingClass : std::uint8_t {
   Uav,
 };
 
-/// @brief Interpolation mode for input-signature declarations.
-enum class InterpolationMode : std::uint8_t {
-  Undefined = 0,
-  Constant = 1,
-  Linear = 2,
-  LinearCentroid = 3,
-  LinearNoperspective = 4,
-  LinearNoperspectiveCentroid = 5,
-  LinearSample = 6,
-  LinearNoperspectiveSample = 7,
-  Invalid = 8,
-};
-
 /// @brief Resource binding produced by patching.
 struct ResourceBinding {
   std::string handle;
@@ -106,6 +113,14 @@ struct ResourceUsage {
   uint32_t register_index = 0;
   uint32_t space = 0;
   std::bitset<4> accessed_components;
+
+  /// @brief Declaration payload resolved from the shader's dcl_* instructions;
+  /// unset when the operand has no resolvable declaration.
+  std::optional<ResourceDimension> dimension;
+  std::optional<ResourceReturnType> return_type;
+  std::optional<uint32_t> structure_stride;
+  std::optional<SignatureSemantic> semantic;
+  std::optional<InterpolationMode> interpolation;
 };
 
 /// @brief Immediate values found during pattern matching.

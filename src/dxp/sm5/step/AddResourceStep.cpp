@@ -190,7 +190,7 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
     ctx.program.EnsureTempDeclaration();
   }
 
-  ctx.program_modified = ctx.program_modified || changed;
+  if (changed) ctx.MarkProgramMutated();
   ctx.state[step.name] = true;
   ctx.results[step.name] = std::any(result);
   return result;

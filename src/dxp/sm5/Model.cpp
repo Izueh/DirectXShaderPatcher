@@ -323,9 +323,9 @@ auto Instruction::Encode() const -> std::vector<uint32_t> {
     encoded.reserve(1 + custom_data.size());
     // Emit the preserved raw opcode token (custom-data class lives in its high bits).
     const uint32_t token0 = custom_data_opcode_token != 0
-        ? custom_data_opcode_token
-        : (ENCODE_D3D10_SB_OPCODE_TYPE(D3D10_SB_OPCODE_CUSTOMDATA)
-           | ENCODE_D3D10_SB_TOKENIZED_INSTRUCTION_LENGTH(static_cast<uint32_t>(1 + custom_data.size())));
+                                ? custom_data_opcode_token
+                                : (ENCODE_D3D10_SB_OPCODE_TYPE(D3D10_SB_OPCODE_CUSTOMDATA)
+                                   | ENCODE_D3D10_SB_TOKENIZED_INSTRUCTION_LENGTH(static_cast<uint32_t>(1 + custom_data.size())));
     encoded.push_back(token0);
     encoded.insert(encoded.end(), custom_data.begin(), custom_data.end());
     return encoded;
@@ -382,7 +382,13 @@ auto Instruction::Encode() const -> std::vector<uint32_t> {
     extended_op_codes.emplace_back(0U);  // ResourceReturnType
   }
 
-  uint32_t total_length = 1 + static_cast<uint32_t>(extended_op_codes.size());
+  // SIV/SGV declarations synthesize their trailing NameToken from controls when
+  // only the register operand is present; parsed instructions round-trip verbatim.
+  const bool synthesize_name_token = OpcodeUsesSemanticName(opcode)
+                                     && controls.semantic_name.has_value()
+                                     && operands.size() < GetExpectedOperandCount(opcode);
+
+  uint32_t total_length = 1 + static_cast<uint32_t>(extended_op_codes.size()) + (synthesize_name_token ? 1U : 0U);
   for (const auto& operand : operands) {
     total_length += static_cast<uint32_t>(operand.Encode().size());
   }
@@ -424,6 +430,10 @@ auto Instruction::Encode() const -> std::vector<uint32_t> {
   for (const auto& operand : operands) {
     auto operand_tokens = operand.Encode();
     encoded.insert(encoded.end(), operand_tokens.begin(), operand_tokens.end());
+  }
+
+  if (synthesize_name_token) {
+    encoded.push_back(ENCODE_D3D10_SB_NAME(static_cast<D3D10_SB_NAME>(static_cast<uint8_t>(*controls.semantic_name))));
   }
 
   return encoded;

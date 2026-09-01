@@ -40,9 +40,27 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, dxp::Valida
 /// @brief Formats the step's result as a Trace log message.
 std::string DescribeOutcome(const ApplyRuleStep& step, const dxp::ApplyRuleResults& results, const ExecutionContext& ctx);
 
+/// @brief Stamps resource dimension/return type from the operand's declaration
+/// so canonical extended-opcode chains can be synthesized.
+void StampResourceAccessControls(ExecutionContext& context, model::Instruction& instr);
+
 struct OperandData {
   bool any = false;
   std::optional<OperandType> type;
+
+  /// @brief Declaration cross-reference constraint (match operand patterns only).
+  /// Nested `decl:` subobject — every specified field must equal the declaration
+  /// the operand's register resolves to. Field validity per operand type is
+  /// checked at parse time.
+  struct DeclData {
+    std::optional<ResourceDimension> dimension;
+    std::array<std::optional<ResourceReturnType>, 4> return_type;
+    std::optional<uint32_t> structure_stride;
+    std::optional<SamplerMode> mode;
+    std::optional<CbufferAccessPattern> access_pattern;
+    std::optional<SignatureSemantic> semantic;
+    std::optional<InterpolationMode> interpolation;
+  };
 
   /// @brief One index slot in an operand — mirrors Operand::Index.
   struct IndexData {
@@ -68,6 +86,7 @@ struct OperandData {
     std::optional<std::variant<std::string, uint32_t>> element_index;  ///< Variable name (string) or literal uint32_t value.
   };
   std::optional<FromHandleData> handle;
+  std::optional<DeclData> decl;
   Components components;
   std::optional<OperandModifier> modifier;
   std::string capture;

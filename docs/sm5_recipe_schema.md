@@ -256,7 +256,88 @@ capture/match_capture/export_as) is in the generated JSON. Key semantics:
 - `match_capture` (match patterns only) constrains the match: the operand must
   equal a previously captured operand (a prior step's global store, or a
   same-match capture). It is rejected in emit patterns.
-- `export_as` publishes the operand's resource/immediate data into the patch report.
+- `export_as` publishes the operand's resource/immediate data into the patch
+  report. Works with or without `capture`; resource and signature exports are
+  enriched with the operand's declaration info (see below).
+- `decl` (match patterns only) cross-references the operand against its
+  declaration — see **Declaration cross-reference (`decl:`)** below. Rejected
+  in emit patterns.
+
+### Declaration cross-reference (`decl:`)
+
+A nested `decl:` subobject on a **match** operand constrains the operand's
+register to a declaration whose payload matches all specified fields. The
+engine indexes the shader's `dcl_*` instructions by register bind point and
+keeps the index up to date as steps mutate the program, so constraints see
+declarations added by earlier `add_resource` steps.
+
+| field | valid operand types | resolved against |
+|---|---|---|
+| `dimension` | `resource`, `unordered_access_view` | the resource/UAV dcl for the operand's register (`texture2d`, `texture2darray`, `texture3d`, `raw_buffer`, …) |
+| `return_type` | `resource`, `unordered_access_view` | array of 4 `ResourceReturnType` keys, compared per component |
+| `structure_stride` | `resource`, `unordered_access_view` | byte stride (structured buffers) |
+| `mode` | `sampler` | `dcl_sampler` mode (`default`, `comparison`, `mono`) |
+| `access_pattern` | `constant_buffer` | `dcl_constant_buffer` access pattern |
+| `semantic` | `input`, `output` | SIV/SGV NameToken of the signature dcl (`position`, `primitive_id`, `is_front_face`, …) — what HLSL spells SV_Position etc. |
+| `interpolation` | `input` | `dcl_input_ps*` interpolation mode |
+
+Semantics:
+
+- Every specified field must equal the declaration — missing declaration or
+  unresolvable register index is a **no-match**, never an error.
+- Field/type mismatches (`dimension` on a sampler, `semantic` on a temp, …)
+  are rejected at validation time (validation runs lazily on the first
+  `Execute`, not at parse).
+- Geometry-shader vertex-axis inputs are unsupported by design: signature
+  constraints key on the attribute axis only.
+
+```yaml
+# match samples whose texture register is declared as texture2darray
+- kind: apply_rule
+  name: patch_array_samples
+  rule:
+    match:
+      - opcode: sample
+        operands:
+          - any: true
+          - any: true
+          - type: resource
+            decl:
+              dimension: texture2darray
+          - any: true
+
+# match reads of the SV_Position input, whatever v# it lives on
+- kind: apply_rule
+  name: guard_position_read
+  rule:
+    match:
+      - opcode: mad
+        operands:
+          - any: true
+          - any: true
+          - any: true
+          - type: input
+            decl:
+              semantic: position
+```
+
+### Enriched exports
+
+When an operand with `export_as` resolves to a declaration, the published
+`ResourceUsage` carries the declaration payload alongside the existing fields
+(`handle`, `binding_class`, `register_index`, `accessed_components`):
+
+| payload | set for | meaning |
+|---|---|---|
+| `dimension` | textures, UAVs | `ResourceDimension` value from the dcl |
+| `return_types` | textures, UAVs | per-component `ResourceReturnType` values |
+| `structure_stride` | structured buffers/UAVs | byte stride |
+| `semantic` | inputs, outputs | `SignatureSemantic` value (position, primitive_id, …) |
+| `interpolation` | pixel shader inputs | `InterpolationMode` value |
+
+Exports of operands with no resolvable declaration leave these unset. Input
+and output operands are now exportable (handle `input` / `output`); previously
+only resource/sampler/cbuffer/immediate operands published data.
 
 ### Index pattern
 

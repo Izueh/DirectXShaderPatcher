@@ -62,6 +62,57 @@ struct meta<dxp::sm5::model::SamplerMode> {
 };
 
 template <>
+struct meta<dxp::sm5::model::SignatureSemantic> {
+  using T = dxp::sm5::model::SignatureSemantic;
+  static constexpr std::array keys = {"undefined",
+                                      "position",
+                                      "clip_distance",
+                                      "cull_distance",
+                                      "render_target_array_index",
+                                      "viewport_array_index",
+                                      "vertex_id",
+                                      "primitive_id",
+                                      "instance_id",
+                                      "is_front_face",
+                                      "sample_index",
+                                      "final_quad_u_eq_0_edge_tessfactor",
+                                      "final_quad_v_eq_0_edge_tessfactor",
+                                      "final_quad_u_eq_1_edge_tessfactor",
+                                      "final_quad_v_eq_1_edge_tessfactor",
+                                      "final_quad_u_inside_tessfactor",
+                                      "final_quad_v_inside_tessfactor",
+                                      "final_tri_u_eq_0_edge_tessfactor",
+                                      "final_tri_v_eq_0_edge_tessfactor",
+                                      "final_tri_w_eq_0_edge_tessfactor",
+                                      "final_tri_inside_tessfactor",
+                                      "final_line_detail_tessfactor",
+                                      "final_line_density_tessfactor"};
+  static constexpr std::array value = {T::Undefined,
+                                       T::Position,
+                                       T::ClipDistance,
+                                       T::CullDistance,
+                                       T::RenderTargetArrayIndex,
+                                       T::ViewportArrayIndex,
+                                       T::VertexId,
+                                       T::PrimitiveId,
+                                       T::InstanceId,
+                                       T::IsFrontFace,
+                                       T::SampleIndex,
+                                       T::FinalQuadUEq0EdgeTessfactor,
+                                       T::FinalQuadVEq0EdgeTessfactor,
+                                       T::FinalQuadUEq1EdgeTessfactor,
+                                       T::FinalQuadVEq1EdgeTessfactor,
+                                       T::FinalQuadUInsideTessfactor,
+                                       T::FinalQuadVInsideTessfactor,
+                                       T::FinalTriUEq0EdgeTessfactor,
+                                       T::FinalTriVEq0EdgeTessfactor,
+                                       T::FinalTriWEq0EdgeTessfactor,
+                                       T::FinalTriInsideTessfactor,
+                                       T::FinalLineDetailTessfactor,
+                                       T::FinalLineDensityTessfactor};
+};
+
+template <>
 struct meta<dxp::sm5::model::OperandType> {
   using T = dxp::sm5::model::OperandType;
   static constexpr std::array keys = {

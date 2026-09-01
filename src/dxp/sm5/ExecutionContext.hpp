@@ -11,6 +11,7 @@
 #include <dxp/ExportTypes.hpp>
 #include "dxp/Condition_impl.hpp"
 #include "dxp/Logging.hpp"
+#include "dxp/sm5/DeclarationIndex.hpp"
 #include "dxp/sm5/Model_impl.hpp"
 #include "dxp/sm5/ShaderProgram.hpp"
 #include "dxp/VariableStore.hpp"
@@ -77,6 +78,26 @@ struct ExecutionContext : VariableStore {
   std::unordered_map<std::string, dxp::ImmediateValue> immediate_exports;   ///< Immediate values discovered during pattern matching.
   std::unordered_map<std::string, dxp::ResourceBinding> resource_bindings;  ///< Resource bindings from AddResourceStep.
   std::unordered_map<std::string, std::any> results;                        ///< Results for dot-notation resolution.
+
+  /// @brief Cross-reference index from operand registers to their declarations.
+  /// Invalidated by MarkProgramMutated, rebuilt lazily by Declarations().
+  mutable DeclarationIndex declaration_index;
+  mutable bool declaration_index_dirty = true;
+
+  /// @brief Marks the program mutated (invalidates the declaration index).
+  void MarkProgramMutated() {
+    program_modified = true;
+    declaration_index_dirty = true;
+  }
+
+  /// @brief Access to the declaration index, rebuilding it if stale.
+  [[nodiscard]] const DeclarationIndex& Declarations() const {
+    if (declaration_index_dirty) {
+      declaration_index = BuildDeclarationIndex(program);
+      declaration_index_dirty = false;
+    }
+    return declaration_index;
+  }
 
   /// @brief Per-execution logging state (sink + level filter, populated from PatchOptions).
   dxp::LogContext logger;

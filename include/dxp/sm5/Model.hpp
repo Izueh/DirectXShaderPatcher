@@ -12,8 +12,6 @@
 
 #include "value_types/indirect.h"
 
-#include <dxp/ExportTypes.hpp>
-
 namespace dxp::sm5::model {
 
 /// @brief Number of components an operand uses.
@@ -99,36 +97,36 @@ enum class OperandModifier : std::uint8_t {
   AbsNeg = 3,  ///< @c D3D10_SB_OPERAND_MODIFIER_ABSNEG
 };
 
-/// @brief Resource dimension in DXBC instructions.
+/// @brief Resource shape declared for a texture/UAV register.
 /// Mirrors @c D3D10_SB_RESOURCE_DIMENSION from the DXBC token format.
 enum class ResourceDimension : std::uint8_t {
-  Unknown = 0,            ///< @c D3D10_SB_RESOURCE_DIMENSION_UNKNOWN
-  Buffer = 1,             ///< @c D3D10_SB_RESOURCE_DIMENSION_BUFFER
-  Texture1D = 2,          ///< @c D3D10_SB_RESOURCE_DIMENSION_TEXTURE1D
-  Texture2D = 3,          ///< @c D3D10_SB_RESOURCE_DIMENSION_TEXTURE2D
-  Texture2DMS = 4,        ///< @c D3D10_SB_RESOURCE_DIMENSION_TEXTURE2DMS
-  Texture3D = 5,          ///< @c D3D10_SB_RESOURCE_DIMENSION_TEXTURE3D
-  TextureCube = 6,        ///< @c D3D10_SB_RESOURCE_DIMENSION_TEXTURECUBE
-  Texture1DArray = 7,     ///< @c D3D10_SB_RESOURCE_DIMENSION_TEXTURE1DARRAY
-  Texture2DArray = 8,     ///< @c D3D10_SB_RESOURCE_DIMENSION_TEXTURE2DARRAY
-  Texture2DMSArray = 9,   ///< @c D3D10_SB_RESOURCE_DIMENSION_TEXTURE2DMSARRAY
-  TextureCubeArray = 10,  ///< @c D3D10_SB_RESOURCE_DIMENSION_TEXTURECUBEARRAY
-  RawBuffer = 11,         ///< @c D3D11_SB_RESOURCE_DIMENSION_RAW_BUFFER
-  StructuredBuffer = 12   ///< @c D3D11_SB_RESOURCE_DIMENSION_STRUCTURED_BUFFER
+  Unknown = 0,
+  Buffer = 1,
+  Texture1D = 2,
+  Texture2D = 3,
+  Texture2DMS = 4,
+  Texture3D = 5,
+  TextureCube = 6,
+  Texture1DArray = 7,
+  Texture2DArray = 8,
+  Texture2DMSArray = 9,
+  TextureCubeArray = 10,
+  RawBuffer = 11,
+  StructuredBuffer = 12,
 };
 
-/// @brief Resource return type in DXBC instructions.
+/// @brief Data type a resource read returns.
 /// Mirrors @c D3D10_SB_RESOURCE_RETURN_TYPE from the DXBC token format.
 enum class ResourceReturnType : std::uint8_t {
-  UNorm = 1,      ///< @c D3D10_SB_RETURN_TYPE_UNORM
-  SNorm = 2,      ///< @c D3D10_SB_RETURN_TYPE_SNORM
-  SInt = 3,       ///< @c D3D10_SB_RETURN_TYPE_SINT
-  UInt = 4,       ///< @c D3D10_SB_RETURN_TYPE_UINT
-  Float = 5,      ///< @c D3D10_SB_RETURN_TYPE_FLOAT
-  Mixed = 6,      ///< @c D3D10_SB_RETURN_TYPE_MIXED
-  Double = 7,     ///< @c D3D11_SB_RETURN_TYPE_DOUBLE
-  Continued = 8,  ///< @c D3D11_SB_RETURN_TYPE_CONTINUED
-  Unused = 9      ///< @c D3D11_SB_RETURN_TYPE_UNUSED
+  UNorm = 1,
+  SNorm = 2,
+  SInt = 3,
+  UInt = 4,
+  Float = 5,
+  Mixed = 6,
+  Double = 7,
+  Continued = 8,
+  Unused = 9,
 };
 
 /// @brief Extended opcode type in DXBC instructions.
@@ -151,8 +149,18 @@ enum class OperandRole : std::uint8_t {
   Destination = 1,
 };
 
-/// @brief Interpolation mode for DCL_INPUT declarations. See @c dxp::InterpolationMode.
-using InterpolationMode = dxp::InterpolationMode;
+/// @brief Interpolation mode for input-signature declarations.
+enum class InterpolationMode : std::uint8_t {
+  Undefined = 0,
+  Constant = 1,
+  Linear = 2,
+  LinearCentroid = 3,
+  LinearNoperspective = 4,
+  LinearNoperspectiveCentroid = 5,
+  LinearSample = 6,
+  LinearNoperspectiveSample = 7,
+  Invalid = 8,
+};
 
 /// @brief Sampler mode for DCL_SAMPLER declarations.
 /// Mirrors @c D3D10_SB_SAMPLER_MODE from the DXBC token format.
@@ -160,6 +168,34 @@ enum class SamplerMode : std::uint8_t {
   Default = 0,     ///< @c D3D10_SB_SAMPLER_DEFAULT
   Comparison = 1,  ///< @c D3D10_SB_SAMPLER_COMPARISON
   Mono = 2,        ///< @c D3D10_SB_SAMPLER_MONO
+};
+
+/// @brief Semantic name of SIV/SGV signature declarations (the NameToken — what
+/// HLSL spells SV_Position, SV_PrimitiveID, etc.). Mirrors @c D3D10_SB_NAME.
+enum class SignatureSemantic : std::uint8_t {
+  Undefined = 0,
+  Position = 1,
+  ClipDistance = 2,
+  CullDistance = 3,
+  RenderTargetArrayIndex = 4,
+  ViewportArrayIndex = 5,
+  VertexId = 6,
+  PrimitiveId = 7,
+  InstanceId = 8,
+  IsFrontFace = 9,
+  SampleIndex = 10,
+  FinalQuadUEq0EdgeTessfactor = 11,
+  FinalQuadVEq0EdgeTessfactor = 12,
+  FinalQuadUEq1EdgeTessfactor = 13,
+  FinalQuadVEq1EdgeTessfactor = 14,
+  FinalQuadUInsideTessfactor = 15,
+  FinalQuadVInsideTessfactor = 16,
+  FinalTriUEq0EdgeTessfactor = 17,
+  FinalTriVEq0EdgeTessfactor = 18,
+  FinalTriWEq0EdgeTessfactor = 19,
+  FinalTriInsideTessfactor = 20,
+  FinalLineDetailTessfactor = 21,
+  FinalLineDensityTessfactor = 22,
 };
 
 /// @brief Constant buffer access pattern.
@@ -460,6 +496,15 @@ inline bool OpcodeIsDeclaration(Opcode opcode) noexcept {
   return (val >= static_cast<uint32_t>(Opcode::DclResource) && val <= static_cast<uint32_t>(Opcode::DclGlobalFlags)) || (val >= static_cast<uint32_t>(Opcode::DclStream) && val <= static_cast<uint32_t>(Opcode::DclResourceStructured));
 }
 
+/// @brief Whether this opcode's declaration carries a trailing NameToken
+/// (dcl_input_sgv/siv, dcl_input_ps_sgv/siv, dcl_output_sgv/siv).
+inline bool OpcodeUsesSemanticName(Opcode opcode) noexcept {
+  const auto val = static_cast<uint32_t>(opcode);
+  return val == static_cast<uint32_t>(Opcode::DclInputSgv) || val == static_cast<uint32_t>(Opcode::DclInputSiv)
+         || val == static_cast<uint32_t>(Opcode::DclInputPsSgv) || val == static_cast<uint32_t>(Opcode::DclInputPsSiv)
+         || val == static_cast<uint32_t>(Opcode::DclOutputSgv) || val == static_cast<uint32_t>(Opcode::DclOutputSiv);
+}
+
 /// @brief Returns true if this opcode supports the test-boolean flag.
 inline bool OpcodeUsesTestBoolean(Opcode opcode) noexcept {
   const auto val = static_cast<uint32_t>(opcode);
@@ -520,6 +565,9 @@ struct OpcodeControls {
   std::array<std::optional<ResourceReturnType>, 4> resource_return_type = {std::nullopt, std::nullopt, std::nullopt, std::nullopt};
   uint32_t uav_flags = 0;
   uint32_t structure_stride = 0;
+  /// @brief Decoded NameToken of SIV/SGV signature declarations (dcl_input_sgv/siv,
+  /// dcl_input_ps_sgv/siv, dcl_output_sgv/siv). Absent for other opcodes.
+  std::optional<SignatureSemantic> semantic_name;
   std::vector<ExtendedOpcode> extended_op_codes;
 };
 

@@ -114,6 +114,30 @@ static_assert(static_cast<uint8_t>(SamplerMode::Mono) == static_cast<uint8_t>(D3
 static_assert(static_cast<uint8_t>(CbufferAccessPattern::ImmediateIndexed) == static_cast<uint8_t>(D3D10_SB_CONSTANT_BUFFER_IMMEDIATE_INDEXED));
 static_assert(static_cast<uint8_t>(CbufferAccessPattern::DynamicIndexed) == static_cast<uint8_t>(D3D10_SB_CONSTANT_BUFFER_DYNAMIC_INDEXED));
 
+static_assert(static_cast<uint8_t>(SignatureSemantic::Undefined) == static_cast<uint8_t>(D3D10_SB_NAME_UNDEFINED));
+static_assert(static_cast<uint8_t>(SignatureSemantic::Position) == static_cast<uint8_t>(D3D10_SB_NAME_POSITION));
+static_assert(static_cast<uint8_t>(SignatureSemantic::ClipDistance) == static_cast<uint8_t>(D3D10_SB_NAME_CLIP_DISTANCE));
+static_assert(static_cast<uint8_t>(SignatureSemantic::CullDistance) == static_cast<uint8_t>(D3D10_SB_NAME_CULL_DISTANCE));
+static_assert(static_cast<uint8_t>(SignatureSemantic::RenderTargetArrayIndex) == static_cast<uint8_t>(D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX));
+static_assert(static_cast<uint8_t>(SignatureSemantic::ViewportArrayIndex) == static_cast<uint8_t>(D3D10_SB_NAME_VIEWPORT_ARRAY_INDEX));
+static_assert(static_cast<uint8_t>(SignatureSemantic::VertexId) == static_cast<uint8_t>(D3D10_SB_NAME_VERTEX_ID));
+static_assert(static_cast<uint8_t>(SignatureSemantic::PrimitiveId) == static_cast<uint8_t>(D3D10_SB_NAME_PRIMITIVE_ID));
+static_assert(static_cast<uint8_t>(SignatureSemantic::InstanceId) == static_cast<uint8_t>(D3D10_SB_NAME_INSTANCE_ID));
+static_assert(static_cast<uint8_t>(SignatureSemantic::IsFrontFace) == static_cast<uint8_t>(D3D10_SB_NAME_IS_FRONT_FACE));
+static_assert(static_cast<uint8_t>(SignatureSemantic::SampleIndex) == static_cast<uint8_t>(D3D10_SB_NAME_SAMPLE_INDEX));
+static_assert(static_cast<uint8_t>(SignatureSemantic::FinalQuadUEq0EdgeTessfactor) == static_cast<uint8_t>(D3D11_SB_NAME_FINAL_QUAD_U_EQ_0_EDGE_TESSFACTOR));
+static_assert(static_cast<uint8_t>(SignatureSemantic::FinalQuadVEq0EdgeTessfactor) == static_cast<uint8_t>(D3D11_SB_NAME_FINAL_QUAD_V_EQ_0_EDGE_TESSFACTOR));
+static_assert(static_cast<uint8_t>(SignatureSemantic::FinalQuadUEq1EdgeTessfactor) == static_cast<uint8_t>(D3D11_SB_NAME_FINAL_QUAD_U_EQ_1_EDGE_TESSFACTOR));
+static_assert(static_cast<uint8_t>(SignatureSemantic::FinalQuadVEq1EdgeTessfactor) == static_cast<uint8_t>(D3D11_SB_NAME_FINAL_QUAD_V_EQ_1_EDGE_TESSFACTOR));
+static_assert(static_cast<uint8_t>(SignatureSemantic::FinalQuadUInsideTessfactor) == static_cast<uint8_t>(D3D11_SB_NAME_FINAL_QUAD_U_INSIDE_TESSFACTOR));
+static_assert(static_cast<uint8_t>(SignatureSemantic::FinalQuadVInsideTessfactor) == static_cast<uint8_t>(D3D11_SB_NAME_FINAL_QUAD_V_INSIDE_TESSFACTOR));
+static_assert(static_cast<uint8_t>(SignatureSemantic::FinalTriUEq0EdgeTessfactor) == static_cast<uint8_t>(D3D11_SB_NAME_FINAL_TRI_U_EQ_0_EDGE_TESSFACTOR));
+static_assert(static_cast<uint8_t>(SignatureSemantic::FinalTriVEq0EdgeTessfactor) == static_cast<uint8_t>(D3D11_SB_NAME_FINAL_TRI_V_EQ_0_EDGE_TESSFACTOR));
+static_assert(static_cast<uint8_t>(SignatureSemantic::FinalTriWEq0EdgeTessfactor) == static_cast<uint8_t>(D3D11_SB_NAME_FINAL_TRI_W_EQ_0_EDGE_TESSFACTOR));
+static_assert(static_cast<uint8_t>(SignatureSemantic::FinalTriInsideTessfactor) == static_cast<uint8_t>(D3D11_SB_NAME_FINAL_TRI_INSIDE_TESSFACTOR));
+static_assert(static_cast<uint8_t>(SignatureSemantic::FinalLineDetailTessfactor) == static_cast<uint8_t>(D3D11_SB_NAME_FINAL_LINE_DETAIL_TESSFACTOR));
+static_assert(static_cast<uint8_t>(SignatureSemantic::FinalLineDensityTessfactor) == static_cast<uint8_t>(D3D11_SB_NAME_FINAL_LINE_DENSITY_TESSFACTOR));
+
 static_assert(static_cast<uint8_t>(Operand::IndexRepresentation::Immediate32) == static_cast<uint8_t>(D3D10_SB_OPERAND_INDEX_IMMEDIATE32));
 static_assert(static_cast<uint8_t>(Operand::IndexRepresentation::Immediate64) == static_cast<uint8_t>(D3D10_SB_OPERAND_INDEX_IMMEDIATE64));
 static_assert(static_cast<uint8_t>(Operand::IndexRepresentation::Relative) == static_cast<uint8_t>(D3D10_SB_OPERAND_INDEX_RELATIVE));

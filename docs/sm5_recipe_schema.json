@@ -246,7 +246,7 @@
                                     "interpolation": {
                                        "anyOf": [
                                           {
-                                             "$ref": "#/$defs/dxp::InterpolationMode"
+                                             "$ref": "#/$defs/dxp::sm5::model::InterpolationMode"
                                           },
                                           {
                                              "type": "null"
@@ -470,16 +470,6 @@
          },
          "additionalProperties": false
       },
-      "dxp::InterpolationMode": {
-         "type": [
-            "number",
-            "string",
-            "boolean",
-            "object",
-            "array",
-            "null"
-         ]
-      },
       "dxp::sm5::model::CbufferAccessPattern": {
          "type": [
             "number",
@@ -509,6 +499,16 @@
                "title": "resource_type",
                "const": "resource_type"
             }
+         ]
+      },
+      "dxp::sm5::model::InterpolationMode": {
+         "type": [
+            "number",
+            "string",
+            "boolean",
+            "object",
+            "array",
+            "null"
          ]
       },
       "dxp::sm5::model::NumComponents": {
@@ -609,6 +609,16 @@
          ]
       },
       "dxp::sm5::model::SelectionMode": {
+         "type": [
+            "number",
+            "string",
+            "boolean",
+            "object",
+            "array",
+            "null"
+         ]
+      },
+      "dxp::sm5::model::SignatureSemantic": {
          "type": [
             "number",
             "string",
@@ -772,7 +782,7 @@
             "interpolation": {
                "anyOf": [
                   {
-                     "$ref": "#/$defs/dxp::InterpolationMode"
+                     "$ref": "#/$defs/dxp::sm5::model::InterpolationMode"
                   },
                   {
                      "type": "null"
@@ -846,6 +856,82 @@
                   }
                },
                "additionalProperties": false
+            },
+            "decl": {
+               "anyOf": [
+                  {
+                     "type": "object",
+                     "properties": {
+                        "access_pattern": {
+                           "anyOf": [
+                              {
+                                 "$ref": "#/$defs/dxp::sm5::model::CbufferAccessPattern"
+                              },
+                              {
+                                 "type": "null"
+                              }
+                           ]
+                        },
+                        "dimension": {
+                           "anyOf": [
+                              {
+                                 "$ref": "#/$defs/dxp::sm5::model::ResourceDimension"
+                              },
+                              {
+                                 "type": "null"
+                              }
+                           ]
+                        },
+                        "interpolation": {
+                           "anyOf": [
+                              {
+                                 "$ref": "#/$defs/dxp::sm5::model::InterpolationMode"
+                              },
+                              {
+                                 "type": "null"
+                              }
+                           ]
+                        },
+                        "mode": {
+                           "anyOf": [
+                              {
+                                 "$ref": "#/$defs/dxp::sm5::model::SamplerMode"
+                              },
+                              {
+                                 "type": "null"
+                              }
+                           ]
+                        },
+                        "return_type": {
+                           "$ref": "#/$defs/std::array<std::optional<dxp::sm5::model::ResourceReturnType>,4>"
+                        },
+                        "semantic": {
+                           "anyOf": [
+                              {
+                                 "$ref": "#/$defs/dxp::sm5::model::SignatureSemantic"
+                              },
+                              {
+                                 "type": "null"
+                              }
+                           ]
+                        },
+                        "structure_stride": {
+                           "anyOf": [
+                              {
+                                 "$ref": "#/$defs/uint32_t"
+                              },
+                              {
+                                 "type": "null"
+                              }
+                           ]
+                        }
+                     },
+                     "additionalProperties": false
+                  },
+                  {
+                     "type": "null"
+                  }
+               ]
             },
             "export_as": {
                "type": [
@@ -1286,7 +1372,7 @@
                "interpolation": {
                   "anyOf": [
                      {
-                        "$ref": "#/$defs/dxp::InterpolationMode"
+                        "$ref": "#/$defs/dxp::sm5::model::InterpolationMode"
                      },
                      {
                         "type": "null"

@@ -33,7 +33,7 @@
                                  "type": "string"
                               },
                               "interp_mode": {
-                                 "$ref": "#/$defs/dxp::InterpolationMode"
+                                 "$ref": "#/$defs/dxp::sm5::model::InterpolationMode"
                               },
                               "register_index": {
                                  "anyOf": [
@@ -452,7 +452,7 @@
          },
          "additionalProperties": false
       },
-      "dxp::InterpolationMode": {
+      "dxp::sm5::model::InterpolationMode": {
          "type": [
             "number",
             "string",

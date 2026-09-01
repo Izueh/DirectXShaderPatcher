@@ -244,6 +244,14 @@ auto ParseOpcodeControls(std::span<const uint8_t> data, uint32_t instruction_sta
   if (kOpcode == D3D10_SB_OPCODE_DCL_INPUT_PS || kOpcode == D3D10_SB_OPCODE_DCL_INPUT_PS_SIV) {
     controls.input_interpolation_mode = static_cast<uint32_t>(DECODE_D3D10_SB_INPUT_INTERPOLATION_MODE(token0));
   }
+  if (dxp::sm5::model::OpcodeUsesSemanticName(ParseDecodeOpcode(token0))) {
+    // SIV/SGV declarations carry a trailing NameToken; parse it as the last
+    // operand (round-trip) and decode it into controls.
+    if (instruction_length >= 2) {
+      const uint32_t kNameToken = ParseReadDword(data, (instruction_start + instruction_length - 1) * 4);
+      controls.semantic_name = static_cast<SignatureSemantic>(DECODE_D3D10_SB_NAME(kNameToken));
+    }
+  }
   if (!ParseIsOpcodeExtended(token0)) {
     return controls;
   }

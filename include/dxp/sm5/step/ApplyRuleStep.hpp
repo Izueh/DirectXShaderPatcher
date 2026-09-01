@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <bit>
 #include <cstdint>
 #include <memory>
@@ -120,6 +121,25 @@ struct ApplyRuleStep {
       std::optional<std::variant<std::string, uint32_t>> element_index;
     };
     std::optional<Handle> handle;
+
+    /// @brief Match-only constraint: the operand's register must resolve to a
+    /// declaration matching all specified fields. Missing declaration = no match.
+    struct DeclConstraint {
+      std::optional<model::ResourceDimension> dimension;
+      std::array<std::optional<model::ResourceReturnType>, 4> return_type;
+      std::optional<uint32_t> structure_stride;
+      std::optional<model::SamplerMode> mode;
+      std::optional<model::CbufferAccessPattern> access_pattern;
+      std::optional<model::SignatureSemantic> semantic;
+      std::optional<InterpolationMode> interpolation;
+
+      [[nodiscard]] bool AnyFieldSet() const {
+        return dimension.has_value() || structure_stride.has_value() || mode.has_value()
+               || access_pattern.has_value() || semantic.has_value() || interpolation.has_value()
+               || std::any_of(return_type.begin(), return_type.end(), [](const auto& t) { return t.has_value(); });
+      }
+    };
+    std::optional<DeclConstraint> decl;
     std::string mask;
     std::string swizzle;
     std::string select;
