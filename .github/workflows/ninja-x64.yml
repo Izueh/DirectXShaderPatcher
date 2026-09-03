@@ -7,13 +7,13 @@ on:
     paths-ignore:
       - "**/*.md"
       - "docs/**"
-      - ".github/workflows/**"
+      - ".github/**"
   pull_request:
     branches: [main]
     paths-ignore:
       - "**/*.md"
       - "docs/**"
-      - ".github/workflows/**"
+      - ".github/**"
 
 jobs:
   build:
@@ -23,12 +23,10 @@ jobs:
       matrix:
         include:
           - preset: ninja-x64
-            suffix: ""
           - preset: ninja-x64-static
-            suffix: "-static"
     env:
       SCCACHE_GHA_ENABLED: "true"
-      SCCACHE_CACHE_SIZE: "5G"
+      SCCACHE_CACHE_SIZE: "2G"
       SCCACHE_C_CUSTOM_CACHE_BUSTER: "${{ github.workflow }}"
 
     steps:
@@ -75,7 +73,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: ninja-x64${{ matrix.suffix }}
+          name: ${{ matrix.preset }}
           path: out/install/${{ matrix.preset }}/
           retention-days: 7
 

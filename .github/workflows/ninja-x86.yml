@@ -7,13 +7,13 @@ on:
     paths-ignore:
       - "**/*.md"
       - "docs/**"
-      - ".github/workflows/**"
+      - ".github/**"
   pull_request:
     branches: [main]
     paths-ignore:
       - "**/*.md"
       - "docs/**"
-      - ".github/workflows/**"
+      - ".github/**"
 
 jobs:
   build:
@@ -23,12 +23,10 @@ jobs:
       matrix:
         include:
           - preset: ninja-x86
-            suffix: ""
           - preset: ninja-x86-static
-            suffix: "-static"
     env:
       SCCACHE_GHA_ENABLED: "true"
-      SCCACHE_CACHE_SIZE: "5G"
+      SCCACHE_CACHE_SIZE: "2G"
       SCCACHE_C_CUSTOM_CACHE_BUSTER: "${{ github.workflow }}"
 
     steps:
@@ -60,22 +58,22 @@ jobs:
         run: cmake --build --parallel --preset ${{ matrix.preset }}-debug
 
       - name: Install SDK (${{ matrix.preset }} Release)
-        run: cmake --install out/build/${{ matrix.preset }} --config Release --component DirectXShaderPatcherSDK --prefix out/install/${{ matrix.preset }}
+        run: cmake --install out/build32/${{ matrix.preset }} --config Release --component DirectXShaderPatcherSDK --prefix out/install/${{ matrix.preset }}
 
       - name: Install SDK (${{ matrix.preset }} Debug)
-        run: cmake --install out/build/${{ matrix.preset }} --config Debug --component DirectXShaderPatcherSDK --prefix out/install/${{ matrix.preset }}
+        run: cmake --install out/build32/${{ matrix.preset }} --config Debug --component DirectXShaderPatcherSDK --prefix out/install/${{ matrix.preset }}
 
       - name: Install CLI (${{ matrix.preset }} Release)
-        run: cmake --install out/build/${{ matrix.preset }} --config Release --component DirectXShaderPatcherCLI --prefix out/install/${{ matrix.preset }}
+        run: cmake --install out/build32/${{ matrix.preset }} --config Release --component DirectXShaderPatcherCLI --prefix out/install/${{ matrix.preset }}
 
       - name: Install CLI (${{ matrix.preset }} Debug)
-        run: cmake --install out/build/${{ matrix.preset }} --config Debug --component DirectXShaderPatcherCLI --prefix out/install/${{ matrix.preset }}
+        run: cmake --install out/build32/${{ matrix.preset }} --config Debug --component DirectXShaderPatcherCLI --prefix out/install/${{ matrix.preset }}
 
       - name: Upload artifacts
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: ninja-x86${{ matrix.suffix }}
+          name: ${{ matrix.preset }}
           path: out/install/${{ matrix.preset }}/
           retention-days: 7
 

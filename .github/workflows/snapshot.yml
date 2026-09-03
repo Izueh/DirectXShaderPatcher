@@ -5,6 +5,10 @@ on:
   push:
     tags: ['v*']
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -13,7 +17,7 @@ jobs:
     runs-on: windows-latest
     env:
       SCCACHE_GHA_ENABLED: "true"
-      SCCACHE_CACHE_SIZE: "5G"
+      SCCACHE_CACHE_SIZE: "2G"
       SCCACHE_C_CUSTOM_CACHE_BUSTER: "${{ github.workflow }}"
 
     steps:
@@ -33,13 +37,17 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             SNAPSHA=$(git rev-parse --short=8 HEAD)
-            echo "ARTIFACT_VERSION=snapshot-$SNAPSHA" >> $GITHUB_ENV
-            echo "RELEASE_TAG=snapshot" >> $GITHUB_ENV
-            echo "IS_PRERELEASE=true" >> $GITHUB_ENV
+            {
+              echo "ARTIFACT_VERSION=snapshot-$SNAPSHA"
+              echo "RELEASE_TAG=snapshot"
+              echo "IS_PRERELEASE=true"
+            } >> "$GITHUB_ENV"
           else
-            echo "ARTIFACT_VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
-            echo "RELEASE_TAG=${GITHUB_REF_NAME}" >> $GITHUB_ENV
-            echo "IS_PRERELEASE=false" >> $GITHUB_ENV
+            {
+              echo "ARTIFACT_VERSION=${GITHUB_REF_NAME#v}"
+              echo "RELEASE_TAG=${GITHUB_REF_NAME}"
+              echo "IS_PRERELEASE=false"
+            } >> "$GITHUB_ENV"
           fi
 
       # Check if CI artifacts exist for this commit
@@ -81,22 +89,14 @@ jobs:
             core.info(`Artifacts exist: ${allFound}`);
 
       # ── PATH A: Download existing CI artifacts ──
-      - name: Download ninja-x64 artifacts
+      - name: Download CI artifacts
         if: steps.check-artifacts.outputs.exists == 'true'
         uses: actions/download-artifact@v4
         with:
-          name: ninja-x64
-          path: out/install/ninja-x64/
+          pattern: ninja-*
+          merge-multiple: false
+          path: out/install/
           run-id: ${{ fromJSON(steps.check-artifacts.outputs.runIds)['ninja-x64'] }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Download ninja-x86 artifacts
-        if: steps.check-artifacts.outputs.exists == 'true'
-        uses: actions/download-artifact@v4
-        with:
-          name: ninja-x86
-          path: out/install/ninja-x86/
-          run-id: ${{ fromJSON(steps.check-artifacts.outputs.runIds)['ninja-x86'] }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # ── PATH B: Build from scratch (lean by default) ──
@@ -167,10 +167,10 @@ jobs:
       - name: Install SDK (x86)
         if: steps.check-artifacts.outputs.exists != 'true'
         run: |
-          cmake --install out/build/ninja-x86 --config Release --component DirectXShaderPatcherSDK --prefix githubrelease/x86
-          cmake --install out/build/ninja-x86 --config Debug --component DirectXShaderPatcherSDK --prefix githubrelease/x86
-          cmake --install out/build/ninja-x86-static --config Release --component DirectXShaderPatcherSDK --prefix githubrelease/x86-static
-          cmake --install out/build/ninja-x86-static --config Debug --component DirectXShaderPatcherSDK --prefix githubrelease/x86-static
+          cmake --install out/build32/ninja-x86 --config Release --component DirectXShaderPatcherSDK --prefix githubrelease/x86
+          cmake --install out/build32/ninja-x86 --config Debug --component DirectXShaderPatcherSDK --prefix githubrelease/x86
+          cmake --install out/build32/ninja-x86-static --config Release --component DirectXShaderPatcherSDK --prefix githubrelease/x86-static
+          cmake --install out/build32/ninja-x86-static --config Debug --component DirectXShaderPatcherSDK --prefix githubrelease/x86-static
 
       - name: Show sccache stats
         if: steps.check-artifacts.outputs.exists != 'true'
@@ -183,7 +183,9 @@ jobs:
         if: steps.check-artifacts.outputs.exists == 'true'
         run: |
           xcopy /E /I /Y out\install\ninja-x64 githubrelease\x64
+          xcopy /E /I /Y out\install\ninja-x64-static githubrelease\x64-static
           xcopy /E /I /Y out\install\ninja-x86 githubrelease\x86
+          xcopy /E /I /Y out\install\ninja-x86-static githubrelease\x86-static
 
       - name: Package artifacts
         shell: powershell
@@ -205,11 +207,10 @@ jobs:
           Get-ChildItem githubrelease -Filter *.zip | Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $($_.Name)" } | Set-Content githubrelease/SHA256SUMS
 
       - name: Create a Release
-        uses: "marvinpinto/action-automatic-releases@latest"
+        uses: softprops/action-gh-release@v2
         with:
-          repo_token: "${{ secrets.GITHUB_TOKEN }}"
-          automatic_release_tag: ${{ env.RELEASE_TAG }}
-          title: DirectXShaderPatcher ${{ env.ARTIFACT_VERSION }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: DirectXShaderPatcher ${{ env.ARTIFACT_VERSION }}
           prerelease: ${{ env.IS_PRERELEASE }}
           files: |
             githubrelease/*.zip
