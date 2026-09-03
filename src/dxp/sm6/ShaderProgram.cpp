@@ -34,6 +34,7 @@
 #include <climits>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <iostream>
 #include <iterator>
 #include <memory>
@@ -55,6 +56,8 @@
 #include "dxc/DXIL/DxilTypeSystem.h"
 #include "dxc/DxilContainer/DxilContainer.h"
 #include "dxc/DxilContainer/DxilContainerAssembler.h"
+#include "dxc/DXIL/DxilShaderModel.h"
+#include "dxc/DxilHash/DxilHash.h"
 #include "dxc/DxilContainer/DxilContainerReader.h"
 #include "dxc/DxilValidation/DxilValidation.h"
 #include "dxc/Support/FileIOHelper.h"
@@ -1089,6 +1092,28 @@ void ShaderProgram::PruneDeadCode() const {
   }
 }
 
+auto ShaderProgram::UpdateContainerHash(std::vector<uint8_t>& container) -> std::expected<void, std::string> {
+  auto* header = hlsl::IsDxilContainerLike(container.data(), container.size());
+  if (header == nullptr || !hlsl::IsValidDxilContainer(header, container.size())) {
+    return std::unexpected("serialize: cannot update hash of an invalid DXIL container");
+  }
+
+  // Pre-release shader models use a fixed bypass digest instead of a computed
+  // hash (mirrors dxcvalidator's HashAndUpdate).
+  const hlsl::ShaderModel* shader_model = (dxil_module != nullptr) ? dxil_module->GetShaderModel() : nullptr;
+  if (shader_model != nullptr && shader_model->IsPreReleaseShaderModel()) {
+    std::memcpy(header->Hash.Digest, hlsl::PreviewByPassHash.Digest, sizeof(hlsl::PreviewByPassHash.Digest));
+    return {};
+  }
+
+  // Hash everything from the container version field to the end.
+  constexpr uint32_t kHashStartOffset = offsetof(hlsl::DxilContainerHeader, Version);
+  ComputeHashRetail(reinterpret_cast<const uint8_t*>(container.data()) + kHashStartOffset,
+                          static_cast<uint32_t>(container.size() - kHashStartOffset), header->Hash.Digest);
+  return {};
+}
+
+
 auto ShaderProgram::SerializeBitcode() -> std::vector<uint8_t> {
   PruneDeadCode();
 
@@ -1134,6 +1159,10 @@ auto ShaderProgram::SerializeContainer(std::span<const uint8_t> bitcode, std::ve
   }
 
   output_container.assign(output_stream->GetPtr(), output_stream->GetPtr() + output_stream->GetPtrSize());
+  
+  if (auto hash_result = UpdateContainerHash(output_container); !hash_result) {
+    return std::unexpected(std::move(hash_result.error()));
+  }
   return {};
 }
 
@@ -1165,6 +1194,18 @@ auto ShaderProgram::Serialize() -> std::expected<std::vector<uint8_t>, std::stri
                                          diag_stream))) {
     diag_stream.flush();
     return std::unexpected("serialize: DXIL validation failed: " + diagnostics);
+  }
+  // Self-check: the header hash must verify against the exact bytes shipped.
+  // A mismatch here means the container was corrupted after hashing.
+  {
+    constexpr uint32_t kHashStartOffset = offsetof(hlsl::DxilContainerHeader, Version);
+    std::array<uint8_t, hlsl::DxilContainerHashSize> expected_digest = {};
+    ComputeHashRetail(container.data() + kHashStartOffset,
+                            static_cast<uint32_t>(container.size() - kHashStartOffset), expected_digest.data());
+    auto* header = hlsl::IsDxilContainerLike(container.data(), container.size());
+    if (header == nullptr || std::memcmp(expected_digest.data(), header->Hash.Digest, hlsl::DxilContainerHashSize) != 0) {
+      return std::unexpected("serialize: container header hash self-check failed");
+    }
   }
   return container;
 }

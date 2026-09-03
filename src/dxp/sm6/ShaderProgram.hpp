@@ -135,6 +135,7 @@ struct ShaderProgram {
   bool LoadState();
   void RestoreReflection();
 
+  std::expected<void, std::string> UpdateContainerHash(std::vector<uint8_t>& container);
   std::vector<uint8_t> SerializeBitcode();
   std::expected<void, std::string> SerializeContainer(std::span<const uint8_t> bitcode, std::vector<uint8_t>& output_container);
 

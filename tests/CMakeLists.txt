@@ -155,6 +155,7 @@ dxp_add_test(sm5_resource_capture_sampler_test           "sm5_resource_capture_s
 dxp_add_test(sm5_immediate_capture_constants_test        "sm5_immediate_capture_constants.cpp")
 dxp_add_test(sm5_export_temp_no_crash_test               "sm5_export_temp_no_crash.cpp")
 dxp_add_test(sm6_rewrite_semantics_test                     "sm6_rewrite_semantics_test.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x56C468C3.cs_6_6.cso")
+dxp_add_test(sm6_container_hash_test                        "sm6_container_hash_test.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x56C468C3.cs_6_6.cso")
 dxp_add_test(sm6_typed_constant_test                        "sm6_typed_constant_test.cpp"  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x56C468C3.cs_6_6.cso")
 dxp_add_test(sm5_export_immediate_types_test      "sm5_export_immediate_types.cpp")
 dxp_add_test(dxil_patch_sm6_recipe_resource_export_test  "sm6_recipe_resource_export.cpp")
