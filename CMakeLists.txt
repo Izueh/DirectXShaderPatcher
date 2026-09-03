@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.27)
-project(DirectXShaderPatcher VERSION 0.5.1 LANGUAGES CXX)
+project(DirectXShaderPatcher VERSION 0.5.2 LANGUAGES CXX)
 
 # ─── Versioning ──────────────────────────────────────────────────────────────
 # Single source of truth: project(VERSION) above. DXP_VERSION_STRING follows
@@ -26,9 +26,14 @@ include(FetchContent)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-# Dynamic CRT (/MD): the SDK's static lib is consumed by DLL-based hosts
-# (games, ReShade addons) that use /MD; a /MT lib would fail LNK2038 at link.
-set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+# /MD default; DXP_CRT=Static produces an /MT variant. Not ABI-compatible.
+set(DXP_CRT "Dynamic" CACHE STRING "CRT model for dxpatcher static lib: Dynamic (/MD) or Static (/MT)")
+set_property(CACHE DXP_CRT PROPERTY STRINGS Dynamic Static)
+if(DXP_CRT STREQUAL "Static")
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+else()
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+endif()
 
 # Per-config MSVC debug information format. The base preset used to force
 # "Embedded" (Z7) for every config, which inflated the Release static lib with
@@ -143,7 +148,27 @@ endif()
 
 set(LLVM_INCLUDE_TESTS OFF CACHE BOOL "" FORCE)
 set(LLVM_INCLUDE_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(LLVM_BUILD_TOOLS ON CACHE BOOL "" FORCE)
+# Lean DXC: only dxcompiler.dll + its static closure are needed. Tools
+# (dxc.exe, dxopt.exe, dxr.exe, libclang...) cost thousands of extra link
+# steps per CI run and never ship.
+set(LLVM_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+set(CLANG_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+set(CLANG_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(LLVM_ENABLE_TERMINFO OFF CACHE BOOL "" FORCE)
+set(LLVM_ENABLE_ZLIB OFF CACHE BOOL "" FORCE)
+set(LLVM_ENABLE_CRASH_OVERRIDES OFF CACHE BOOL "" FORCE)
+# Keep DXC on the same CRT as dxpatcher.
+if(DXP_CRT STREQUAL "Static")
+    set(LLVM_USE_CRT_DEBUG MTd CACHE STRING "" FORCE)
+    set(LLVM_USE_CRT_RELEASE MT CACHE STRING "" FORCE)
+    set(LLVM_USE_CRT_MINSIZEREL MT CACHE STRING "" FORCE)
+    set(LLVM_USE_CRT_RELWITHDEBINFO MT CACHE STRING "" FORCE)
+else()
+    set(LLVM_USE_CRT_DEBUG MDd CACHE STRING "" FORCE)
+    set(LLVM_USE_CRT_RELEASE MD CACHE STRING "" FORCE)
+    set(LLVM_USE_CRT_MINSIZEREL MD CACHE STRING "" FORCE)
+    set(LLVM_USE_CRT_RELWITHDEBINFO MD CACHE STRING "" FORCE)
+endif()
 set(CLANG_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(CLANG_ENABLE_ARCMT OFF CACHE BOOL "" FORCE)
 set(CLANG_ENABLE_STATIC_ANALYZER OFF CACHE BOOL "" FORCE)
@@ -164,11 +189,23 @@ if(DXP_ARCH STREQUAL "x86")
     message(STATUS "DXP: x86 build — skipping DXC/LLVM")
 elseif(EXISTS "${DXC_SOURCE_DIR}/CMakeLists.txt")
     # DXC/LLVM appends /Zi with a shared /Fd PDB in Release; under sccache that
-    # races (C1041) even with /FS. Give the DXC sub-build /Z7 (embedded debug
-    # info, no shared PDB) by setting a non-empty debug-info format for its
-    # directory scope only, then reset so DXP's own Release targets stay lean.
+    # races (C1041) even with /FS. The sub-build needs a non-empty debug-info
+    # format at directory scope. "Embedded" (/Z7) is race-free but bloats every
+    # DXC Release object with CodeView — the merged closure lib was ~1GB.
+    #
+    # Ninja Multi-Config compiles every config with ONE format value; "None"
+    # is rejected by DXC's compiler tests, so "Embedded" (/Z7, race-free under
+    # sccache) is forced for the whole tree as before.
+    #
+    # Lean by default: Debug keeps /Z7, Release drops DXC debug info.
+    option(DXP_RELEASE_DXC_DEBUG_INFO "Embed debug info in DXC Release/RelWithDebInfo objects (fat SDK, debugging only)" OFF)
     set(_dxp_dbgfmt_prev "${CMAKE_MSVC_DEBUG_INFORMATION_FORMAT}")
-    set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "Embedded")
+    if(DXP_RELEASE_DXC_DEBUG_INFO)
+        set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "Embedded")
+    else()
+        set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<$<CONFIG:Debug>:Embedded>")
+        message(STATUS "DXP: lean SDK - DXC Release objects compiled without debug info (DXP_RELEASE_DXC_DEBUG_INFO=ON to restore)")
+    endif()
     add_subdirectory("${DXC_SOURCE_DIR}" "${DXC_BINARY_DIR}" SYSTEM)
     set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "${_dxp_dbgfmt_prev}")
     unset(_dxp_dbgfmt_prev)
@@ -272,7 +309,17 @@ else()
         "${DXC_SOURCE_DIR}/include"
         "${DXC_BINARY_DIR}/include"
     )
+    # dxcompiler is SHARED - a runtime dependency, excluded from the merge.
     target_link_libraries(dxpatcher PRIVATE 
+        LLVMipo
+        LLVMScalarOpts
+        LLVMDxcBindingTable
+        LLVMInstCombine
+        LLVMProfileData
+        LLVMVectorize
+        LLVMTransformUtils
+        LLVMipa
+        LLVMAnalysis
         LLVMBitReader
         LLVMBitWriter
         LLVMCore
@@ -291,13 +338,25 @@ else()
         value_types
     )
 
-    # Merge every static LLVM/DXC dependency into dxpatcher.lib via lib.exe so the
-    # packaged artifact is self-contained (consumers link one lib, not the DXC tree).
-    # dxcompiler is SHARED (dll) � it stays a runtime dependency and is excluded.
-    set(DXP_MERGED_LIBS
-        LLVMBitReader LLVMBitWriter LLVMCore LLVMDXIL LLVMDxilContainer
-        LLVMDxilRootSignature LLVMDxcSupport LLVMHLSL LLVMMSSupport
-        LLVMPasses LLVMSupport LLVMDxilValidation)
+    # Merge the full link-interface closure into dxpatcher.lib so consumers
+    # link one lib (v0.5.1 shipped a stale hardcoded list and failed at
+    # consumers with LNK2019).
+    get_target_property(_DXP_LINK_LIBS dxpatcher LINK_LIBRARIES)
+    set(DXP_MERGED_LIBS "")
+    foreach(_dep ${_DXP_LINK_LIBS})
+        if(TARGET "${_dep}")
+            get_target_property(_dep_type "${_dep}" TYPE)
+            # Merge STATIC libs only; SHARED (dxcompiler) and INTERFACE stay out
+            if(_dep_type STREQUAL "STATIC_LIBRARY")
+                list(APPEND DXP_MERGED_LIBS "${_dep}")
+            endif()
+        endif()
+    endforeach()
+    list(LENGTH DXP_MERGED_LIBS _DXP_MERGE_COUNT)
+    if(_DXP_MERGE_COUNT LESS 2)
+        message(FATAL_ERROR "DXP: only ${_DXP_MERGE_COUNT} static libs resolved for the merge step - dxpatcher.lib would not be self-contained")
+    endif()
+    message(STATUS "DXP: merging ${_DXP_MERGE_COUNT} static libs into dxpatcher.lib")
     set(DXP_MERGE_INPUTS "")
     foreach(_lib ${DXP_MERGED_LIBS})
         list(APPEND DXP_MERGE_INPUTS "$<TARGET_FILE:${_lib}>")
@@ -310,11 +369,11 @@ else()
         message(FATAL_ERROR "lib.exe not found � required to merge dxpatcher.lib")
     endif()
 
-    # Repack after each dxpatcher build: extract all members and combine them with
-    # dxpatcher's own objects into a single archive.
+    # Merge into a fresh archive (never in-place).
     add_custom_command(TARGET dxpatcher POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E echo "Merging LLVM/DXC static libs into dxpatcher.lib..."
-        COMMAND ${LIB_EXECUTABLE} /NOLOGO /OUT:$<TARGET_FILE:dxpatcher> $<TARGET_FILE:dxpatcher> ${DXP_MERGE_INPUTS}
+        COMMAND ${CMAKE_COMMAND} -E echo "Merging ${_DXP_MERGE_COUNT} LLVM/DXC static libs into dxpatcher.lib..."
+        COMMAND ${LIB_EXECUTABLE} /NOLOGO /OUT:$<TARGET_FILE:dxpatcher>.merged $<TARGET_FILE:dxpatcher> ${DXP_MERGE_INPUTS}
+        COMMAND ${CMAKE_COMMAND} -E rename $<TARGET_FILE:dxpatcher>.merged $<TARGET_FILE:dxpatcher>
         DEPENDS ${DXP_MERGE_INPUTS}
         COMMENT "Merging LLVM/DXC static libraries into dxpatcher.lib (lib.exe)"
         VERBATIM

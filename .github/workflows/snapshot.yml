@@ -55,7 +55,8 @@ jobs:
                   ref: context.ref
                 }).then(r => r.data.sha);
 
-            const workflows = ['ninja-x64', 'ninja-x86', 'clang-x64', 'clang-x86'];
+            // Release artifacts: MSVC ninja only, /MD + /MT variants.
+            const workflows = ['ninja-x64', 'ninja-x86'];
             const runIds = {};
             let allFound = true;
 
@@ -98,25 +99,7 @@ jobs:
           run-id: ${{ fromJSON(steps.check-artifacts.outputs.runIds)['ninja-x86'] }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download clang-x64 artifacts
-        if: steps.check-artifacts.outputs.exists == 'true'
-        uses: actions/download-artifact@v4
-        with:
-          name: clang-x64
-          path: out/install/clang-x64/
-          run-id: ${{ fromJSON(steps.check-artifacts.outputs.runIds)['clang-x64'] }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Download clang-x86 artifacts
-        if: steps.check-artifacts.outputs.exists == 'true'
-        uses: actions/download-artifact@v4
-        with:
-          name: clang-x86
-          path: out/install/clang-x86/
-          run-id: ${{ fromJSON(steps.check-artifacts.outputs.runIds)['clang-x86'] }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      # ── PATH B: Build all 4 targets from scratch ──
+      # ── PATH B: Build from scratch (lean by default) ──
       - name: Configure build for amd64
         if: steps.check-artifacts.outputs.exists != 'true'
         uses: ilammy/msvc-dev-cmd@v1
@@ -125,19 +108,35 @@ jobs:
 
       - name: Configure CMake (x64)
         if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --preset ninja-x64 -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+        run: |
+          cmake --preset ninja-x64 -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+          cmake --preset ninja-x64-static -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
-      - name: Build (x64)
+      - name: Build (x64 Release + Debug)
         if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --build --parallel --preset ninja-x64-release
+        run: |
+          cmake --build --parallel --preset ninja-x64-release
+          cmake --build --parallel --preset ninja-x64-debug
+          cmake --build --parallel --preset ninja-x64-static-release
+          cmake --build --parallel --preset ninja-x64-static-debug
 
       - name: Test (x64 Release)
         if: steps.check-artifacts.outputs.exists != 'true'
-        run: ctest --preset ninja-x64-release --output-on-failure
+        run: |
+          ctest --preset ninja-x64-release --output-on-failure
+          ctest --preset ninja-x64-static-release --output-on-failure
 
-      - name: Build Debug (x64)
+      - name: Install SDK (x64)
         if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --build --parallel --preset ninja-x64-debug
+        run: |
+          cmake --install out/build/ninja-x64 --config Release --component DirectXShaderPatcherSDK --prefix githubrelease/x64
+          cmake --install out/build/ninja-x64 --config Debug --component DirectXShaderPatcherSDK --prefix githubrelease/x64
+          cmake --install out/build/ninja-x64 --config Release --component DirectXShaderPatcherCLI --prefix githubrelease/x64
+          cmake --install out/build/ninja-x64 --config Debug --component DirectXShaderPatcherCLI --prefix githubrelease/x64
+          cmake --install out/build/ninja-x64-static --config Release --component DirectXShaderPatcherSDK --prefix githubrelease/x64-static
+          cmake --install out/build/ninja-x64-static --config Debug --component DirectXShaderPatcherSDK --prefix githubrelease/x64-static
+          cmake --install out/build/ninja-x64-static --config Release --component DirectXShaderPatcherCLI --prefix githubrelease/x64-static
+          cmake --install out/build/ninja-x64-static --config Debug --component DirectXShaderPatcherCLI --prefix githubrelease/x64-static
 
       - name: Configure build for x86
         if: steps.check-artifacts.outputs.exists != 'true'
@@ -147,103 +146,55 @@ jobs:
 
       - name: Configure CMake (x86)
         if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --preset ninja-x86 -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+        run: |
+          cmake --preset ninja-x86 -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+          cmake --preset ninja-x86-static -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
-      - name: Build (x86)
+      - name: Build (x86 Release + Debug)
         if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --build --parallel --preset ninja-x86-release
+        run: |
+          cmake --build --parallel --preset ninja-x86-release
+          cmake --build --parallel --preset ninja-x86-debug
+          cmake --build --parallel --preset ninja-x86-static-release
+          cmake --build --parallel --preset ninja-x86-static-debug
 
-      - name: Build Debug (x86)
+      - name: Test (x86 Release)
         if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --build --parallel --preset ninja-x86-debug
+        run: |
+          ctest --preset ninja-x86-release --output-on-failure
+          ctest --preset ninja-x86-static-release --output-on-failure
 
-      - name: Configure CMake (clang-x64)
+      - name: Install SDK (x86)
         if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --preset clang-x64 -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
-
-      - name: Build (clang-x64)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --build --parallel --preset clang-x64-release
-
-      - name: Build Debug (clang-x64)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --build --parallel --preset clang-x64-debug
-
-      - name: Configure CMake (clang-x86)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --preset clang-x86 -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
-
-      - name: Build (clang-x86)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --build --parallel --preset clang-x86-release
-
-      - name: Build Debug (clang-x86)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --build --parallel --preset clang-x86-debug
+        run: |
+          cmake --install out/build/ninja-x86 --config Release --component DirectXShaderPatcherSDK --prefix githubrelease/x86
+          cmake --install out/build/ninja-x86 --config Debug --component DirectXShaderPatcherSDK --prefix githubrelease/x86
+          cmake --install out/build/ninja-x86-static --config Release --component DirectXShaderPatcherSDK --prefix githubrelease/x86-static
+          cmake --install out/build/ninja-x86-static --config Debug --component DirectXShaderPatcherSDK --prefix githubrelease/x86-static
 
       - name: Show sccache stats
         if: steps.check-artifacts.outputs.exists != 'true'
         run: sccache --show-stats
 
       # ── Common: package and release ──
-      - name: Prepare Release folder
-        run: md githubrelease
+      # (PATH B installs straight into githubrelease/; PATH A copies below.)
 
-      # Install from build (PATH B)
-      - name: Install SDK (x64 Release)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --install out/build/ninja-x64 --config Release --component DirectXShaderPatcherSDK --prefix githubrelease/x64
-      - name: Install SDK (x64 Debug)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --install out/build/ninja-x64 --config Debug --component DirectXShaderPatcherSDK --prefix githubrelease/x64
-      - name: Install CLI (x64 Release)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --install out/build/ninja-x64 --config Release --component DirectXShaderPatcherCLI --prefix githubrelease/x64
-      - name: Install CLI (x64 Debug)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --install out/build/ninja-x64 --config Debug --component DirectXShaderPatcherCLI --prefix githubrelease/x64
-
-      - name: Install SDK (x86 Release)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --install out/build32/ninja-x86 --config Release --component DirectXShaderPatcherSDK --prefix githubrelease/x86
-      - name: Install SDK (x86 Debug)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --install out/build32/ninja-x86 --config Debug --component DirectXShaderPatcherSDK --prefix githubrelease/x86
-
-      - name: Install SDK (clang-x64 Release)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --install out/build/clang-x64 --config Release --component DirectXShaderPatcherSDK --prefix githubrelease/clang-x64
-      - name: Install SDK (clang-x64 Debug)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --install out/build/clang-x64 --config Debug --component DirectXShaderPatcherSDK --prefix githubrelease/clang-x64
-      - name: Install CLI (clang-x64 Release)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --install out/build/clang-x64 --config Release --component DirectXShaderPatcherCLI --prefix githubrelease/clang-x64
-      - name: Install CLI (clang-x64 Debug)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --install out/build/clang-x64 --config Debug --component DirectXShaderPatcherCLI --prefix githubrelease/clang-x64
-
-      - name: Install SDK (clang-x86 Release)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --install out/build32/clang-x86 --config Release --component DirectXShaderPatcherSDK --prefix githubrelease/clang-x86
-      - name: Install SDK (clang-x86 Debug)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: cmake --install out/build32/clang-x86 --config Debug --component DirectXShaderPatcherSDK --prefix githubrelease/clang-x86
-
-      # Copy from downloaded artifacts (PATH A)
       - name: Prepare githubrelease from artifacts
         if: steps.check-artifacts.outputs.exists == 'true'
         run: |
           xcopy /E /I /Y out\install\ninja-x64 githubrelease\x64
           xcopy /E /I /Y out\install\ninja-x86 githubrelease\x86
-          xcopy /E /I /Y out\install\clang-x64 githubrelease\clang-x64
-          xcopy /E /I /Y out\install\clang-x86 githubrelease\clang-x86
 
       - name: Package artifacts
         shell: powershell
         run: |
           $v = $env:ARTIFACT_VERSION
-          $archToLabel = @{ 'x64' = 'ninja-x64'; 'x86' = 'ninja-x86'; 'clang-x64' = 'clang-x64'; 'clang-x86' = 'clang-x86' }
+          $archToLabel = @{
+            'x64' = 'ninja-x64'
+            'x64-static' = 'ninja-x64-static'
+            'x86' = 'ninja-x86'
+            'x86-static' = 'ninja-x86-static'
+          }
           foreach ($entry in $archToLabel.GetEnumerator()) {
             $arch = $entry.Key
             $label = $entry.Value

@@ -1,4 +1,10 @@
-name: Clang x86
+name: Clang x86 (compat smoke)
+
+# clang-cl builds are NOT release artifacts anymore (MSVC is the supported
+# toolchain; clang doubles CI cost for a second flavor of the same ABI).
+# Kept as a fast compatibility smoke for the x86 SM5-only core. Both CRT
+# variants are exercised so DXP_CRT=Static stays working under clang-cl.
+# No install/upload.
 
 on:
   workflow_dispatch:
@@ -18,6 +24,10 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [clang-x86, clang-x86-static]
     env:
       SCCACHE_GHA_ENABLED: "true"
       SCCACHE_CACHE_SIZE: "5G"
@@ -34,33 +44,19 @@ jobs:
       - name: Install ninja-build tool
         uses: seanmiddleditch/gha-setup-ninja@v5
 
-      - name: Configure build for amd64_x86
+      - name: Configure build for x86
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: amd64_x86
 
-      - name: Configure CMake (x86)
-        run: cmake --preset clang-x86 -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+      - name: Configure CMake (${{ matrix.preset }})
+        run: cmake --preset ${{ matrix.preset }} -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
-      - name: Build (x86)
-        run: cmake --build --parallel --preset clang-x86-release
+      - name: Build (Release)
+        run: cmake --build --parallel --preset ${{ matrix.preset }}-release
 
-      - name: Build Debug (x86)
-        run: cmake --build --parallel --preset clang-x86-debug
-
-      - name: Install SDK (x86 Release)
-        run: cmake --install out/build32/clang-x86 --config Release --component DirectXShaderPatcherSDK --prefix out/install/clang-x86
-
-      - name: Install SDK (x86 Debug)
-        run: cmake --install out/build32/clang-x86 --config Debug --component DirectXShaderPatcherSDK --prefix out/install/clang-x86
-
-      - name: Upload artifacts
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: clang-x86
-          path: out/install/clang-x86/
-          retention-days: 7
+      - name: Test (Release)
+        run: ctest --preset ${{ matrix.preset }}-release --output-on-failure
 
       - name: Show sccache stats
         if: always()

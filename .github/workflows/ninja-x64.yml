@@ -18,6 +18,14 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - preset: ninja-x64
+            suffix: ""
+          - preset: ninja-x64-static
+            suffix: "-static"
     env:
       SCCACHE_GHA_ENABLED: "true"
       SCCACHE_CACHE_SIZE: "5G"
@@ -39,36 +47,36 @@ jobs:
         with:
           arch: amd64
 
-      - name: Configure CMake (x64)
-        run: cmake --preset ninja-x64 -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+      - name: Configure CMake (${{ matrix.preset }})
+        run: cmake --preset ${{ matrix.preset }} -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
-      - name: Build (x64)
-        run: cmake --build --parallel --preset ninja-x64-release
+      - name: Build (${{ matrix.preset }} Release)
+        run: cmake --build --parallel --preset ${{ matrix.preset }}-release
 
-      - name: Build Debug (x64)
-        run: cmake --build --parallel --preset ninja-x64-debug
+      - name: Test (${{ matrix.preset }} Release)
+        run: ctest --preset ${{ matrix.preset }}-release --output-on-failure
 
-      - name: Test (x64)
-        run: ctest --preset ninja-x64-release --output-on-failure
+      - name: Build (${{ matrix.preset }} Debug)
+        run: cmake --build --parallel --preset ${{ matrix.preset }}-debug
 
-      - name: Install SDK (x64 Release)
-        run: cmake --install out/build/ninja-x64 --config Release --component DirectXShaderPatcherSDK --prefix out/install/ninja-x64
+      - name: Install SDK (${{ matrix.preset }} Release)
+        run: cmake --install out/build/${{ matrix.preset }} --config Release --component DirectXShaderPatcherSDK --prefix out/install/${{ matrix.preset }}
 
-      - name: Install SDK (x64 Debug)
-        run: cmake --install out/build/ninja-x64 --config Debug --component DirectXShaderPatcherSDK --prefix out/install/ninja-x64
+      - name: Install SDK (${{ matrix.preset }} Debug)
+        run: cmake --install out/build/${{ matrix.preset }} --config Debug --component DirectXShaderPatcherSDK --prefix out/install/${{ matrix.preset }}
 
-      - name: Install CLI (x64 Release)
-        run: cmake --install out/build/ninja-x64 --config Release --component DirectXShaderPatcherCLI --prefix out/install/ninja-x64
+      - name: Install CLI (${{ matrix.preset }} Release)
+        run: cmake --install out/build/${{ matrix.preset }} --config Release --component DirectXShaderPatcherCLI --prefix out/install/${{ matrix.preset }}
 
-      - name: Install CLI (x64 Debug)
-        run: cmake --install out/build/ninja-x64 --config Debug --component DirectXShaderPatcherCLI --prefix out/install/ninja-x64
+      - name: Install CLI (${{ matrix.preset }} Debug)
+        run: cmake --install out/build/${{ matrix.preset }} --config Debug --component DirectXShaderPatcherCLI --prefix out/install/${{ matrix.preset }}
 
       - name: Upload artifacts
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: ninja-x64
-          path: out/install/ninja-x64/
+          name: ninja-x64${{ matrix.suffix }}
+          path: out/install/${{ matrix.preset }}/
           retention-days: 7
 
       - name: Show sccache stats

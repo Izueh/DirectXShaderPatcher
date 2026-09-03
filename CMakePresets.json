@@ -71,6 +71,61 @@
         "CMAKE_STATIC_LINKER_FLAGS": "/machine:X86",
         "DXP_ARCH": "x86"
       }
+    },
+    {
+      "name": "ninja-x64-static",
+      "inherits": "base",
+      "displayName": "Ninja x64 (Static CRT /MT)",
+      "description": "Primary build with Ninja and MSVC",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "cl.exe",
+        "CMAKE_CXX_COMPILER": "cl.exe",
+        "DXP_CRT": "Static"
+      }
+    },
+    {
+      "name": "ninja-x86-static",
+      "inherits": "base",
+      "displayName": "Ninja x86 (Static CRT /MT)",
+      "description": "SM5-only build (no LLVM/DXIL)",
+      "binaryDir": "${sourceDir}/out/build32/${presetName}",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "cl.exe",
+        "CMAKE_CXX_COMPILER": "cl.exe",
+        "CMAKE_EXE_LINKER_FLAGS": "/machine:X86",
+        "CMAKE_MODULE_LINKER_FLAGS": "/machine:X86",
+        "DXP_ARCH": "x86",
+        "DXP_CRT": "Static"
+      }
+    },
+    {
+      "name": "clang-x64-static",
+      "inherits": "base",
+      "displayName": "Clang x64 (Static CRT /MT)",
+      "description": "Clang-cl + Ninja (SM5 + SM6)",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang-cl.exe",
+        "CMAKE_CXX_COMPILER": "clang-cl.exe",
+        "DXP_CRT": "Static"
+      }
+    },
+    {
+      "name": "clang-x86-static",
+      "inherits": "base",
+      "displayName": "Clang x86 (Static CRT /MT)",
+      "description": "SM5-only build (no LLVM/DXIL)",
+      "binaryDir": "${sourceDir}/out/build32/${presetName}",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang-cl.exe",
+        "CMAKE_CXX_COMPILER": "clang-cl.exe",
+        "CMAKE_C_FLAGS": "-m32",
+        "CMAKE_CXX_FLAGS": "-m32",
+        "CMAKE_EXE_LINKER_FLAGS": "/machine:X86",
+        "CMAKE_MODULE_LINKER_FLAGS": "/machine:X86",
+        "CMAKE_STATIC_LINKER_FLAGS": "/machine:X86",
+        "DXP_ARCH": "x86",
+        "DXP_CRT": "Static"
+      }
     }
   ],
   "buildPresets": [
@@ -80,8 +135,18 @@
       "configuration": "Debug"
     },
     {
+      "name": "ninja-x64-static-debug",
+      "configurePreset": "ninja-x64-static",
+      "configuration": "Debug"
+    },
+    {
       "name": "ninja-x64-release",
       "configurePreset": "ninja-x64",
+      "configuration": "Release"
+    },
+    {
+      "name": "ninja-x64-static-release",
+      "configurePreset": "ninja-x64-static",
       "configuration": "Release"
     },
     {
@@ -90,8 +155,18 @@
       "configuration": "RelWithDebInfo"
     },
     {
+      "name": "ninja-x64-static-relwithdebinfo",
+      "configurePreset": "ninja-x64-static",
+      "configuration": "RelWithDebInfo"
+    },
+    {
       "name": "ninja-x86-debug",
       "configurePreset": "ninja-x86",
+      "configuration": "Debug"
+    },
+    {
+      "name": "ninja-x86-static-debug",
+      "configurePreset": "ninja-x86-static",
       "configuration": "Debug"
     },
     {
@@ -100,8 +175,18 @@
       "configuration": "Release"
     },
     {
+      "name": "ninja-x86-static-release",
+      "configurePreset": "ninja-x86-static",
+      "configuration": "Release"
+    },
+    {
       "name": "ninja-x86-relwithdebinfo",
       "configurePreset": "ninja-x86",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "ninja-x86-static-relwithdebinfo",
+      "configurePreset": "ninja-x86-static",
       "configuration": "RelWithDebInfo"
     },
     {
@@ -110,8 +195,18 @@
       "configuration": "Debug"
     },
     {
+      "name": "clang-x64-static-debug",
+      "configurePreset": "clang-x64-static",
+      "configuration": "Debug"
+    },
+    {
       "name": "clang-x64-release",
       "configurePreset": "clang-x64",
+      "configuration": "Release"
+    },
+    {
+      "name": "clang-x64-static-release",
+      "configurePreset": "clang-x64-static",
       "configuration": "Release"
     },
     {
@@ -120,8 +215,18 @@
       "configuration": "RelWithDebInfo"
     },
     {
+      "name": "clang-x64-static-relwithdebinfo",
+      "configurePreset": "clang-x64-static",
+      "configuration": "RelWithDebInfo"
+    },
+    {
       "name": "clang-x86-debug",
       "configurePreset": "clang-x86",
+      "configuration": "Debug"
+    },
+    {
+      "name": "clang-x86-static-debug",
+      "configurePreset": "clang-x86-static",
       "configuration": "Debug"
     },
     {
@@ -130,8 +235,18 @@
       "configuration": "Release"
     },
     {
+      "name": "clang-x86-static-release",
+      "configurePreset": "clang-x86-static",
+      "configuration": "Release"
+    },
+    {
       "name": "clang-x86-relwithdebinfo",
       "configurePreset": "clang-x86",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "clang-x86-static-relwithdebinfo",
+      "configurePreset": "clang-x86-static",
       "configuration": "RelWithDebInfo"
     }
   ],
@@ -142,8 +257,18 @@
       "configuration": "Debug"
     },
     {
+      "name": "ninja-x64-static-debug",
+      "configurePreset": "ninja-x64-static",
+      "configuration": "Debug"
+    },
+    {
       "name": "ninja-x64-release",
       "configurePreset": "ninja-x64",
+      "configuration": "Release"
+    },
+    {
+      "name": "ninja-x64-static-release",
+      "configurePreset": "ninja-x64-static",
       "configuration": "Release"
     },
     {
@@ -152,8 +277,18 @@
       "configuration": "Debug"
     },
     {
+      "name": "ninja-x86-static-debug",
+      "configurePreset": "ninja-x86-static",
+      "configuration": "Debug"
+    },
+    {
       "name": "ninja-x86-release",
       "configurePreset": "ninja-x86",
+      "configuration": "Release"
+    },
+    {
+      "name": "ninja-x86-static-release",
+      "configurePreset": "ninja-x86-static",
       "configuration": "Release"
     },
     {
@@ -162,8 +297,18 @@
       "configuration": "Debug"
     },
     {
+      "name": "clang-x64-static-debug",
+      "configurePreset": "clang-x64-static",
+      "configuration": "Debug"
+    },
+    {
       "name": "clang-x64-release",
       "configurePreset": "clang-x64",
+      "configuration": "Release"
+    },
+    {
+      "name": "clang-x64-static-release",
+      "configurePreset": "clang-x64-static",
       "configuration": "Release"
     },
     {
@@ -172,8 +317,18 @@
       "configuration": "Debug"
     },
     {
+      "name": "clang-x86-static-debug",
+      "configurePreset": "clang-x86-static",
+      "configuration": "Debug"
+    },
+    {
       "name": "clang-x86-release",
       "configurePreset": "clang-x86",
+      "configuration": "Release"
+    },
+    {
+      "name": "clang-x86-static-release",
+      "configurePreset": "clang-x86-static",
       "configuration": "Release"
     }
   ]
