@@ -13,23 +13,10 @@ permissions:
   contents: write
 
 jobs:
-  build-or-release:
+  publish:
     runs-on: windows-latest
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      SCCACHE_CACHE_SIZE: "2G"
-      SCCACHE_C_CUSTOM_CACHE_BUSTER: "${{ github.workflow }}"
-
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.10
-
-      - name: Install ninja-build tool
-        uses: seanmiddleditch/gha-setup-ninja@v5
 
       # Compute release identity
       - name: Compute version identity
@@ -37,150 +24,47 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             SNAPSHA=$(git rev-parse --short=8 HEAD)
-            {
-              echo "ARTIFACT_VERSION=snapshot-$SNAPSHA"
-              echo "RELEASE_TAG=snapshot"
-              echo "IS_PRERELEASE=true"
-            } >> "$GITHUB_ENV"
+            echo "ARTIFACT_VERSION=snapshot-$SNAPSHA" >> "$GITHUB_ENV"
+            echo "RELEASE_TAG=snapshot" >> "$GITHUB_ENV"
+            echo "IS_PRERELEASE=true" >> "$GITHUB_ENV"
           else
-            {
-              echo "ARTIFACT_VERSION=${GITHUB_REF_NAME#v}"
-              echo "RELEASE_TAG=${GITHUB_REF_NAME}"
-              echo "IS_PRERELEASE=false"
-            } >> "$GITHUB_ENV"
+            echo "ARTIFACT_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+            echo "RELEASE_TAG=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+            echo "IS_PRERELEASE=false" >> "$GITHUB_ENV"
           fi
 
-      # Check if CI artifacts exist for this commit
-      - name: Check for existing CI artifacts
-        id: check-artifacts
+      # Take the SDK artifacts produced by the latest successful per-push run
+      # (each ninja workflow uploads one artifact per CRT variant).
+      - name: Find latest CI artifacts
+        id: find-artifacts
         uses: actions/github-script@v7
         with:
           script: |
-            const commitSha = context.payload.commits?.[0]?.id
-              || await github.rest.repos.getCommit({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  ref: context.ref
-                }).then(r => r.data.sha);
-
-            // Release artifacts: MSVC ninja only, /MD + /MT variants.
-            const workflows = ['ninja-x64', 'ninja-x86'];
-            const runIds = {};
-            let allFound = true;
-
-            for (const wf of workflows) {
-              const runs = await github.rest.actions.listWorkflowRuns({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: wf + '.yml',
-                head_sha: commitSha,
-                status: 'success',
-                per_page: 1
-              });
-              if (runs.data.workflow_runs.length > 0) {
-                runIds[wf] = runs.data.workflow_runs[0].id;
-              } else {
-                allFound = false;
-              }
+            const runs = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'ninja-x64.yml',
+              status: 'success',
+              per_page: 1
+            });
+            if (runs.data.workflow_runs.length === 0) {
+              core.setFailed('No successful ninja-x64 run found; push to main first.');
+              return;
             }
+            const run = runs.data.workflow_runs[0];
+            core.setOutput('runId', run.id);
+            core.info(`Using artifacts from run ${run.id} (${run.head_sha})`);
 
-            core.setOutput('exists', allFound);
-            core.setOutput('runIds', JSON.stringify(runIds));
-            core.info(`Artifacts exist: ${allFound}`);
-
-      # ── PATH A: Download existing CI artifacts ──
       - name: Download CI artifacts
-        if: steps.check-artifacts.outputs.exists == 'true'
         uses: actions/download-artifact@v4
         with:
           pattern: ninja-*
           merge-multiple: false
           path: out/install/
-          run-id: ${{ fromJSON(steps.check-artifacts.outputs.runIds)['ninja-x64'] }}
+          run-id: ${{ steps.find-artifacts.outputs.runId }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── PATH B: Build from scratch (lean by default) ──
-      - name: Configure build for amd64
-        if: steps.check-artifacts.outputs.exists != 'true'
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: amd64
-
-      - name: Configure CMake (x64)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: |
-          cmake --preset ninja-x64 -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
-          cmake --preset ninja-x64-static -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
-
-      - name: Build (x64 Release + Debug)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: |
-          cmake --build --parallel --preset ninja-x64-release
-          cmake --build --parallel --preset ninja-x64-debug
-          cmake --build --parallel --preset ninja-x64-static-release
-          cmake --build --parallel --preset ninja-x64-static-debug
-
-      - name: Test (x64 Release)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: |
-          ctest --preset ninja-x64-release --output-on-failure
-          ctest --preset ninja-x64-static-release --output-on-failure
-
-      - name: Install SDK (x64)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: |
-          cmake --install out/build/ninja-x64 --config Release --component DirectXShaderPatcherSDK --prefix githubrelease/x64
-          cmake --install out/build/ninja-x64 --config Debug --component DirectXShaderPatcherSDK --prefix githubrelease/x64
-          cmake --install out/build/ninja-x64 --config Release --component DirectXShaderPatcherCLI --prefix githubrelease/x64
-          cmake --install out/build/ninja-x64 --config Debug --component DirectXShaderPatcherCLI --prefix githubrelease/x64
-          cmake --install out/build/ninja-x64-static --config Release --component DirectXShaderPatcherSDK --prefix githubrelease/x64-static
-          cmake --install out/build/ninja-x64-static --config Debug --component DirectXShaderPatcherSDK --prefix githubrelease/x64-static
-          cmake --install out/build/ninja-x64-static --config Release --component DirectXShaderPatcherCLI --prefix githubrelease/x64-static
-          cmake --install out/build/ninja-x64-static --config Debug --component DirectXShaderPatcherCLI --prefix githubrelease/x64-static
-
-      - name: Configure build for x86
-        if: steps.check-artifacts.outputs.exists != 'true'
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: amd64_x86
-
-      - name: Configure CMake (x86)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: |
-          cmake --preset ninja-x86 -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
-          cmake --preset ninja-x86-static -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
-
-      - name: Build (x86 Release + Debug)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: |
-          cmake --build --parallel --preset ninja-x86-release
-          cmake --build --parallel --preset ninja-x86-debug
-          cmake --build --parallel --preset ninja-x86-static-release
-          cmake --build --parallel --preset ninja-x86-static-debug
-
-      - name: Test (x86 Release)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: |
-          ctest --preset ninja-x86-release --output-on-failure
-          ctest --preset ninja-x86-static-release --output-on-failure
-
-      - name: Install SDK (x86)
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: |
-          cmake --install out/build32/ninja-x86 --config Release --component DirectXShaderPatcherSDK --prefix githubrelease/x86
-          cmake --install out/build32/ninja-x86 --config Debug --component DirectXShaderPatcherSDK --prefix githubrelease/x86
-          cmake --install out/build32/ninja-x86-static --config Release --component DirectXShaderPatcherSDK --prefix githubrelease/x86-static
-          cmake --install out/build32/ninja-x86-static --config Debug --component DirectXShaderPatcherSDK --prefix githubrelease/x86-static
-
-      - name: Show sccache stats
-        if: steps.check-artifacts.outputs.exists != 'true'
-        run: sccache --show-stats
-
-      # ── Common: package and release ──
-      # (PATH B installs straight into githubrelease/; PATH A copies below.)
-
-      - name: Prepare githubrelease from artifacts
-        if: steps.check-artifacts.outputs.exists == 'true'
+      - name: Prepare release folders
         run: |
           xcopy /E /I /Y out\install\ninja-x64 githubrelease\x64
           xcopy /E /I /Y out\install\ninja-x64-static githubrelease\x64-static
