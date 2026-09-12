@@ -1507,6 +1507,7 @@ auto EmitOperandPatternData::Compile() const -> std::expected<EmitOperand, std::
 
 auto RuleData::Compile() const -> std::expected<Rule, std::string> {
   Rule result;
+  result.name = name;
   result.prune_dead_instructions = prune;
   for (const auto& m : match) {
     auto compiled = m.Compile();
@@ -1524,7 +1525,11 @@ auto RuleData::Compile() const -> std::expected<Rule, std::string> {
 auto ApplyRuleData::Compile() const -> std::expected<ApplyRuleStep, std::string> {
   auto rule = this->rule.Compile();
   if (!rule) return std::unexpected(std::move(rule.error()));
-  ApplyRuleStep step{name, required, rewrite_mode, {}, std::move(*rule), match_mode};
+  // The condition must be carried into the compiled step: RecipeEngine gates step
+  // execution on step.condition, so discarding it here silently makes `condition`
+  // a no-op for every SM6 apply_rule. Mirrors the SM5 backend.
+  auto condition = this->condition.Compile();
+  ApplyRuleStep step{name, required, rewrite_mode, std::move(condition), std::move(*rule), match_mode};
   step.insert_index = insert_index;
   step.range_start_offset = range_start_offset;
   step.range_end_offset = range_end_offset;
@@ -1619,7 +1624,12 @@ std::expected<::dxp::ApplyRuleResults, std::string> Execute(const ApplyRuleStep&
   result.applied_count = total_mutations;
 
   ctx.program_modified = ctx.program_modified || (total_mutations != 0);
+  // Publish match state under both the step name and the rule name, matching SM5,
+  // so a later step can gate on either (`is: <step>` / `is: <rule>`).
   ctx.SetState<bool>(step.name, total_matches > 0);
+  if (!step.rule.name.empty()) {
+    ctx.SetState<bool>(step.rule.name, total_matches > 0);
+  }
   return result;
 }
 

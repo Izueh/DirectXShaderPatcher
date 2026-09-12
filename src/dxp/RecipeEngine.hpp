@@ -223,6 +223,12 @@ std::expected<RecipeReport, std::string> ExecuteSteps(
   uint32_t skipped_count = 0;
   std::string stopped_early_step;
   dxp::AddResourceResults added_totals;
+  // Whether any rule actually emitted a change. `program_modified` is a sticky OR over
+  // every contributing step (correct: optional rules may not apply while others do), but
+  // `add_resource` also sets it merely for declaring resources. A recipe that only
+  // declares resources for a rule that never applied has not patched anything, and the
+  // documented contract is an unmodified pass-through in that case.
+  bool any_rule_mutated = false;
 
   for (const auto& step_var : steps) {
     bool should_exec = false;
@@ -304,6 +310,15 @@ std::expected<RecipeReport, std::string> ExecuteSteps(
       added_totals.temps_added += ar->temps_added;
     }
 
+    // A rule that actually emitted a change is what makes the recipe a patch. Matching
+    // alone is not enough: `rewrite_mode: none` rules exist purely to extract information
+    // (probes / captures) and must not mark the output as modified.
+    if (const auto* rr = std::get_if<dxp::ApplyRuleResults>(&step_results)) {
+      if (rr->applied_count > 0) {
+        any_rule_mutated = true;
+      }
+    }
+
     for (auto& [key, resource] : exec_context.resource_exports) {
       result.resource_usage[key] = std::move(resource);
     }
@@ -333,6 +348,14 @@ std::expected<RecipeReport, std::string> ExecuteSteps(
       stopped_early_step = step_name;
       break;
     }
+  }
+
+  // Resources declared for a rule that never emitted anything leave the program
+  // otherwise untouched. Report the input unchanged so callers never treat such a recipe
+  // as having patched the shader; `build_report` keys its serialize-vs-pass-through
+  // decision on this flag.
+  if (!any_rule_mutated) {
+    exec_context.program_modified = false;
   }
 
   auto output = build_report(exec_context, input);

@@ -114,10 +114,14 @@ struct EmitPattern {
 };
 
 /// @brief Describes one DXIL rewrite rule.
+///
+/// @c name carries the YAML `rule.name` through to execution so the step can publish
+/// `state[<rule name>]` alongside `state[<step name>]`, matching the SM5 backend.
 struct Rule {
   std::vector<InstructionPattern> match_patterns;
   std::vector<EmitPattern> emit_patterns;
   bool prune_dead_instructions = true;
+  std::string name;
 };
 
 /// @brief Step that applies a single DXIL rewrite rule.
