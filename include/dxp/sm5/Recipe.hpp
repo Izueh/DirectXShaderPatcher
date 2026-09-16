@@ -22,6 +22,7 @@
 #include "dxp/sm5/step/CheckOpcodeCountStep.hpp"
 #include "dxp/sm5/step/CheckResourceCountStep.hpp"
 #include "dxp/sm5/step/CheckShaderVersionStep.hpp"
+#include "dxp/sm5/step/DeclareTemplateStep.hpp"
 
 namespace dxp::sm5 {
 
@@ -29,7 +30,7 @@ struct Recipe {
   using StepVariant = std::variant<
       ::dxp::sm5::step::AddResourceStep, ::dxp::sm5::step::CheckShaderVersionStep,
       ::dxp::sm5::step::CheckOpcodeCountStep, ::dxp::sm5::step::CheckResourceCountStep,
-      ::dxp::sm5::step::ApplyRuleStep>;
+      ::dxp::sm5::step::ApplyRuleStep, ::dxp::sm5::step::DeclareTemplateStep>;
 
  public:
   Recipe() = default;

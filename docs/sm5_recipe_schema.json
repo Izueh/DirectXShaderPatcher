@@ -48,7 +48,29 @@
                      "temps": {
                         "type": "array",
                         "items": {
-                           "type": "string"
+                           "type": [
+                              "string",
+                              "object"
+                           ],
+                           "oneOf": [
+                              {
+                                 "type": "string",
+                                 "title": "std::string"
+                              },
+                              {
+                                 "type": "object",
+                                 "properties": {
+                                    "count": {
+                                       "$ref": "#/$defs/uint32_t"
+                                    },
+                                    "name": {
+                                       "type": "string"
+                                    }
+                                 },
+                                 "additionalProperties": false,
+                                 "title": "dxp::sm5::step::TempArrayDeclData"
+                              }
+                           ]
                         }
                      },
                      "textures": {
@@ -133,7 +155,7 @@
                         ]
                      },
                      "match_mode": {
-                        "$ref": "#/$defs/dxp::sm5::step::ApplyRuleStep::MatchKind"
+                        "$ref": "#/$defs/dxp::sm5::step::MatchKind"
                      },
                      "name": {
                         "type": "string"
@@ -148,155 +170,13 @@
                         "type": "boolean"
                      },
                      "rewrite_mode": {
-                        "$ref": "#/$defs/dxp::sm5::step::ApplyRuleStep::RewriteKind"
+                        "$ref": "#/$defs/dxp::sm5::step::RewriteKind"
                      },
                      "rule": {
                         "type": "object",
                         "properties": {
                            "emit": {
-                              "type": "array",
-                              "items": {
-                                 "type": "object",
-                                 "properties": {
-                                    "access_pattern": {
-                                       "anyOf": [
-                                          {
-                                             "$ref": "#/$defs/dxp::sm5::model::CbufferAccessPattern"
-                                          },
-                                          {
-                                             "type": "null"
-                                          }
-                                       ]
-                                    },
-                                    "blob": {
-                                       "type": "string"
-                                    },
-                                    "capture": {
-                                       "type": "string"
-                                    },
-                                    "dimension": {
-                                       "anyOf": [
-                                          {
-                                             "$ref": "#/$defs/dxp::sm5::model::ResourceDimension"
-                                          },
-                                          {
-                                             "type": "null"
-                                          }
-                                       ]
-                                    },
-                                    "extended_opcodes": {
-                                       "type": "array",
-                                       "items": {
-                                          "type": "object",
-                                          "properties": {
-                                             "raw": {
-                                                "anyOf": [
-                                                   {
-                                                      "$ref": "#/$defs/uint32_t"
-                                                   },
-                                                   {
-                                                      "type": "null"
-                                                   }
-                                                ]
-                                             },
-                                             "resource_dim": {
-                                                "anyOf": [
-                                                   {
-                                                      "$ref": "#/$defs/dxp::sm5::model::ResourceDimPayload"
-                                                   },
-                                                   {
-                                                      "type": "null"
-                                                   }
-                                                ]
-                                             },
-                                             "resource_return_type": {
-                                                "anyOf": [
-                                                   {
-                                                      "$ref": "#/$defs/std::array<uint32_t,4>"
-                                                   },
-                                                   {
-                                                      "type": "null"
-                                                   }
-                                                ]
-                                             },
-                                             "sample_controls": {
-                                                "anyOf": [
-                                                   {
-                                                      "$ref": "#/$defs/dxp::sm5::model::SampleControlsPayload"
-                                                   },
-                                                   {
-                                                      "type": "null"
-                                                   }
-                                                ]
-                                             },
-                                             "type": {
-                                                "anyOf": [
-                                                   {
-                                                      "$ref": "#/$defs/dxp::sm5::model::ExtendedOpcodeType"
-                                                   },
-                                                   {
-                                                      "type": "null"
-                                                   }
-                                                ]
-                                             }
-                                          },
-                                          "additionalProperties": false
-                                       }
-                                    },
-                                    "interpolation": {
-                                       "anyOf": [
-                                          {
-                                             "$ref": "#/$defs/dxp::sm5::model::InterpolationMode"
-                                          },
-                                          {
-                                             "type": "null"
-                                          }
-                                       ]
-                                    },
-                                    "mode": {
-                                       "anyOf": [
-                                          {
-                                             "$ref": "#/$defs/dxp::sm5::model::SamplerMode"
-                                          },
-                                          {
-                                             "type": "null"
-                                          }
-                                       ]
-                                    },
-                                    "opcode": {
-                                       "anyOf": [
-                                          {
-                                             "$ref": "#/$defs/dxp::sm5::model::Opcode"
-                                          },
-                                          {
-                                             "type": "null"
-                                          }
-                                       ]
-                                    },
-                                    "operands": {
-                                       "$ref": "#/$defs/std::vector<dxp::sm5::step::OperandData>"
-                                    },
-                                    "return_type": {
-                                       "$ref": "#/$defs/std::array<std::optional<dxp::sm5::model::ResourceReturnType>,4>"
-                                    },
-                                    "saturate": {
-                                       "type": [
-                                          "boolean",
-                                          "null"
-                                       ]
-                                    },
-                                    "structure_stride": {
-                                       "$ref": "#/$defs/uint32_t"
-                                    },
-                                    "test_boolean": {
-                                       "$ref": "#/$defs/int32_t"
-                                    },
-                                    "uav_flags": {
-                                       "$ref": "#/$defs/uint32_t"
-                                    }
-                                 },
-                                 "additionalProperties": false
-                              }
+                              "$ref": "#/$defs/std::vector<dxp::sm5::step::EmitInstructionData>"
                            },
                            "insert_index": {
                               "$ref": "#/$defs/int32_t"
@@ -308,7 +188,7 @@
                               }
                            },
                            "match_mode": {
-                              "$ref": "#/$defs/dxp::sm5::step::ApplyRuleStep::MatchKind"
+                              "$ref": "#/$defs/dxp::sm5::step::MatchKind"
                            },
                            "range_end_offset": {
                               "$ref": "#/$defs/int32_t"
@@ -317,7 +197,7 @@
                               "$ref": "#/$defs/int32_t"
                            },
                            "rewrite_mode": {
-                              "$ref": "#/$defs/dxp::sm5::step::ApplyRuleStep::RewriteKind"
+                              "$ref": "#/$defs/dxp::sm5::step::RewriteKind"
                            }
                         },
                         "additionalProperties": false
@@ -412,6 +292,47 @@
                      "kind"
                   ],
                   "title": "check_resource_count"
+               },
+               {
+                  "type": "object",
+                  "properties": {
+                     "condition": {
+                        "$ref": "#/$defs/dxp::ConditionData"
+                     },
+                     "emit": {
+                        "$ref": "#/$defs/std::vector<dxp::sm5::step::EmitInstructionData>"
+                     },
+                     "kind": {
+                        "const": "declare_template"
+                     },
+                     "name": {
+                        "type": "string"
+                     },
+                     "repeat": {
+                        "anyOf": [
+                           {
+                              "$ref": "#/$defs/dxp::sm5::step::RepeatData"
+                           },
+                           {
+                              "type": "null"
+                           }
+                        ]
+                     },
+                     "required": {
+                        "type": "boolean"
+                     },
+                     "temps": {
+                        "type": "array",
+                        "items": {
+                           "type": "string"
+                        }
+                     }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                     "kind"
+                  ],
+                  "title": "declare_template"
                }
             ]
          }
@@ -422,6 +343,11 @@
    },
    "additionalProperties": false,
    "$defs": {
+      "double": {
+         "type": "number",
+         "minimum": -1.7976931348623157E308,
+         "maximum": 1.7976931348623157E308
+      },
       "dxp::ConditionData": {
          "type": "object",
          "properties": {
@@ -638,52 +564,6 @@
             "null"
          ]
       },
-      "dxp::sm5::step::ApplyRuleStep::MatchKind": {
-         "type": "string",
-         "oneOf": [
-            {
-               "title": "first",
-               "const": "first"
-            },
-            {
-               "title": "last",
-               "const": "last"
-            },
-            {
-               "title": "match_all",
-               "const": "match_all"
-            }
-         ]
-      },
-      "dxp::sm5::step::ApplyRuleStep::RewriteKind": {
-         "type": "string",
-         "oneOf": [
-            {
-               "title": "none",
-               "const": "none"
-            },
-            {
-               "title": "replace",
-               "const": "replace"
-            },
-            {
-               "title": "before",
-               "const": "before"
-            },
-            {
-               "title": "after",
-               "const": "after"
-            },
-            {
-               "title": "replace_range",
-               "const": "replace_range"
-            },
-            {
-               "title": "before_last_return",
-               "const": "before_last_return"
-            }
-         ]
-      },
       "dxp::sm5::step::InstructionMatchData": {
          "type": "object",
          "properties": {
@@ -833,6 +713,23 @@
          },
          "additionalProperties": false
       },
+      "dxp::sm5::step::MatchKind": {
+         "type": "string",
+         "oneOf": [
+            {
+               "title": "first",
+               "const": "first"
+            },
+            {
+               "title": "last",
+               "const": "last"
+            },
+            {
+               "title": "match_all",
+               "const": "match_all"
+            }
+         ]
+      },
       "dxp::sm5::step::OperandData": {
          "type": "object",
          "properties": {
@@ -843,19 +740,26 @@
                "type": "string"
             },
             "components": {
-               "type": "object",
-               "properties": {
-                  "num_components": {
-                     "$ref": "#/$defs/dxp::sm5::model::NumComponents"
+               "anyOf": [
+                  {
+                     "type": "object",
+                     "properties": {
+                        "num_components": {
+                           "$ref": "#/$defs/dxp::sm5::model::NumComponents"
+                        },
+                        "selection_mode": {
+                           "$ref": "#/$defs/dxp::sm5::model::SelectionMode"
+                        },
+                        "value": {
+                           "type": "string"
+                        }
+                     },
+                     "additionalProperties": false
                   },
-                  "selection_mode": {
-                     "$ref": "#/$defs/dxp::sm5::model::SelectionMode"
-                  },
-                  "value": {
-                     "type": "string"
+                  {
+                     "type": "null"
                   }
-               },
-               "additionalProperties": false
+               ]
             },
             "decl": {
                "anyOf": [
@@ -1100,10 +1004,103 @@
          },
          "additionalProperties": false
       },
+      "dxp::sm5::step::RepeatData": {
+         "type": "object",
+         "properties": {
+            "params": {
+               "type": "object",
+               "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                     "f32": {
+                        "type": "array",
+                        "items": {
+                           "$ref": "#/$defs/float"
+                        }
+                     },
+                     "f64": {
+                        "type": "array",
+                        "items": {
+                           "$ref": "#/$defs/double"
+                        }
+                     },
+                     "i32": {
+                        "type": "array",
+                        "items": {
+                           "$ref": "#/$defs/int32_t"
+                        }
+                     },
+                     "i64": {
+                        "type": "array",
+                        "items": {
+                           "$ref": "#/$defs/int64_t"
+                        }
+                     },
+                     "u32": {
+                        "type": "array",
+                        "items": {
+                           "$ref": "#/$defs/uint32_t"
+                        }
+                     },
+                     "u64": {
+                        "type": "array",
+                        "items": {
+                           "$ref": "#/$defs/uint64_t"
+                        }
+                     }
+                  },
+                  "additionalProperties": false
+               }
+            },
+            "times": {
+               "$ref": "#/$defs/uint32_t"
+            }
+         },
+         "additionalProperties": false
+      },
+      "dxp::sm5::step::RewriteKind": {
+         "type": "string",
+         "oneOf": [
+            {
+               "title": "none",
+               "const": "none"
+            },
+            {
+               "title": "replace",
+               "const": "replace"
+            },
+            {
+               "title": "before",
+               "const": "before"
+            },
+            {
+               "title": "after",
+               "const": "after"
+            },
+            {
+               "title": "replace_range",
+               "const": "replace_range"
+            },
+            {
+               "title": "before_last_return",
+               "const": "before_last_return"
+            }
+         ]
+      },
+      "float": {
+         "type": "number",
+         "minimum": -3.4028234663852886E38,
+         "maximum": 3.4028234663852886E38
+      },
       "int32_t": {
          "type": "integer",
          "minimum": -2147483648,
          "maximum": 2147483647
+      },
+      "int64_t": {
+         "type": "integer",
+         "minimum": -9.223372036854776E18,
+         "maximum": 9.223372036854776E18
       },
       "std::array<std::optional<dxp::sm5::model::ResourceReturnType>,4>": {
          "type": "array",
@@ -1422,6 +1419,164 @@
             "additionalProperties": false
          }
       },
+      "std::vector<dxp::sm5::step::EmitInstructionData>": {
+         "type": "array",
+         "items": {
+            "type": "object",
+            "properties": {
+               "access_pattern": {
+                  "anyOf": [
+                     {
+                        "$ref": "#/$defs/dxp::sm5::model::CbufferAccessPattern"
+                     },
+                     {
+                        "type": "null"
+                     }
+                  ]
+               },
+               "blob": {
+                  "type": "string"
+               },
+               "capture": {
+                  "type": "string"
+               },
+               "dimension": {
+                  "anyOf": [
+                     {
+                        "$ref": "#/$defs/dxp::sm5::model::ResourceDimension"
+                     },
+                     {
+                        "type": "null"
+                     }
+                  ]
+               },
+               "extended_opcodes": {
+                  "type": "array",
+                  "items": {
+                     "type": "object",
+                     "properties": {
+                        "raw": {
+                           "anyOf": [
+                              {
+                                 "$ref": "#/$defs/uint32_t"
+                              },
+                              {
+                                 "type": "null"
+                              }
+                           ]
+                        },
+                        "resource_dim": {
+                           "anyOf": [
+                              {
+                                 "$ref": "#/$defs/dxp::sm5::model::ResourceDimPayload"
+                              },
+                              {
+                                 "type": "null"
+                              }
+                           ]
+                        },
+                        "resource_return_type": {
+                           "anyOf": [
+                              {
+                                 "$ref": "#/$defs/std::array<uint32_t,4>"
+                              },
+                              {
+                                 "type": "null"
+                              }
+                           ]
+                        },
+                        "sample_controls": {
+                           "anyOf": [
+                              {
+                                 "$ref": "#/$defs/dxp::sm5::model::SampleControlsPayload"
+                              },
+                              {
+                                 "type": "null"
+                              }
+                           ]
+                        },
+                        "type": {
+                           "anyOf": [
+                              {
+                                 "$ref": "#/$defs/dxp::sm5::model::ExtendedOpcodeType"
+                              },
+                              {
+                                 "type": "null"
+                              }
+                           ]
+                        }
+                     },
+                     "additionalProperties": false
+                  }
+               },
+               "interpolation": {
+                  "anyOf": [
+                     {
+                        "$ref": "#/$defs/dxp::sm5::model::InterpolationMode"
+                     },
+                     {
+                        "type": "null"
+                     }
+                  ]
+               },
+               "mode": {
+                  "anyOf": [
+                     {
+                        "$ref": "#/$defs/dxp::sm5::model::SamplerMode"
+                     },
+                     {
+                        "type": "null"
+                     }
+                  ]
+               },
+               "opcode": {
+                  "anyOf": [
+                     {
+                        "$ref": "#/$defs/dxp::sm5::model::Opcode"
+                     },
+                     {
+                        "type": "null"
+                     }
+                  ]
+               },
+               "operands": {
+                  "$ref": "#/$defs/std::vector<dxp::sm5::step::OperandData>"
+               },
+               "repeat": {
+                  "anyOf": [
+                     {
+                        "$ref": "#/$defs/dxp::sm5::step::RepeatData"
+                     },
+                     {
+                        "type": "null"
+                     }
+                  ]
+               },
+               "return_type": {
+                  "$ref": "#/$defs/std::array<std::optional<dxp::sm5::model::ResourceReturnType>,4>"
+               },
+               "saturate": {
+                  "type": [
+                     "boolean",
+                     "null"
+                  ]
+               },
+               "structure_stride": {
+                  "$ref": "#/$defs/uint32_t"
+               },
+               "template": {
+                  "type": "string"
+               },
+               "test_boolean": {
+                  "$ref": "#/$defs/int32_t"
+               },
+               "uav_flags": {
+                  "$ref": "#/$defs/uint32_t"
+               }
+            },
+            "additionalProperties": false
+         }
+      },
       "std::vector<dxp::sm5::step::OperandData>": {
          "type": "array",
          "items": {
@@ -1432,6 +1587,11 @@
          "type": "integer",
          "minimum": 0,
          "maximum": 4294967295
+      },
+      "uint64_t": {
+         "type": "integer",
+         "minimum": 0,
+         "maximum": 1.8446744073709552E19
       }
    },
    "title": "SM5 YAML Recipe Schema",

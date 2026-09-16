@@ -114,9 +114,11 @@ struct ShaderProgram {
   /// @brief Finds the next available bind point for output signature registers.
   [[nodiscard]] unsigned FindNextAvailableOutput(unsigned preferred = 0, bool from_high = false) const;
 
-  /// @brief Ensures a DCL_TEMPS declaration matching the current temp_count exists
-  /// (updates an existing one, or inserts one after the last declaration).
-  void EnsureTempDeclaration();
+  /// @brief Ensures a DCL_TEMPS declaration covering temp_count + template_pool_size
+  /// exists (updates an existing one, or inserts one after the last declaration).
+  /// The template pool registers live above the declared temp run (reuse pool
+  /// model) and must be covered by dcl_temps when template temps are used.
+  void EnsureTempDeclaration(uint32_t template_pool_size = 0);
 
   /// @brief Allocates a bind point, optionally auto-assigning to the next available slot.
   static bool AllocateBindPoint(const std::unordered_set<uint32_t>& occupied, bool auto_bind, uint32_t requested, bool reverse,

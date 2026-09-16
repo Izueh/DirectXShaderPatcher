@@ -143,4 +143,12 @@ struct ExtractFieldTrait<CheckResourceCountResults> {
   }
 };
 
+template <>
+struct ExtractFieldTrait<DeclareTemplateResults> {
+  static std::optional<PrimitiveValue> GetValue(const DeclareTemplateResults& result, std::string_view field) {
+    if (field == "emit_count") return static_cast<int64_t>(result.emit_count);
+    return std::nullopt;
+  }
+};
+
 }  // namespace dxp

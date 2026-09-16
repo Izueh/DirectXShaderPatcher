@@ -19,6 +19,7 @@
 #include "dxp/sm5/step/CheckOpcodeCountStep_impl.hpp"
 #include "dxp/sm5/step/CheckResourceCountStep_impl.hpp"
 #include "dxp/sm5/step/CheckShaderVersionStep_impl.hpp"
+#include "dxp/sm5/step/DeclareTemplateStep_impl.hpp"
 
 namespace dxp::sm5 {
 using namespace dxp::sm5::model;
@@ -28,6 +29,27 @@ std::expected<void, std::string> ValidateRecipe(const Recipe& recipe) {
 
   auto result = dxp::detail::ValidateStepList(recipe.steps_);
   if (!result) return result;
+
+  // Validate template ordering: all declare_template steps must appear before
+  // any add_resource step (templates bind temps; add_resource may reserve temps).
+  bool seen_add_resource = false;
+  std::string ordering_error;
+  for (const auto& step : recipe.steps_) {
+    std::visit([&seen_add_resource, &ordering_error](const auto& s) {
+      using T = std::decay_t<decltype(s)>;
+      if constexpr (std::is_same_v<T, step::AddResourceData>) {
+        seen_add_resource = true;
+      } else if constexpr (std::is_same_v<T, step::TemplateStepData>) {
+        if (seen_add_resource && ordering_error.empty()) {
+          ordering_error = "declare_template '" + s.name + "' must appear before any add_resource step";
+        }
+      }
+    },
+               step);
+  }
+  if (!ordering_error.empty()) {
+    return std::unexpected(std::move(ordering_error));
+  }
 
   recipe.validated_.store(true, std::memory_order_release);
   return {};
@@ -78,6 +100,10 @@ auto Recipe::Execute(std::span<const uint8_t> input,
           -> std::expected<dxp::detail::ExecutionOutput, std::string> {
         dxp::detail::ExecutionOutput output;
         if (ctx.program_modified) {
+          // Cover the template pool registers in dcl_temps (reuse pool model):
+          // the pool is only live when a template was actually instantiated,
+          // which is what program_modified reflects here.
+          ctx.program.EnsureTempDeclaration(ctx.template_pool_size);
           auto serialized = ctx.program.Serialize();
           if (!serialized) {
             return std::unexpected(std::move(serialized.error()));

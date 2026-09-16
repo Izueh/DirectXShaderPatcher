@@ -209,11 +209,185 @@ auto CollectWindowMatches(const std::vector<Instruction>& instructions, const In
 auto ResolveEmit(const MatchResult& match, ExecutionContext& context, const EmitPattern& emit, const std::string& path, std::string& error) -> Instruction;
 auto ResolveEmitBlobEntry(const MatchResult& match, ExecutionContext& context, const std::string& blob_name,
                           const std::string& path, std::string& error) -> std::vector<Instruction>;
+
+/// @brief Bind iteration-scoped variables (params + implicit `iteration`).
+/// Shadow semantics per the template plan: binding a name that shadows a
+/// global saves the global so it is restored when the scope ends.
+struct IterationScopeGuard {
+  std::unordered_map<std::string, dxp::PrimitiveValue> saved_globals;
+  ExecutionContext* ctx = nullptr;
+
+  explicit IterationScopeGuard(ExecutionContext& ctx_val) : ctx(&ctx_val) {}
+
+  void Bind(const std::string& name, dxp::PrimitiveValue value) {
+    if (saved_globals.count(name) == 0 && ctx->HasVariable(name)) {
+      saved_globals[name] = *ctx->FindVariable(name);
+    }
+    ctx->SetVariable(name, std::move(value));
+  }
+
+  void Unbind(const std::string& name) {
+    ctx->UnsetVariable(name);
+    auto it = saved_globals.find(name);
+    if (it != saved_globals.end()) {
+      ctx->SetVariable(name, it->second);
+    }
+  }
+};
+
+/// @brief Bind per-iteration param values from arrays (through the scope).
+static void BindRepeatParams(const RepeatConfig& repeat, uint32_t iteration, IterationScopeGuard& scope) {
+  for (const auto& [name, arr] : repeat.params) {
+    if (!arr.u32.empty() && iteration < arr.u32.size())
+      scope.Bind(name, arr.u32[iteration]);
+    else if (!arr.i32.empty() && iteration < arr.i32.size())
+      scope.Bind(name, arr.i32[iteration]);
+    else if (!arr.u64.empty() && iteration < arr.u64.size())
+      scope.Bind(name, arr.u64[iteration]);
+    else if (!arr.i64.empty() && iteration < arr.i64.size())
+      scope.Bind(name, arr.i64[iteration]);
+    else if (!arr.f32.empty() && iteration < arr.f32.size())
+      scope.Bind(name, arr.f32[iteration]);
+    else if (!arr.f64.empty() && iteration < arr.f64.size())
+      scope.Bind(name, arr.f64[iteration]);
+  }
+}
+
+/// @brief Bind template temps to the pool allocation.
+static void BindTemplateTemps(const std::vector<std::string>& temps, uint32_t pool_base, ExecutionContext& ctx) {
+  auto& temp_bindings = ctx.Bindings(BindingClass::Temp);
+  for (size_t i = 0; i < temps.size(); ++i) {
+    temp_bindings[temps[i]] = pool_base + static_cast<uint32_t>(i);
+  }
+}
+
+/// @brief Unbind template temps from the pool allocation.
+static void UnbindTemplateTemps(const std::vector<std::string>& temps, ExecutionContext& ctx) {
+  auto& temp_bindings = ctx.Bindings(BindingClass::Temp);
+  for (const auto& t : temps) {
+    temp_bindings.erase(t);
+  }
+}
+
+/// @brief Resolve one emit pattern into instructions, handling blob expansion.
+/// Reuses the same logic that EvaluateRuleRewriteCallback uses for rule-level
+/// emits — no duplication.
+static bool ResolveEmitPattern(const MatchResult& match, const EmitPattern& emit,
+                               const std::string& path, std::vector<Instruction>& out,
+                               std::string& error, ExecutionContext& ctx) {
+  if (!emit.blob.empty()) {
+    auto blob_instrs = ResolveEmitBlobEntry(match, ctx, emit.blob, path, error);
+    if (!error.empty()) return false;
+    for (auto& bi : blob_instrs) out.push_back(std::move(bi));
+  } else {
+    Instruction resolved = ResolveEmit(match, ctx, emit, path, error);
+    if (!error.empty()) return false;
+    out.push_back(std::move(resolved));
+  }
+  return true;
+}
+
+static bool ExpandTemplate(const std::string& template_name,
+                           const ExecutionContext::RegisteredTemplate& tpl,
+                           std::vector<Instruction>& out_instructions,
+                           std::string& error,
+                           ExecutionContext& ctx,
+                           const std::optional<RepeatConfig>* override_repeat = nullptr) {
+  const std::vector<std::string>& template_temps = tpl.temps;
+  const std::vector<EmitPattern>& template_emits = tpl.emits;
+  // Entry-level repeat (rule emit entry) overrides the template's declared
+  // repeat (which lives on the template emits); no entry repeat → the
+  // declared repeat applies.
+  static const std::optional<RepeatConfig> kNoRepeat;
+  const std::optional<RepeatConfig>* effective_repeat = &kNoRepeat;
+  if (override_repeat != nullptr && override_repeat->has_value()) {
+    effective_repeat = override_repeat;
+  } else if (!template_emits.empty()) {
+    effective_repeat = &template_emits[0].repeat;
+  }
+  // Reuse pool model: every instantiation binds its temps to the same fixed
+  // block (safe — temp names are unbound after the expansion, so nothing
+  // outside it can reference those registers by name).
+  BindTemplateTemps(template_temps, ctx.template_pool_base, ctx);
+
+  auto cleanup = [&]() { UnbindTemplateTemps(template_temps, ctx); };
+
+  auto expand_once = [&]() -> bool {
+    for (size_t i = 0; i < template_emits.size(); ++i) {
+      const std::string path = "template '" + template_name + "'.emits[" + std::to_string(i) + "]";
+      const auto& emit = template_emits[i];
+      if (!ResolveEmitPattern({}, emit, path, out_instructions, error, ctx)) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  // Template repeat: N iterations over the same pool block. Iteration-scoped
+  // variables (params + 0-based `iteration`) exist only during each iteration
+  // and shadow same-named globals with save/restore.
+  const bool has_repeat = effective_repeat != nullptr && effective_repeat->has_value();
+  if (has_repeat) {
+    const auto& repeat = **effective_repeat;
+    IterationScopeGuard scope(ctx);
+    for (uint32_t iter = 0; iter < repeat.times; ++iter) {
+      BindRepeatParams(repeat, iter, scope);
+      scope.Bind("iteration", static_cast<dxp::PrimitiveValue>(iter));
+      const bool ok = expand_once();
+      for (const auto& [name, arr] : repeat.params) scope.Unbind(name);
+      scope.Unbind("iteration");
+      if (!ok) {
+        cleanup();
+        return false;
+      }
+    }
+  } else {
+    if (!expand_once()) {
+      cleanup();
+      return false;
+    }
+  }
+  cleanup();
+  return true;
+}
+
+/// @brief Resolve one emit entry (opcode / capture / blob / template),
+/// expanding an optional repeat (N copies with per-iteration param binding
+/// and 0-based `iteration`, scoped with save/restore) into instructions.
+/// Template entries instantiate from the context's template registry; the
+/// entry-level repeat overrides the template's declared repeat.
+static bool ResolveEmitEntry(const MatchResult& match, const EmitPattern& entry,
+                             const std::string& path, std::vector<Instruction>& out,
+                             std::string& error, ExecutionContext& ctx) {
+  if (!entry.template_name.empty()) {
+    auto it = ctx.templates.find(entry.template_name);
+    if (it == ctx.templates.end()) {
+      error = path + ": unknown template '" + entry.template_name + "'";
+      return false;
+    }
+    return ExpandTemplate(entry.template_name, it->second, out, error, ctx, &entry.repeat);
+  }
+  if (entry.repeat.has_value()) {
+    const auto& repeat = *entry.repeat;
+    IterationScopeGuard scope(ctx);
+    for (uint32_t iter = 0; iter < repeat.times; ++iter) {
+      BindRepeatParams(repeat, iter, scope);
+      scope.Bind("iteration", static_cast<dxp::PrimitiveValue>(iter));
+      const bool ok = ResolveEmitPattern(match, entry, path, out, error, ctx);
+      for (const auto& [name, arr] : repeat.params) scope.Unbind(name);
+      scope.Unbind("iteration");
+      if (!ok) return false;
+    }
+    return true;
+  }
+  return ResolveEmitPattern(match, entry, path, out, error, ctx);
+}
+
 auto ResolveOperand(const MatchResult& match, ExecutionContext& context, const OperandPattern& op, const std::string& path, std::string& error, size_t emit_operand_index) -> Operand;
 auto ResolveOperandIndex(const MatchResult& match, ExecutionContext& context, const OperandIndexPattern& pattern, const std::string& path, std::string& error) -> Operand::Index;
 auto MatchesOperand(const Operand& operand, std::unordered_map<std::string, Operand::Index>& captured_index_values, const OperandPattern& op, const ExecutionContext& context) -> bool;
 auto MatchesOperandIndex(const Operand::Index& idx, const std::unordered_map<std::string, Operand::Index>& captured_index_values, const OperandIndexPattern& pattern, const ExecutionContext& context) -> bool;
-bool MatchesDeclConstraint(const Operand& operand, const ApplyRuleStep::OperandPattern::DeclConstraint& constraint, const ExecutionContext& context);
+bool MatchesDeclConstraint(const Operand& operand, const OperandPattern::DeclConstraint& constraint, const ExecutionContext& context);
 auto MatchesInstruction(const Instruction& instr, std::unordered_map<std::string, Operand::Index>& captured_index_values, const InstructionPattern& pattern, const ExecutionContext& context) -> bool;
 bool ValidateOperandRole(const Operand& operand, OperandRole expected_role, const std::string& path, ExecutionContext& context, std::string& error);
 bool ResolveImmediateFromVariable(const std::string& path, const std::string& vn, const ExecutionContext& ctx, ImmediateFamily family, uint32_t& ol, uint32_t& oh, bool& hh, std::string& error);
@@ -304,52 +478,6 @@ inline uint32_t ExtractComponentMask(uint32_t fromComponentMode, uint32_t fromSe
     default:
       return kAllComponentsMask;
   }
-}
-
-/// @brief Maps a component letter to its xyzw index (x=0, y=1, z=2, w=3), or -1.
-inline int ComponentIndex(char c) {
-  switch (c) {
-    case 'x': return 0;
-    case 'y': return 1;
-    case 'z': return 2;
-    case 'w': return 3;
-    default:  return -1;
-  }
-}
-
-/// @brief Converts an operand pattern's component spec (mask/swizzle/select value
-/// strings) into the ground-truth component mode (token bits 2-11). Returns
-/// std::nullopt when the pattern carries no component constraint. The value
-/// strings are validated against the xyzw alphabet by the recipe Validate phase.
-inline auto PatternComponentMode(const OperandPattern& op) -> std::optional<uint32_t> {
-  if (!op.mask.empty()) {
-    uint32_t mask = 0;
-    for (const char c : op.mask) {
-      const int idx = ComponentIndex(c);
-      if (idx < 0) return std::nullopt;
-      mask |= (1U << idx);
-    }
-    // ENCODE_..._MASK takes the mask in token position (bits 4-7), so the
-    // xyzw nibble is shifted up by the mask field's bit offset.
-    return ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE) | ENCODE_D3D10_SB_OPERAND_4_COMPONENT_MASK(mask << 4);
-  }
-  if (!op.swizzle.empty()) {
-    uint32_t swizzle = 0;
-    int slot = 0;
-    for (const char c : op.swizzle) {
-      const int idx = ComponentIndex(c);
-      if (idx < 0) return std::nullopt;
-      swizzle |= (static_cast<uint32_t>(idx) << (slot * 2));
-      ++slot;
-    }
-    return ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE) | (swizzle << 4);
-  }
-  if (!op.select.empty()) {
-    const int idx = ComponentIndex(op.select.front());
-    if (idx < 0) return std::nullopt;
-    return ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECTION_MODE(D3D10_SB_OPERAND_4_COMPONENT_SELECT_1_MODE) | ENCODE_D3D10_SB_OPERAND_4_COMPONENT_SELECT_1(static_cast<uint32_t>(idx));
-  }
-  return std::nullopt;
 }
 
 auto SelectMatchIndices(const std::vector<MatchResult>& matches,
@@ -502,18 +630,11 @@ auto EvaluateRuleRewriteCallback(RewriteKind rewrite_mode, const Rule& rule, int
 
   for (size_t emit_index = 0; emit_index < rule.emit_patterns.size(); ++emit_index) {
     const std::string kEmitPath = rewrite_path + ".emit_patterns[" + std::to_string(emit_index) + "]";
-    if (!rule.emit_patterns[emit_index].blob.empty()) {
-      // Blob expansion: splice the stored (post-mutation) sequence into the emit stream
-      auto blob_instructions = ResolveEmitBlobEntry(match, ctx, rule.emit_patterns[emit_index].blob, kEmitPath, error);
-      if (!error.empty()) return false;
-      for (Instruction& bi : blob_instructions) {
-        action.new_instructions.push_back(std::move(bi));
-      }
-      continue;
+    const auto& emit = rule.emit_patterns[emit_index];
+
+    if (!ResolveEmitEntry(match, emit, kEmitPath, action.new_instructions, error, ctx)) {
+      return false;
     }
-    Instruction resolved_instruction = ResolveEmit(match, ctx, rule.emit_patterns[emit_index], kEmitPath, error);
-    if (!error.empty()) return false;
-    action.new_instructions.push_back(std::move(resolved_instruction));
   }
 
   actions.push_back(std::move(action));
@@ -580,17 +701,9 @@ auto ExecuteSingleRuleImpl(std::vector<Instruction>& instructions, const std::st
     std::string emit_error;
     for (size_t emit_index = 0; emit_index < rule_model.emit_patterns.size(); ++emit_index) {
       const std::string kEmitPath = "step[" + step_name + "].emit_patterns[" + std::to_string(emit_index) + "]";
-      if (!rule_model.emit_patterns[emit_index].blob.empty()) {
-        auto blob_instructions = ResolveEmitBlobEntry(anchor_match, ctx, rule_model.emit_patterns[emit_index].blob, kEmitPath, emit_error);
-        if (!emit_error.empty()) return std::unexpected(emit_error);
-        for (Instruction& bi : blob_instructions) {
-          action.new_instructions.push_back(std::move(bi));
-        }
-        continue;
+      if (!ResolveEmitEntry(anchor_match, rule_model.emit_patterns[emit_index], kEmitPath, action.new_instructions, emit_error, ctx)) {
+        return std::unexpected(emit_error);
       }
-      Instruction resolved_instruction = ResolveEmit(anchor_match, ctx, rule_model.emit_patterns[emit_index], kEmitPath, emit_error);
-      if (!emit_error.empty()) return std::unexpected(emit_error);
-      action.new_instructions.push_back(std::move(resolved_instruction));
     }
 
     if (!ApplyRewriteActions(instructions, {action})) {
@@ -881,13 +994,13 @@ auto ExecuteScopeStep(const ApplyRuleStep& step, ExecutionContext& ctx) -> std::
 // canonical ResourceDim/ResourceReturnType pair completed from the declaration.
 // Unresolvable declarations are a hard error (no silent bare emits).
 bool BuildExtendedOpcodeChain(ExecutionContext& context, Instruction& instr,
-                              const std::vector<ApplyRuleStep::EmitExtendedOpcode>& entries,
+                              const std::vector<EmitExtendedOpcode>& entries,
                               const std::string& path, std::string& error) {
   const auto kChain = RequiredExtendedChainForOpcode(instr.opcode);
   std::vector<uint32_t> tokens;
   tokens.reserve(entries.size() + 2);
   for (const auto& entry : entries) {
-    if (entry.kind == ApplyRuleStep::EmitExtendedOpcode::Kind::Raw) {
+    if (entry.kind == EmitExtendedOpcode::Kind::Raw) {
       tokens.push_back(entry.raw & ~D3D10_SB_OPCODE_EXTENDED_MASK);
     } else {
       auto token = static_cast<uint32_t>(entry.type);
@@ -1237,12 +1350,12 @@ auto MatchesInstruction(const Instruction& instr, std::unordered_map<std::string
       const auto& pattern_val = pattern_ext[i];
       const auto& instr_val = instr.controls.extended_op_codes[i];
       switch (pattern_val.kind) {
-        case ApplyRuleStep::ExtendedOpcodePattern::Kind::Any:
+        case ExtendedOpcodePattern::Kind::Any:
           break;
-        case ApplyRuleStep::ExtendedOpcodePattern::Kind::Raw:
+        case ExtendedOpcodePattern::Kind::Raw:
           if (pattern_val.raw != instr_val.value) return false;
           break;
-        case ApplyRuleStep::ExtendedOpcodePattern::Kind::Type: {
+        case ExtendedOpcodePattern::Kind::Type: {
           if (static_cast<dxp::sm5::ExtendedOpcodeType>(instr_val.value & kExtendedOpcodeMask) != pattern_val.type) {
             return false;
           }
@@ -1407,10 +1520,19 @@ auto ResolveOperand(const MatchResult& match, ExecutionContext& context, const O
       } else {
         resolved_element = std::get<uint32_t>(elem_idx);
       }
-      Operand::Index element_index;
-      element_index.representation = Operand::IndexRepresentation::Immediate32;
-      element_index.immediate_lo = resolved_element;
-      operand.index_entries.push_back(std::move(element_index));
+      if (*op.type == OperandType::Temp || *op.type == OperandType::IndexableTemp) {
+        // Temp array element is a 1-D register: base + element. A second index
+        // entry would encode 2-D indexing ([row][col]), which the register
+        // space interprets as a flattened row — not base + element.
+        if (const auto base = operand.index_entries[0].immediate_lo) {
+          operand.index_entries[0].immediate_lo = *base + resolved_element;
+        }
+      } else {
+        Operand::Index element_index;
+        element_index.representation = Operand::IndexRepresentation::Immediate32;
+        element_index.immediate_lo = resolved_element;
+        operand.index_entries.push_back(std::move(element_index));
+      }
     } else if (*op.type == OperandType::CBuffer) {
       Operand::Index element_index;
       element_index.representation = Operand::IndexRepresentation::Immediate32;
@@ -1443,7 +1565,7 @@ auto ResolveOperand(const MatchResult& match, ExecutionContext& context, const O
 
 /// @brief Resolves the operand's register through the declaration index and
 /// compares every specified constraint field. Missing declaration = no match.
-bool MatchesDeclConstraint(const Operand& operand, const ApplyRuleStep::OperandPattern::DeclConstraint& constraint, const ExecutionContext& context) {
+bool MatchesDeclConstraint(const Operand& operand, const OperandPattern::DeclConstraint& constraint, const ExecutionContext& context) {
   if (operand.index_entries.empty() || !operand.index_entries.front().immediate_lo.has_value()) {
     return false;
   }
@@ -1560,6 +1682,40 @@ auto ResolveOperandIndex(const MatchResult& match, ExecutionContext& context, co
   }
   idx.immediate_lo = pattern.immediate_lo;
   idx.immediate_hi = pattern.immediate_hi;
+  // Variable-backed immediates: resolve from context variables (repeat params, env, etc.).
+  if (!pattern.immediate_lo_variable.empty()) {
+    if (const auto* v = context.FindVariable(pattern.immediate_lo_variable)) {
+      bool found = false;
+      std::visit(
+          [&found, &idx](const auto& pv) {
+            using T = std::decay_t<decltype(pv)>;
+            if constexpr (std::is_same_v<T, bool>) {
+              idx.immediate_lo = pv ? 1u : 0u;
+              found = true;
+            } else if constexpr (std::is_same_v<T, int32_t> || std::is_same_v<T, uint32_t>) {
+              idx.immediate_lo = static_cast<uint32_t>(pv);
+              found = true;
+            } else if constexpr (std::is_same_v<T, int64_t> || std::is_same_v<T, uint64_t>) {
+              idx.immediate_lo = static_cast<uint32_t>(pv);
+              idx.immediate_hi = static_cast<uint32_t>(pv >> 32);
+              found = true;
+            } else if constexpr (std::is_same_v<T, double>) {
+              const auto bits = static_cast<uint64_t>(pv);
+              idx.immediate_lo = static_cast<uint32_t>(bits);
+              idx.immediate_hi = static_cast<uint32_t>(bits >> 32);
+              found = true;
+            }
+          },
+          *v);
+      if (!found) {
+        error = path + ": variable '" + pattern.immediate_lo_variable + "' has unsupported type for immediate";
+        return {};
+      }
+    } else {
+      error = path + ": missing variable '" + pattern.immediate_lo_variable + "' for immediate";
+      return {};
+    }
+  }
   // capture: emit a previously captured index value (from a match's index capture).
   if (!pattern.capture.empty()) {
     auto it = context.captures.index_values.find(pattern.capture);
@@ -1702,100 +1858,6 @@ bool ResolveImmediateFromVariable(const std::string& path, const std::string& vn
 
 }  // namespace
 
-/// @brief Converts one operand entry into its pattern. Shared by match and emit
-/// compilation paths (and match_blob window endpoints).
-auto CompileOperandPattern(const OperandData& operand_data, bool is_emit_operand) -> std::expected<OperandPattern, std::string> {
-  std::string error;
-
-  OperandPattern op_pattern;
-  op_pattern.any = operand_data.any;
-  if (operand_data.type.has_value()) {
-    op_pattern.type = operand_data.type;
-  }
-  if (!operand_data.capture.empty()) {
-    op_pattern.capture = operand_data.capture;
-  }
-  if (!operand_data.match_capture.empty()) {
-    op_pattern.match_capture = operand_data.match_capture;
-  }
-  if (operand_data.modifier.has_value()) {
-    op_pattern.modifier = operand_data.modifier;
-  }
-  if (operand_data.components.num_components != NumComponents::Four) {
-    op_pattern.num_components = static_cast<int32_t>(operand_data.components.num_components);
-  }
-  if (operand_data.handle) {
-    op_pattern.handle = OperandPattern::Handle{
-        .name = operand_data.handle->name,
-        .element_index = operand_data.handle->element_index,
-    };
-  }
-  if (operand_data.decl.has_value()) {
-    OperandPattern::DeclConstraint constraint;
-    constraint.dimension = operand_data.decl->dimension;
-    constraint.return_type = operand_data.decl->return_type;
-    constraint.structure_stride = operand_data.decl->structure_stride;
-    constraint.mode = operand_data.decl->mode;
-    constraint.access_pattern = operand_data.decl->access_pattern;
-    constraint.semantic = operand_data.decl->semantic;
-    constraint.interpolation = operand_data.decl->interpolation;
-    op_pattern.decl = std::move(constraint);
-  }
-  op_pattern.export_as = operand_data.export_as;
-  if (operand_data.components.selection_mode == SelectionMode::Mask) {
-    op_pattern.mask = operand_data.components.value;
-  } else if (operand_data.components.selection_mode == SelectionMode::Swizzle) {
-    op_pattern.swizzle = operand_data.components.value;
-  } else if (operand_data.components.selection_mode == SelectionMode::Select) {
-    op_pattern.select = operand_data.components.value;
-  }
-  for (const auto& idx : operand_data.indices) {
-    OperandIndexPattern idx_pattern;
-    idx_pattern.any = idx.any;
-    idx_pattern.representation = idx.representation;
-    // Relative sub-operand presence: unique_ptr nullness mirrors YAML presence.
-    const bool kHasRelativeOperand = idx.relative_operand != nullptr;
-    if (idx.immediate_lo.has_value()) {
-      idx_pattern.immediate_lo = idx.immediate_lo;
-    }
-    if (idx.immediate_hi.has_value()) {
-      idx_pattern.immediate_hi = idx.immediate_hi;
-    }
-    if (!idx.capture.empty()) {
-      idx_pattern.capture = idx.capture;
-    }
-    if (!idx.match_capture.empty()) {
-      idx_pattern.match_capture = idx.match_capture;
-    }
-    {
-      // Compile the relative sub-operand when one was present in the YAML.
-      if (kHasRelativeOperand) {
-        auto rel_pattern = CompileOperandPattern(*idx.relative_operand, is_emit_operand);
-        if (!rel_pattern) {
-          return std::unexpected(rel_pattern.error());
-        }
-        idx_pattern.relative_operand = xyz::indirect<OperandPattern>(std::move(*rel_pattern));
-      }
-    }
-    op_pattern.indices.push_back(std::move(idx_pattern));
-  }
-  // Typed immediates shorthand carries through as-is (literals or variable names);
-  // expansion into index patterns happens lazily via OperandPattern::IndexPatterns().
-  op_pattern.immediates_u32 = operand_data.immediates_u32;
-  op_pattern.immediates_u64 = operand_data.immediates_u64;
-  op_pattern.immediates_i32 = operand_data.immediates_i32;
-  op_pattern.immediates_i64 = operand_data.immediates_i64;
-  op_pattern.immediates_f32 = operand_data.immediates_f32;
-  op_pattern.immediates_f64 = operand_data.immediates_f64;
-  if (operand_data.handle) {
-    op_pattern.handle = OperandPattern::Handle{
-        .name = operand_data.handle->name,
-        .element_index = operand_data.handle->element_index,
-    };
-  }
-  return op_pattern;
-}
-
 /// @brief Compiles one match entry into its pattern. Shared by RuleData::Compile
 /// (rule.match entries) and ApplyRuleData::Compile (match_blob window endpoints).
 auto CompileMatchPattern(const InstructionMatchData& match_item) -> std::expected<InstructionPattern, std::string> {
@@ -1885,20 +1947,29 @@ auto RuleData::Compile() const -> std::expected<Rule, std::string> {
     rule.match_patterns.push_back(std::move(*compiled));
   }
 
-  for (const auto& emit_entry : emit) {
-    if (emit_entry.opcode.has_value() && !emit_entry.capture.empty()) {
-      error = "SM5 emit cannot have both opcode and capture on the same instruction";
+  for (size_t emit_index = 0; emit_index < emit.size(); ++emit_index) {
+    const auto& emit_entry = emit[emit_index];
+    const int kSourceSpecCount = (emit_entry.opcode.has_value() ? 1 : 0) + (!emit_entry.capture.empty() ? 1 : 0) + (!emit_entry.blob.empty() ? 1 : 0) + (!emit_entry.template_name.empty() ? 1 : 0);
+    if (kSourceSpecCount > 1) {
+      error = "rule emit entry [" + std::to_string(emit_index) + "] cannot combine opcode, capture, blob, and template on the same entry";
       return std::unexpected(error);
     }
-    const int kSourceSpecCount = (emit_entry.opcode.has_value() ? 1 : 0) + (!emit_entry.capture.empty() ? 1 : 0) + (!emit_entry.blob.empty() ? 1 : 0);
-    if (kSourceSpecCount > 1) {
-      error = "SM5 emit cannot combine opcode, capture, and blob on the same instruction";
+    if (kSourceSpecCount == 0) {
+      error = "rule emit entry [" + std::to_string(emit_index) + "] requires one of opcode, capture, blob, or template";
       return std::unexpected(error);
+    }
+    const std::optional<RepeatConfig> entry_repeat = CompileRepeatConfig(emit_entry.repeat);
+    if (entry_repeat.has_value()) {
+      if (auto r = ValidateRepeatConfig(*entry_repeat, "rule emit entry [" + std::to_string(emit_index) + "]"); !r) {
+        return std::unexpected(r.error());
+      }
     }
     EmitPattern tpl;
     tpl.opcode = emit_entry.opcode;
     tpl.capture = emit_entry.capture;
     tpl.blob = emit_entry.blob;
+    tpl.template_name = emit_entry.template_name;
+    tpl.repeat = entry_repeat;
     if (emit_entry.saturate.has_value()) {
       tpl.saturate = *emit_entry.saturate;
     }
@@ -1927,17 +1998,17 @@ auto RuleData::Compile() const -> std::expected<Rule, std::string> {
       tpl.operands.push_back(std::move(*operand_pattern_opt));
     }
     for (const auto& ext : emit_entry.extended_opcodes) {
-      ApplyRuleStep::EmitExtendedOpcode compiled;
+      EmitExtendedOpcode compiled;
       const int kSpecCount = (ext.type.has_value() ? 1 : 0) + (ext.raw.has_value() ? 1 : 0);
       if (kSpecCount != 1) {
         error = "SM5 emit extended_opcodes entries require exactly one of 'type' or 'raw'";
         return std::unexpected(error);
       }
       if (ext.raw.has_value()) {
-        compiled.kind = ApplyRuleStep::EmitExtendedOpcode::Kind::Raw;
+        compiled.kind = EmitExtendedOpcode::Kind::Raw;
         compiled.raw = *ext.raw;
       } else {
-        compiled.kind = ApplyRuleStep::EmitExtendedOpcode::Kind::Type;
+        compiled.kind = EmitExtendedOpcode::Kind::Type;
         compiled.type = *ext.type;
         compiled.sample_controls = ext.sample_controls;
         compiled.resource_dim = ext.resource_dim;
@@ -2024,7 +2095,7 @@ auto RuleData::Compile() const -> std::expected<Rule, std::string> {
       int seen_types = 0;
       int last_rank = -1;
       for (const auto& ext : tpl.extended_opcodes) {
-        if (ext.kind != ApplyRuleStep::EmitExtendedOpcode::Kind::Type) {
+        if (ext.kind != EmitExtendedOpcode::Kind::Type) {
           continue;
         }
         int rank = -1;
@@ -2224,7 +2295,20 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, dxp::Valida
 
   auto checkHandleRefs = [&](const std::vector<OperandPattern>& operands) -> std::expected<void, std::string> {
     for (const auto& op : operands) {
-      if (op.handle && !ctx.handles.contains(op.handle->name)) {
+      if (!op.handle) {
+        continue;
+      }
+      const bool is_temp_type = op.type == OperandType::Temp || op.type == OperandType::IndexableTemp;
+      // Template temps are scoped to their template's expansion (bound only
+      // during instantiation); referencing them by name outside a template
+      // fails at runtime, so reject at validate time.
+      if (is_temp_type && ctx.template_temp_names.contains(op.handle->name)) {
+        return std::unexpected("template temp '" + op.handle->name + "' cannot be referenced outside a template instantiation (template temps are scoped to their template's expansion)");
+      }
+      // Handles are only meaningful for resource-binding operand types.
+      // Skip temps (local/temporary register names, including forward
+      // add_resource temp references) and cbuffer (existing shader cbuffers).
+      if (!is_temp_type && op.type != OperandType::CBuffer && !ctx.handles.contains(op.handle->name)) {
         return std::unexpected("unknown resource declaration handle '" + op.handle->name + "'");
       }
     }
@@ -2238,6 +2322,27 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, dxp::Valida
   }
 
   for (const auto& emit : step.rule.emit_patterns) {
+    if (!emit.template_name.empty() && !ctx.template_names.contains(emit.template_name)) {
+      return std::unexpected("unknown template '" + emit.template_name + "' (referenced template must be declared by a preceding declare_template step)");
+    }
+    // Enforce the template's required captures (registered at declare_template
+    // Validate): each must be producible by a previous or current match step.
+    // The cross-step global capture store persists at runtime; a known-but-not
+    // produced capture fails at expansion with a named error.
+    if (!emit.template_name.empty()) {
+      const auto req_it = ctx.template_required_captures.find(emit.template_name);
+      if (req_it != ctx.template_required_captures.end()) {
+        for (const auto& cap : req_it->second) {
+          const bool known =
+              ctx.operand_captures.contains(cap) || global_operand_captures.contains(cap)
+              || ctx.instruction_captures.contains(cap) || global_instruction_captures.contains(cap)
+              || ctx.index_captures.contains(cap) || global_index_captures.contains(cap);
+          if (!known) {
+            return std::unexpected("step '" + step.name + "': template '" + emit.template_name + "' requires capture '" + cap + "' which no previous or current match step captures");
+          }
+        }
+      }
+    }
     if (!emit.capture.empty() && !emit.opcode.has_value()) {
       if (!global_instruction_captures.contains(emit.capture)) {
         return std::unexpected("SM5 emit instruction capture reference '" + emit.capture + "' not found in match captures");
@@ -2290,7 +2395,7 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, dxp::Valida
       const auto& idx = indices[i];
       const bool kReprAllowsRelative = idx.representation == OperandIndexRepresentation::Relative || idx.representation == OperandIndexRepresentation::Immediate32PlusRelative || idx.representation == OperandIndexRepresentation::Immediate64PlusRelative;
       const bool kReprRequiresRelative = idx.representation == OperandIndexRepresentation::Immediate32PlusRelative || idx.representation == OperandIndexRepresentation::Immediate64PlusRelative;
-      if (idx.relative_operand.has_value()) {
+      if (idx.relative_operand) {
         if (idx.any) {
           return std::unexpected(idxPath + ": relative_operand is incompatible with any: true");
         }
@@ -2333,151 +2438,9 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, dxp::Valida
     }
   }
 
-  // --- Emit operand completeness + opcode layout validation ---
-  auto validateEmitOperand = [&](const OperandPattern& op, const std::string& path) -> std::expected<void, std::string> {
-    if (!op.match_capture.empty()) {
-      return std::unexpected(path + ": match_capture is match-only; use capture to replay a captured operand in emit");
-    }
-    if (op.decl.has_value()) {
-      return std::unexpected(path + ": decl is match-only — declaration constraints cannot be used in emit operands");
-    }
-    if (op.any) {
-      return std::unexpected(path + ": any is not valid in emit operands");
-    }
-    if (!op.mask.empty()) {
-      if (op.mask.size() > 4) {
-        return std::unexpected(path + ": mask value '" + op.mask + "' has more than 4 components");
-      }
-      for (const char c : op.mask) {
-        if (ComponentIndex(c) < 0) {
-          return std::unexpected(path + ": mask value '" + op.mask + "' contains invalid component (expected xyzw)");
-        }
-      }
-    }
-    if (!op.swizzle.empty()) {
-      if (op.swizzle.size() != 4) {
-        return std::unexpected(path + ": swizzle value '" + op.swizzle + "' must have exactly 4 components (e.g. xyzw)");
-      }
-      for (const char c : op.swizzle) {
-        if (ComponentIndex(c) < 0) {
-          return std::unexpected(path + ": swizzle value '" + op.swizzle + "' contains invalid component (expected xyzw)");
-        }
-      }
-    }
-    if (!op.select.empty()) {
-      if (op.select.size() != 1 || ComponentIndex(op.select.front()) < 0) {
-        return std::unexpected(path + ": select value '" + op.select + "' must be a single component (x, y, z, or w)");
-      }
-    }
-    const bool is_immediate =
-        op.type.has_value() && (*op.type == OperandType::Immediate32 || *op.type == OperandType::Immediate64);
-    // Sampler operands carry no component selection in DXBC (e.g. the sampler
-    // operand of sample_l is a bare s#); their encoding is derived.
-    const bool is_sampler = op.type.has_value() && *op.type == OperandType::Sampler;
-    if (PatternComponentMode(op).has_value() == false && op.capture.empty() && !is_immediate && !is_sampler) {
-      return std::unexpected(path + ": emit operand has no component selection; specify components: or capture: a previously matched operand");
-    }
-    if (is_immediate) {
-      if (op.num_components >= 0) {
-        return std::unexpected(path + ": immediate operands derive num_components from the immediates count");
-      }
-      // Count values from either form: typed immediates arrays (immediates_u32 etc.)
-      // or the manual indices: form — IndexPatterns() resolves both.
-      const size_t value_count = op.IndexPatterns().size();
-      if (value_count != 1 && value_count != 4) {
-        return std::unexpected(path + ": immediate operands must carry exactly 1 or 4 values (got " + std::to_string(value_count) + ")");
-      }
-    }
-    return {};
-  };
-  for (size_t ei = 0; ei < step.rule.emit_patterns.size(); ++ei) {
-    const auto& emit = step.rule.emit_patterns[ei];
-    if (!emit.opcode.has_value()) continue;
-    uint32_t kExpectedOperands = GetExpectedOperandCount(*emit.opcode);
-    // Declaration opcodes present as multiple "operands" in ASM but are encoded
-    // with extended opcodes in DXBC. When extended_opcodes are present, subtract
-    // the extended-opcode count from the expected operand count.
-    if (!emit.extended_opcodes.empty()) {
-      const Opcode kOpcode = *emit.opcode;
-      const bool kIsDeclaration =
-          kOpcode == Opcode::DclResource || kOpcode == Opcode::DclResourceRaw
-          || kOpcode == Opcode::DclResourceStructured
-          || kOpcode == Opcode::DclConstantBuffer || kOpcode == Opcode::DclSampler;
-      if (kIsDeclaration) {
-        kExpectedOperands =
-            kExpectedOperands > static_cast<uint32_t>(emit.extended_opcodes.size())
-                ? kExpectedOperands - static_cast<uint32_t>(emit.extended_opcodes.size())
-                : 0;
-      }
-    }
-    // Declaration opcodes with instruction-level fields only require the register operand.
-    bool has_any_fields = emit.dimension.has_value() || emit.structure_stride != 0 || emit.access_pattern.has_value() || emit.mode.has_value() || emit.uav_flags != 0;
-    for (uint32_t component = 0; component < 4; ++component) {
-      if (emit.return_type[component].has_value()) {
-        has_any_fields = true;
-        break;
-      }
-    }
-    if (has_any_fields) {
-      const Opcode kOpcode = *emit.opcode;
-      const bool kIsDeclaration =
-          kOpcode == Opcode::DclResource || kOpcode == Opcode::DclResourceRaw
-          || kOpcode == Opcode::DclResourceStructured || kOpcode == Opcode::DclUnorderedAccessViewTyped
-          || kOpcode == Opcode::DclUnorderedAccessViewRaw || kOpcode == Opcode::DclUnorderedAccessViewStructured
-          || kOpcode == Opcode::DclConstantBuffer || kOpcode == Opcode::DclSampler;
-      if (kIsDeclaration && emit.operands.size() > 0) {
-        kExpectedOperands = static_cast<uint32_t>(emit.operands.size());
-      }
-    }
-    if (kExpectedOperands > 0 && emit.operands.size() != kExpectedOperands) {
-      return std::unexpected("rule.emit_patterns[" + std::to_string(ei) + "]: opcode " + std::to_string(static_cast<uint32_t>(*emit.opcode)) + " expects " + std::to_string(kExpectedOperands) + " operands, recipe provides " + std::to_string(emit.operands.size()));
-    }
-    for (size_t oi = 0; oi < emit.operands.size(); ++oi) {
-      const OperandPattern& op = emit.operands[oi];
-      const std::string opPath = "rule.emit_patterns[" + std::to_string(ei) + "].operands[" + std::to_string(oi) + "]";
-      if (auto r = validateEmitOperand(op, opPath); !r) return r;
-      const OperandRole kRole = GetOperandRole(*emit.opcode, oi);
-      if (kRole == OperandRole::Destination && (!op.swizzle.empty() || !op.select.empty())) {
-        return std::unexpected(opPath + ": destination operand must use mask selection mode (not swizzle/select)");
-      }
-      const OperandScalarType kExpectedType = GetExpectedOperandType(*emit.opcode, oi);
-      if (op.type.has_value()) {
-        const bool kTypeOk =
-            kExpectedType == OperandScalarType::Unknown || (kExpectedType == OperandScalarType::Texture && *op.type == OperandType::Resource) || (kExpectedType == OperandScalarType::Sampler && *op.type == OperandType::Sampler) || (kExpectedType == OperandScalarType::Uav && *op.type == OperandType::UAV) || (kExpectedType == OperandScalarType::CBuffer && *op.type == OperandType::CBuffer) || (kExpectedType == OperandScalarType::F32 || kExpectedType == OperandScalarType::U32 || kExpectedType == OperandScalarType::I32 || kExpectedType == OperandScalarType::F64 || kExpectedType == OperandScalarType::Bool);
-        if (!kTypeOk) {
-          return std::unexpected(opPath + ": operand type does not match the opcode's expected slot type (" + std::to_string(static_cast<uint32_t>(kExpectedType)) + ")");
-        }
-      }
-    }
-    const Opcode kEmitOpcode = *emit.opcode;
-    bool has_resource_fields = emit.dimension.has_value() || emit.structure_stride != 0;
-    for (uint32_t component = 0; component < 4; ++component) {
-      if (emit.return_type[component].has_value()) {
-        has_resource_fields = true;
-        break;
-      }
-    }
-    if (has_resource_fields) {
-      if (kEmitOpcode != Opcode::DclResource && kEmitOpcode != Opcode::DclUnorderedAccessViewTyped && kEmitOpcode != Opcode::DclUnorderedAccessViewRaw && kEmitOpcode != Opcode::DclUnorderedAccessViewStructured) {
-        return std::unexpected("rule.emit_patterns[" + std::to_string(ei) + "]: dimension/return_type/structure_stride fields are only valid for resource declaration opcodes");
-      }
-    }
-    if (emit.access_pattern.has_value()) {
-      if (kEmitOpcode != Opcode::DclConstantBuffer) {
-        return std::unexpected("rule.emit_patterns[" + std::to_string(ei) + "]: access_pattern field is only valid for dcl_constant_buffer");
-      }
-    }
-    if (emit.mode.has_value()) {
-      if (kEmitOpcode != Opcode::DclSampler) {
-        return std::unexpected("rule.emit_patterns[" + std::to_string(ei) + "]: mode field is only valid for dcl_sampler");
-      }
-    }
-    if (emit.uav_flags != 0) {
-      if (kEmitOpcode != Opcode::DclUnorderedAccessViewRaw && kEmitOpcode != Opcode::DclUnorderedAccessViewStructured && kEmitOpcode != Opcode::DclUnorderedAccessViewTyped) {
-        return std::unexpected("rule.emit_patterns[" + std::to_string(ei) + "]: uav_flags field is only valid for UAV declaration opcodes");
-      }
-    }
-  }
+  // --- Emit operand completeness + opcode layout validation (shared with
+  // template emits via ValidateEmitPatterns) ---
+  if (auto r = ValidateEmitPatterns(step.rule.emit_patterns, "rule.emit_patterns"); !r) return r;
 
   // --- match_capture name resolution (match side only) ---
   auto knownOperandCapture = [&](const std::string& name) {

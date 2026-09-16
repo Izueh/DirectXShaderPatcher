@@ -31,7 +31,7 @@ std::string DescribeOutcome(const AddResourceStep& step, const dxp::AddResourceR
 struct AddResourceDeclData {
   std::string handle;
   std::optional<uint32_t> register_index;
-  std::optional<bool> reverse_bind;            ///< Auto-bind reverse order: take the HIGHEST free slot instead of the lowest.
+  std::optional<bool> reverse_bind;  ///< Auto-bind reverse order: take the HIGHEST free slot instead of the lowest.
 
   std::optional<uint32_t> elements;
   std::optional<InterpolationMode> interpolation;
@@ -41,6 +41,12 @@ struct AddResourceDeclData {
   std::optional<ResourceDimension> dimension;
   std::optional<bool> globally_coherent;
   std::optional<bool> has_counter;
+};
+
+/// @brief YAML-parseable temp array declaration.
+struct TempArrayDeclData {
+  std::string name;
+  uint32_t count = 1;
 };
 
 /// @brief Top-level YAML block for grouped resource declarations.
@@ -57,7 +63,7 @@ struct AddResourceData {
   std::vector<AddResourceDeclData> uavs;
   std::vector<AddResourceDeclData> inputs;
   std::vector<AddResourceDeclData> outputs;
-  std::vector<std::string> temps;
+  std::vector<std::variant<std::string, TempArrayDeclData>> temps;
 
   /**
    * @brief Compile this YAML data into an AddResourceStep.

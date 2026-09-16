@@ -176,12 +176,17 @@ int RunPatchSm5Command(const char* input_path, const char* recipe_path, const ch
     return 1;
   }
 
+  const bool modified = patch_result.value().output_bytes != input_shader;
   if (!WriteBinaryFile(std::string(output_path), patch_result.value().output_bytes)) {
     std::cerr << "Failed to write output shader: " << output_path << "\n";
     return 1;
   }
 
-  std::cout << "Patched SM5 shader written to: " << output_path << "\n";
+  if (modified) {
+    std::cout << "Patched SM5 shader written to: " << output_path << "\n";
+  } else {
+    std::cout << "No rules matched — output identical to input: " << output_path << "\n";
+  }
   return 0;
 }
 

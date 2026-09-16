@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
@@ -14,6 +15,7 @@
 #include "dxp/sm5/DeclarationIndex.hpp"
 #include "dxp/sm5/Model_impl.hpp"
 #include "dxp/sm5/ShaderProgram.hpp"
+#include "dxp/sm5/step/ApplyRuleStep.hpp"
 #include "dxp/VariableStore.hpp"
 
 namespace dxp::sm5 {
@@ -71,6 +73,29 @@ struct ExecutionContext : VariableStore {
 
   uint32_t reserved_temp_base = 0;
   uint32_t reserved_temp_count = 0;
+
+  /// @brief Template pool (reuse model): fixed contiguous r# region
+  /// [template_pool_base, template_pool_base + template_pool_size), reused by
+  /// every instantiation. Safe because template temp names are unbound after
+  /// each expansion, so no instruction outside an expansion can reference
+  /// those registers by name. Width = max temp count across all templates.
+  uint32_t template_pool_base = 0;
+  uint32_t template_pool_size = 0;
+
+  /// @brief Registered template — temps + emit patterns + required captures
+  /// colocated (one struct per template, no parallel maps).
+  struct RegisteredTemplate {
+    std::vector<std::string> temps;
+    std::vector<step::EmitPattern> emits;
+    /// @brief Capture names (instruction + operand + index level) referenced by
+    /// the template's emits; resolved against the global capture store at
+    /// expansion time (cross-step captures persist; named runtime failure if
+    /// not produced). Registered at declare time.
+    std::unordered_set<std::string> required_captures;
+  };
+
+  /// @brief Registered templates — name → RegisteredTemplate (flattened from Template wrappers).
+  std::unordered_map<std::string, RegisteredTemplate> templates;
 
   CaptureStore captures;
 

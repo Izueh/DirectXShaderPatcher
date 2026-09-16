@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.27)
-project(DirectXShaderPatcher VERSION 0.5.4 LANGUAGES CXX)
+project(DirectXShaderPatcher VERSION 0.6.0 LANGUAGES CXX)
 
 # ─── Versioning ──────────────────────────────────────────────────────────────
 # Single source of truth: project(VERSION) above. DXP_VERSION_STRING follows
@@ -259,6 +259,8 @@ set(DXP_SM5_SOURCES
   "src/dxp/sm5/step/CheckOpcodeCountStep.cpp"
   "src/dxp/sm5/step/CheckResourceCountStep.cpp"
   "src/dxp/sm5/step/CheckShaderVersionStep.cpp"
+  "src/dxp/sm5/step/DeclareTemplateStep.cpp"
+  "src/dxp/sm5/step/common/Rule_impl.cpp"
   "src/dxp/sm5/Recipe.cpp"
   "src/dxp/Condition.cpp"
 )
@@ -272,6 +274,7 @@ set(DXP_SM6_SOURCES
   "src/dxp/sm6/step/CheckOpcodeCountStep.cpp"
   "src/dxp/sm6/step/CheckResourceCountStep.cpp"
   "src/dxp/sm6/step/CheckShaderVersionStep.cpp"
+  "src/dxp/sm6/step/DeclareTemplateStep.cpp"
 )
 
 # Conditionally add SM6 based on architecture preset variable

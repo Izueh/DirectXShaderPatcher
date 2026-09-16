@@ -35,6 +35,7 @@ Each step has a unique `name` and a `kind` that determines its behaviour.
 | `check_shader_version` | Filters unless the program shader model matches `major`/`minor` (mismatch is a non-error no-match) |
 | `check_opcode_count` | Counts occurrences of requested opcodes and publishes results |
 | `check_resource_count` | Counts resource declarations and publishes results |
+| `declare_template` | Declares a reusable instruction template (temps + emit block) that `apply_rule` emit entries instantiate via `template:` |
 
 ## Common Step Fields
 
@@ -90,7 +91,12 @@ shape; only the relevant fields are honored per declaration type:
 | `globally_coherent` | uavs | bool |
 | `has_counter` | uavs | bool |
 
-`temps` is a flat list of string handles.
+`temps` entries are either string handles or `{name, count}` arrays: a
+`count` declares a temp array of that many registers starting at the binding
+(base register + element). An emit temp operand references an array element
+via `handle: {name, element_index}` — the element (literal or variable,
+e.g. the 0-based `iteration` variable) is added to the base register (1-D
+register = base + element, NOT 2-D index entries).
 
 Register limits: textures/raw/structured ≤ 127, cbuffers ≤ 14, samplers ≤ 15,
 uavs ≤ 63, inputs ≤ 31, outputs ≤ 7.
@@ -234,6 +240,31 @@ steps:
 | `access_pattern` | optional `CbufferAccessPattern` — emitted cbuffer access pattern |
 | `mode` | optional `SamplerMode` — emitted sampler mode |
 | `uav_flags` | optional uint — emitted UAV flags |
+| `template` | instantiates a template declared by a preceding `declare_template` step (mutually exclusive with `opcode`, `capture`, and `blob`) |
+| `repeat` | per-iteration repeat: `times` (literal, `>= 1`) + `params` (typed value arrays, one length-`times` array per param); on `template:` entries it overrides the template's declared repeat; on `opcode`/`capture`/`blob:` entries it emits `times` identical copies with per-iteration param binding |
+
+YAML anchors/aliases (`&`/`*`) are supported anywhere in a recipe: an emit
+entry (or any other fragment) anchored once and aliased elsewhere expands
+identically to writing it twice — reuse emit blocks across rules and templates
+without engine support:
+
+```yaml
+emit:
+  - &center_tap
+    opcode: sample_c_lz
+    operands: [ ... ]
+  - *center_tap
+```
+
+Emit operands are validated at Validate time — rule emits and template emits
+are validated by the same shared validation:
+
+- Operand count must match the opcode layout (e.g. `mov` = 2, `add` = 3).
+- A temp/temp-array `handle:` operand must carry an explicit `components:`
+  (temp handles carry no component mode); `capture:` operands inherit the
+  captured operand's component mode instead.
+- The destination (first) operand must use `mask` selection mode (not
+  swizzle/select).
 
 ### Operand pattern (match and emit)
 
@@ -246,6 +277,9 @@ capture/match_capture/export_as) is in the generated JSON. Key semantics:
 - `handle` resolves a declaration handle from an `add_resource` step (emit only)
   and requires an explicit `type`. Cannot be combined with `indices` or
   `immediates_*` arrays.
+  In emit patterns, a temp/temp-array `handle:` operand requires explicit
+  `components:` (rejected at Validate time); `capture:` operands need no
+  `components:` — they inherit the captured operand's selection.
 - `capture` names the operand: in a match pattern it stores the matched operand
   under that name; in an emit operand it replays a previously captured operand
   (same-match first, then the cross-step global store). Explicit `indices`
@@ -429,6 +463,89 @@ steps:
 ```
 
 </details>
+
+## `declare_template`
+
+Declares a reusable instruction template: a named set of temporary registers
+(`temps`) plus an emit block. `apply_rule` emit entries instantiate it with
+`template: <name>`, expanding the block inline at the entry's position. Nested
+instantiation (`template:` inside a template's emit) is rejected at compile
+(nested templates are unsupported).
+
+| field | meaning |
+|---|---|
+| `name` | required, unique template name |
+| `temps` | required, flat list of temp register names — unique across all templates and all `add_resource` temps; become bindings in the shared handle namespace scoped to each instantiation's expansion |
+| `repeat` | optional repeat applied to every emit in the template (see `repeat` on emit entries); entry-level `repeat` on `template:` emit entries overrides it |
+| `emit` | required, list of emit instruction patterns (the template body) |
+
+Semantics:
+
+- **Reuse pool model** — all templates share one fixed register block at the
+  reserved temp base (after the shader's original temps), width = the maximum
+  temp count across all templates. Every instantiation reuses the same block
+  (template temp names are unbound after each expansion, so reuse is safe);
+  there is no per-instantiation cursor advance and no pool overflow error.
+  `add_resource` temps start above the pool; `dcl_temps` covers
+  original + pool + added temps.
+- **Ordering** — every `declare_template` step must precede every
+  `add_resource` step (validated).
+- **Iteration** — `repeat` iterates `0..times-1`; the 0-based `iteration`
+  variable is bound per iteration (usable as `element_index:` values) and
+  unbound after the expansion, together with the `params`.
+- **Names** — a repeat `params` entry named `iteration` is rejected (reserved);
+  a temp named `iteration` is rejected. Template temp names referenced via
+  `handle:` outside template instantiations are rejected at validate time.
+- **Handle references inside templates** — temp-type `handle:` must name one
+  of the template's own temps; other handle types must name a known global
+  handle (validated; forward `add_resource` references are rejected).
+- **Template emit validation** — template emits are validated like rule emits
+  (shared validation: operand count per layout, temp-handle `components:`
+  requirement, destination mask mode, per-slot types).
+- **Template captures** — template emits CAN use `capture:`. Required captures
+  are registered at declare-time and enforced at the invoking `apply_rule`
+  step's Validate: each required capture must be producible by a previous or
+  current match step (name-level). Runtime resolution consults the global
+  capture store; a required capture unavailable at expansion time is a named
+  runtime error.
+- `dcl_temps` is grown to cover the pool only when a template is actually
+  instantiated in the run.
+
+```yaml
+steps:
+  - kind: declare_template
+    name: shadow_tap
+    temps: [tap_x, tap_y]
+    emit:
+      - opcode: mov
+        operands:
+          - type: temp
+            handle: {name: tap_x}
+            components: {selection_mode: mask, value: x}
+          - type: temp
+            capture: uv
+      - opcode: mov
+        operands:
+          - type: temp
+            handle: {name: tap_y}
+            components: {selection_mode: mask, value: x}
+          - type: temp
+            capture: uv2
+  - kind: apply_rule
+    name: insert_shadow
+    rule:
+      match:
+        - opcode: sample_l
+          operands:
+            - capture: uv
+            - capture: uv2
+      emit:
+        - template: shadow_tap
+          repeat:
+            times: 6
+            params:
+              uv: {u32: [1, 2, 3, 4, 5, 6]}
+```
 
 ## `check_shader_version`
 

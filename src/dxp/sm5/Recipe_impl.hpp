@@ -8,6 +8,7 @@
 #include "dxp/sm5/step/CheckOpcodeCountStep_impl.hpp"
 #include "dxp/sm5/step/CheckResourceCountStep_impl.hpp"
 #include "dxp/sm5/step/CheckShaderVersionStep_impl.hpp"
+#include "dxp/sm5/step/DeclareTemplateStep_impl.hpp"
 
 namespace dxp::sm5 {
 using namespace dxp::sm5::model;
@@ -15,7 +16,7 @@ using namespace dxp::sm5::model;
 /// @brief Variant type for all SM5 recipe step data types.
 using StepDataVariant =
     std::variant<step::AddResourceData, step::ApplyRuleData, step::CheckShaderVersionData,
-                 step::CheckOpcodeCountData, step::CheckResourceCountData>;
+                 step::CheckOpcodeCountData, step::CheckResourceCountData, step::TemplateStepData>;
 
 /// @brief Top-level SM5 recipe data structure.
 struct RecipeData {
@@ -31,10 +32,11 @@ namespace glz {
 template <>
 struct meta<dxp::sm5::StepDataVariant> {
   using T = dxp::sm5::StepDataVariant;
-  static constexpr std::array<std::string_view, 5> ids = {"add_resource", "apply_rule",
+  static constexpr std::array<std::string_view, 6> ids = {"add_resource", "apply_rule",
                                                           "check_shader_version",
                                                           "check_opcode_count",
-                                                          "check_resource_count"};
+                                                          "check_resource_count",
+                                                          "declare_template"};
   static constexpr std::string_view tag = "kind";
   static_assert(std::size(ids) == std::variant_size_v<T>,
                 "variant_ids count must match std::variant template parameter count");

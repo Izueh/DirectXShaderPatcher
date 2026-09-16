@@ -49,13 +49,19 @@ struct CheckResourceCountResults {
   int32_t total = 0;          ///< Total resource count.
 };
 
+/// @brief Results from DeclareTemplateStep.
+struct DeclareTemplateResults {
+  uint32_t emit_count = 0;  ///< Number of registered emit patterns.
+};
+
 /// @brief Variant of all per-step Results types.
 using ResultsVariant = std::variant<
     ApplyRuleResults,
     AddResourceResults,
     CheckShaderVersionResults,
     CheckOpcodeCountResults,
-    CheckResourceCountResults>;
+    CheckResourceCountResults,
+    DeclareTemplateResults>;
 
 /// @brief Summarizes one executed recipe step.
 struct StepReport {

@@ -951,12 +951,13 @@ auto ShaderProgram::FindNextAvailableOutput(unsigned preferred, bool from_high) 
   return bp;
 }
 
-auto ShaderProgram::EnsureTempDeclaration() -> void {
-  if (temp_count == 0) return;
+auto ShaderProgram::EnsureTempDeclaration(uint32_t template_pool_size) -> void {
+  const uint32_t declared_temp_count = temp_count + template_pool_size;
+  if (declared_temp_count == 0) return;
   bool found_dcl_temps = false;
   for (auto& instruction : instructions) {
     if (instruction.opcode == Opcode::DclTemps) {
-      instruction = BuildTempDeclaration(temp_count);
+      instruction = BuildTempDeclaration(declared_temp_count);
       found_dcl_temps = true;
       break;
     }
@@ -967,7 +968,7 @@ auto ShaderProgram::EnsureTempDeclaration() -> void {
       if (OpcodeIsDeclaration(instructions[i].opcode)) insert_index = i + 1;
     }
     instructions.insert(instructions.begin() + static_cast<ptrdiff_t>(insert_index),
-                        BuildTempDeclaration(temp_count));
+                        BuildTempDeclaration(declared_temp_count));
   }
 }
 

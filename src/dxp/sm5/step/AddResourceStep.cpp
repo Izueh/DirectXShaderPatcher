@@ -176,18 +176,44 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
   }
 
   if (!step.temps.empty()) {
-    const uint32_t temp_base = ctx.program.temp_count;
-    for (size_t i = 0; i < step.temps.size(); ++i) {
-      const uint32_t bind_point = temp_base + static_cast<uint32_t>(i);
-      ctx.Bindings(BindingClass::Temp)[step.temps[i]] = bind_point;
+    // Reuse pool model: template temps occupy a fixed block between the
+    // shader's original temps and the add_resource temps.
+    const uint32_t temp_base = ctx.program.temp_count + ctx.template_pool_size;
+    uint32_t offset = 0;
+    for (const auto& h : step.temps) {
+      std::visit(
+          [&](const auto& val) {
+            using T = std::decay_t<decltype(val)>;
+            if constexpr (std::is_same_v<T, std::string>) {
+              ctx.Bindings(BindingClass::Temp)[val] = temp_base + offset;
+              ++offset;
+            } else {
+              ctx.Bindings(BindingClass::Temp)[val.name] = temp_base + offset;
+              offset += val.count;
+            }
+          },
+          h);
     }
-    ctx.program.temp_count += static_cast<uint32_t>(step.temps.size());
-    result.temps_added = static_cast<uint32_t>(step.temps.size());
+    ctx.program.temp_count += offset;
+    result.temps_added = offset;
     changed = true;
+    // Temp budget (plan rule 7): original + template pool + added temps must
+    // fit the SM5 temp register file (r0..r255). The pool is final here (all
+    // declare_template steps precede add_resource steps).
+    const uint32_t kMaxTempRegisters = 256;
+    const uint32_t total_temps = ctx.program.temp_count + ctx.template_pool_size;
+    if (total_temps > kMaxTempRegisters) {
+      const std::string message = "add_resource temps exceed the SM5 temp budget: "
+                                  + std::to_string(ctx.reserved_temp_base) + " original"
+                                  + " + " + std::to_string(ctx.template_pool_size) + " template pool"
+                                  + " + " + std::to_string(ctx.program.temp_count - ctx.reserved_temp_base) + " added"
+                                  + " = " + std::to_string(total_temps) + " > " + std::to_string(kMaxTempRegisters);
+      if (!fail_or_warn(message)) return std::unexpected(message);
+    }
   }
 
-  if (ctx.program.temp_count > 0) {
-    ctx.program.EnsureTempDeclaration();
+  if (ctx.program.temp_count > 0 || ctx.template_pool_size > 0) {
+    ctx.program.EnsureTempDeclaration(ctx.template_pool_size);
   }
 
   if (changed) ctx.MarkProgramMutated();
@@ -210,10 +236,26 @@ std::expected<void, std::string> Validate(const AddResourceStep& step, dxp::Vali
   }
 
   for (const auto& t : step.temps) {
-    if (t.empty()) {
-      return std::unexpected("add_resource: temp handle must not be empty");
-    }
-    ctx.handles.insert(t);
+    std::string error;
+    std::visit(
+        [&](const auto& val) {
+          using T = std::decay_t<decltype(val)>;
+          if constexpr (std::is_same_v<T, std::string>) {
+            if (val.empty())
+              error = "add_resource: temp handle must not be empty";
+            else
+              ctx.handles.insert(val);
+          } else {
+            if (val.name.empty())
+              error = "add_resource: temp array name must not be empty";
+            else if (val.count == 0)
+              error = "add_resource: temp array count must be >= 1";
+            else
+              ctx.handles.insert(val.name);
+          }
+        },
+        t);
+    if (!error.empty()) return std::unexpected(std::move(error));
   }
 
   if (!ctx.names.insert(step.name).second) {
@@ -325,7 +367,20 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     decl.reverse_bind = d.reverse_bind;
     step.outputs.push_back(std::move(decl));
   }
-  step.temps = temps;
+  step.temps.reserve(temps.size());
+  for (const auto& t : temps) {
+    std::visit(
+        [&](const auto& val) {
+          AddResourceStep::TempHandle h;
+          if constexpr (std::is_same_v<std::decay_t<decltype(val)>, std::string>) {
+            h = val;
+          } else {
+            h = AddResourceStep::TempArrayDecl{val.name, val.count};
+          }
+          step.temps.push_back(std::move(h));
+        },
+        t);
+  }
   return step;
 }
 
