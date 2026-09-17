@@ -241,17 +241,23 @@ std::expected<void, std::string> Validate(const AddResourceStep& step, dxp::Vali
         [&](const auto& val) {
           using T = std::decay_t<decltype(val)>;
           if constexpr (std::is_same_v<T, std::string>) {
-            if (val.empty())
+            if (val.empty()) {
               error = "add_resource: temp handle must not be empty";
-            else
+            } else if (ctx.template_param_names.contains(val)) {
+              error = "add_resource: temp handle '" + val + "' collides with a declared template param";
+            } else {
               ctx.handles.insert(val);
+            }
           } else {
-            if (val.name.empty())
+            if (val.name.empty()) {
               error = "add_resource: temp array name must not be empty";
-            else if (val.count == 0)
+            } else if (val.count == 0) {
               error = "add_resource: temp array count must be >= 1";
-            else
+            } else if (ctx.template_param_names.contains(val.name)) {
+              error = "add_resource: temp array name '" + val.name + "' collides with a declared template param";
+            } else {
               ctx.handles.insert(val.name);
+            }
           }
         },
         t);

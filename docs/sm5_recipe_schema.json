@@ -308,24 +308,14 @@
                      "name": {
                         "type": "string"
                      },
-                     "repeat": {
-                        "anyOf": [
-                           {
-                              "$ref": "#/$defs/dxp::sm5::step::RepeatData"
-                           },
-                           {
-                              "type": "null"
-                           }
-                        ]
+                     "params": {
+                        "$ref": "#/$defs/std::vector<std::string>"
                      },
                      "required": {
                         "type": "boolean"
                      },
                      "temps": {
-                        "type": "array",
-                        "items": {
-                           "type": "string"
-                        }
+                        "$ref": "#/$defs/std::vector<std::string>"
                      }
                   },
                   "additionalProperties": false,
@@ -1004,60 +994,6 @@
          },
          "additionalProperties": false
       },
-      "dxp::sm5::step::RepeatData": {
-         "type": "object",
-         "properties": {
-            "params": {
-               "type": "object",
-               "additionalProperties": {
-                  "type": "object",
-                  "properties": {
-                     "f32": {
-                        "type": "array",
-                        "items": {
-                           "$ref": "#/$defs/float"
-                        }
-                     },
-                     "f64": {
-                        "type": "array",
-                        "items": {
-                           "$ref": "#/$defs/double"
-                        }
-                     },
-                     "i32": {
-                        "type": "array",
-                        "items": {
-                           "$ref": "#/$defs/int32_t"
-                        }
-                     },
-                     "i64": {
-                        "type": "array",
-                        "items": {
-                           "$ref": "#/$defs/int64_t"
-                        }
-                     },
-                     "u32": {
-                        "type": "array",
-                        "items": {
-                           "$ref": "#/$defs/uint32_t"
-                        }
-                     },
-                     "u64": {
-                        "type": "array",
-                        "items": {
-                           "$ref": "#/$defs/uint64_t"
-                        }
-                     }
-                  },
-                  "additionalProperties": false
-               }
-            },
-            "times": {
-               "$ref": "#/$defs/uint32_t"
-            }
-         },
-         "additionalProperties": false
-      },
       "dxp::sm5::step::RewriteKind": {
          "type": "string",
          "oneOf": [
@@ -1542,10 +1478,67 @@
                "operands": {
                   "$ref": "#/$defs/std::vector<dxp::sm5::step::OperandData>"
                },
+               "params": {
+                  "type": "object",
+                  "additionalProperties": {
+                     "type": "string"
+                  }
+               },
                "repeat": {
                   "anyOf": [
                      {
-                        "$ref": "#/$defs/dxp::sm5::step::RepeatData"
+                        "type": "object",
+                        "properties": {
+                           "params": {
+                              "type": "object",
+                              "additionalProperties": {
+                                 "type": "object",
+                                 "properties": {
+                                    "f32": {
+                                       "type": "array",
+                                       "items": {
+                                          "$ref": "#/$defs/float"
+                                       }
+                                    },
+                                    "f64": {
+                                       "type": "array",
+                                       "items": {
+                                          "$ref": "#/$defs/double"
+                                       }
+                                    },
+                                    "i32": {
+                                       "type": "array",
+                                       "items": {
+                                          "$ref": "#/$defs/int32_t"
+                                       }
+                                    },
+                                    "i64": {
+                                       "type": "array",
+                                       "items": {
+                                          "$ref": "#/$defs/int64_t"
+                                       }
+                                    },
+                                    "u32": {
+                                       "type": "array",
+                                       "items": {
+                                          "$ref": "#/$defs/uint32_t"
+                                       }
+                                    },
+                                    "u64": {
+                                       "type": "array",
+                                       "items": {
+                                          "$ref": "#/$defs/uint64_t"
+                                       }
+                                    }
+                                 },
+                                 "additionalProperties": false
+                              }
+                           },
+                           "times": {
+                              "$ref": "#/$defs/uint32_t"
+                           }
+                        },
+                        "additionalProperties": false
                      },
                      {
                         "type": "null"
@@ -1581,6 +1574,12 @@
          "type": "array",
          "items": {
             "$ref": "#/$defs/dxp::sm5::step::OperandData"
+         }
+      },
+      "std::vector<std::string>": {
+         "type": "array",
+         "items": {
+            "type": "string"
          }
       },
       "uint32_t": {

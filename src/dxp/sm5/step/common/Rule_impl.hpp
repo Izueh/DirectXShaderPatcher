@@ -1,6 +1,7 @@
 #pragma once
 #include <dxp/sm5/step/common/Rule.hpp>
 #include <glaze/glaze.hpp>
+#include <map>
 #include <memory>
 #include <unordered_map>
 #include "dxp/Condition_impl.hpp"
@@ -188,6 +189,9 @@ struct EmitInstructionData {
   std::string blob;                  ///< Expand a stored blob (mutually exclusive with opcode/capture).
   std::string template_name;         ///< Template instantiation (mutually exclusive with opcode/capture).
   std::optional<RepeatData> repeat;  ///< Per-iteration repeat configuration.
+  /// @brief Caller-provided params (template entries only): declared param
+  /// name → add_resource temp name or capture name.
+  std::map<std::string, std::string> params;
   std::vector<EmitExtendedOpcodeData> extended_opcodes;
   /// @brief Instruction-level fields for declaration opcodes (dcl_resource, dcl_constant_buffer, dcl_sampler, dcl_uav_*).
   std::optional<model::ResourceDimension> dimension;
@@ -314,6 +318,7 @@ struct meta<dxp::sm5::step::EmitInstructionData> {
       "blob", &T::blob,
       "template", &T::template_name,
       "repeat", &T::repeat,
+      "params", &T::params,
       "extended_opcodes", &T::extended_opcodes,
       "dimension", &T::dimension,
       "return_type", &T::return_type,

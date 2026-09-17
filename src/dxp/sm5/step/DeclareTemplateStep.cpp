@@ -41,6 +41,10 @@ std::expected<dxp::DeclareTemplateResults, std::string> Execute(const DeclareTem
   // Colocated required captures — registered at declare time (resolved against
   // the global capture store at expansion; cross-step captures persist).
   tpl.required_captures = CollectRequiredCaptures(tpl.emits);
+  // Declared params (handle scope): the instantiating emit provides the
+  // registers; bound during expansion (caller-owned — pool stays private
+  // scratch).
+  tpl.params = step.params;
   result.emit_count = static_cast<uint32_t>(tpl.emits.size());
   ctx.state[step.name] = true;
   return result;
@@ -67,7 +71,33 @@ std::expected<void, std::string> Validate(const DeclareTemplateStep& step, dxp::
       return std::unexpected("declare_template '" + step.name + "': temp '" + tn + "' collides with another temp");
     }
   }
-  // Validate repeat config on compiled emits (all emits share the same repeat).
+  // Declared params — caller-provided handle scope: bound to caller-provided
+  // registers (add_resource temps or match captures) at instantiation.
+  std::unordered_set<std::string> own_temps_set(step.temps.begin(), step.temps.end());
+  std::unordered_set<std::string> seen_params;
+  for (const auto& pn : step.params) {
+    if (pn.empty()) {
+      return std::unexpected("declare_template '" + step.name + "': empty param name");
+    }
+    if (pn == "iteration") {
+      return std::unexpected("declare_template '" + step.name + "': param name 'iteration' is reserved (implicit 0-based repeat index variable)");
+    }
+    if (own_temps_set.contains(pn)) {
+      return std::unexpected("declare_template '" + step.name + "': param '" + pn + "' collides with a template temp");
+    }
+    if (!seen_params.insert(pn).second) {
+      return std::unexpected("declare_template '" + step.name + "': duplicate param name '" + pn + "'");
+    }
+    if (ctx.template_param_names.contains(pn)) {
+      return std::unexpected("declare_template '" + step.name + "': param '" + pn + "' collides with another template param");
+    }
+    if (ctx.handles.contains(pn)) {
+      return std::unexpected("declare_template '" + step.name + "': param '" + pn + "' collides with a known handle name");
+    }
+  }
+  ctx.template_param_names.insert(step.params.begin(), step.params.end());
+  ctx.template_params[step.name] = step.params;
+  // Validate repeat config on compiled emits (per-emit repeat, template-set).
   for (const auto& t : step.emits) {
     for (const auto& ep : t.emits) {
       if (ep.repeat.has_value()) {
@@ -100,6 +130,7 @@ std::expected<void, std::string> Validate(const DeclareTemplateStep& step, dxp::
   // temps or a known global handle (declared so far; add_resource steps are
   // ordered after declare_template, so forward references are rejected).
   const std::unordered_set<std::string> own_temps(step.temps.begin(), step.temps.end());
+  const std::unordered_set<std::string> own_params(step.params.begin(), step.params.end());
   for (const auto& t : step.emits) {
     for (const auto& ep : t.emits) {
       for (const auto& op : ep.operands) {
@@ -107,8 +138,8 @@ std::expected<void, std::string> Validate(const DeclareTemplateStep& step, dxp::
           continue;
         }
         const bool is_temp_type = op.type == OperandType::Temp || op.type == OperandType::IndexableTemp;
-        if (is_temp_type && !own_temps.contains(op.handle->name)) {
-          return std::unexpected("declare_template '" + step.name + "': temp handle '" + op.handle->name + "' is not one of the template's temps");
+        if (is_temp_type && !own_temps.contains(op.handle->name) && !own_params.contains(op.handle->name)) {
+          return std::unexpected("declare_template '" + step.name + "': temp handle '" + op.handle->name + "' is neither one of the template's temps nor one of its declared params");
         }
         if (!is_temp_type && op.type != OperandType::CBuffer && !own_temps.contains(op.handle->name) && !ctx.handles.contains(op.handle->name)) {
           return std::unexpected("declare_template '" + step.name + "': handle '" + op.handle->name + "' is neither a template temp nor a known global handle");
@@ -129,11 +160,7 @@ auto TemplateStepData::Compile() const -> std::expected<DeclareTemplateStep, std
   step.condition = cond;
   step.required = required;
   step.temps = temps;
-
-  // Convert template repeat into compiled RepeatConfig (applied to each emit).
-  // Structural validation (times >= 1, param families, reserved names) is
-  // enforced by ValidateRepeatConfig during Validate.
-  const std::optional<RepeatConfig> template_repeat = CompileRepeatConfig(repeat);
+  step.params = params;
 
   // Each EmitInstructionData becomes a Template wrapper
   Template tmpl;
@@ -162,9 +189,12 @@ auto TemplateStepData::Compile() const -> std::expected<DeclareTemplateStep, std
       }
       ep.extended_opcodes.push_back(std::move(e));
     }
-    // Attach template repeat to each compiled emit pattern.
-    if (template_repeat.has_value()) {
-      ep.repeat = template_repeat;
+    // Per-emit repeat (template-set): repeat + params live on the template's
+    // emits; bound per iteration during expansion. Structural validation
+    // (times >= 1, param families, reserved names) is enforced by
+    // ValidateRepeatConfig during Validate.
+    if (emit_data.repeat.has_value()) {
+      ep.repeat = CompileRepeatConfig(emit_data.repeat);
     }
     for (const auto& op_data : emit_data.operands) {
       auto op = CompileOperandPattern(op_data, true);

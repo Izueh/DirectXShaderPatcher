@@ -191,6 +191,8 @@ dxp_add_test(sm5_template_test "sm5_template_test.cpp" "${CMAKE_CURRENT_SOURCE_D
 dxp_add_test(sm5_template_pool_test "sm5_template_pool_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x7AFF256C.ps_5_0.cso")
 dxp_add_test(sm5_temp_array_test "sm5_temp_array_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x7AFF256C.ps_5_0.cso")
 dxp_add_test(sm5_template_reuse_test "sm5_template_reuse_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x7AFF256C.ps_5_0.cso")
+dxp_add_test(sm5_template_param_test "sm5_template_param_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x7AFF256C.ps_5_0.cso")
+dxp_add_test(sm5_template_emit_repeat_test "sm5_template_emit_repeat_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x7AFF256C.ps_5_0.cso")
 dxp_add_test(sm5_plain_repeat_test "sm5_plain_repeat_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x7AFF256C.ps_5_0.cso")
 dxp_add_test(sm5_template_validation_test "sm5_template_validation_test.cpp")
 dxp_add_test(sm6_recipe_logging_test "sm6_recipe_logging_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x56C468C3.cs_6_6.cso")

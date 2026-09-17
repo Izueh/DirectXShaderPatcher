@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <bit>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -274,6 +275,10 @@ struct EmitPattern {
   std::string blob;                    ///< Expand a stored blob (post-mutation copy, deep-copied on emit).
   std::string template_name;           ///< Template instantiation (mutually exclusive with opcode/capture/blob).
   std::optional<RepeatConfig> repeat;  ///< Per-iteration repeat; on template entries it overrides the template's declared repeat.
+  /// @brief Caller-provided params (template entries only): declared param
+  /// name → add_resource temp name or capture name (resolved at expansion;
+  /// bound into the template's temp scope for the whole expansion).
+  std::map<std::string, std::string> params;
   std::vector<EmitExtendedOpcode> extended_opcodes;
   std::optional<model::ResourceDimension> dimension;
   std::array<std::optional<model::ResourceReturnType>, 4> return_type;

@@ -260,6 +260,61 @@
                                           "additionalProperties": false
                                        }
                                     },
+                                    "repeat": {
+                                       "anyOf": [
+                                          {
+                                             "type": "object",
+                                             "properties": {
+                                                "params": {
+                                                   "type": "object",
+                                                   "additionalProperties": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                         "f32": {
+                                                            "type": "array",
+                                                            "items": {
+                                                               "$ref": "#/$defs/float"
+                                                            }
+                                                         },
+                                                         "f64": {
+                                                            "$ref": "#/$defs/std::vector<double>"
+                                                         },
+                                                         "i32": {
+                                                            "type": "array",
+                                                            "items": {
+                                                               "$ref": "#/$defs/int32_t"
+                                                            }
+                                                         },
+                                                         "i64": {
+                                                            "$ref": "#/$defs/std::vector<int64_t>"
+                                                         },
+                                                         "u32": {
+                                                            "type": "array",
+                                                            "items": {
+                                                               "$ref": "#/$defs/uint32_t"
+                                                            }
+                                                         },
+                                                         "u64": {
+                                                            "type": "array",
+                                                            "items": {
+                                                               "$ref": "#/$defs/uint64_t"
+                                                            }
+                                                         }
+                                                      },
+                                                      "additionalProperties": false
+                                                   }
+                                                },
+                                                "times": {
+                                                   "$ref": "#/$defs/uint32_t"
+                                                }
+                                             },
+                                             "additionalProperties": false
+                                          },
+                                          {
+                                             "type": "null"
+                                          }
+                                       ]
+                                    },
                                     "replace_captured": {
                                        "type": "string"
                                     },
@@ -272,6 +327,9 @@
                                              "type": "null"
                                           }
                                        ]
+                                    },
+                                    "template": {
+                                       "type": "string"
                                     }
                                  },
                                  "additionalProperties": false
@@ -379,6 +437,165 @@
                      "kind"
                   ],
                   "title": "check_shader_version"
+               },
+               {
+                  "type": "object",
+                  "properties": {
+                     "condition": {
+                        "$ref": "#/$defs/dxp::ConditionData"
+                     },
+                     "emit": {
+                        "type": "array",
+                        "items": {
+                           "type": "object",
+                           "properties": {
+                              "blob": {
+                                 "type": "string"
+                              },
+                              "capture": {
+                                 "type": "string"
+                              },
+                              "interpolation": {
+                                 "type": [
+                                    "string",
+                                    "null"
+                                 ]
+                              },
+                              "name": {
+                                 "type": "string"
+                              },
+                              "opcode": {
+                                 "type": [
+                                    "string",
+                                    "null"
+                                 ]
+                              },
+                              "operands": {
+                                 "type": "array",
+                                 "items": {
+                                    "type": "object",
+                                    "properties": {
+                                       "capture": {
+                                          "type": "string"
+                                       },
+                                       "constant_float_values": {
+                                          "$ref": "#/$defs/std::vector<double>"
+                                       },
+                                       "constant_int_values": {
+                                          "$ref": "#/$defs/std::vector<int64_t>"
+                                       },
+                                       "export_as": {
+                                          "type": [
+                                             "string",
+                                             "null"
+                                          ]
+                                       },
+                                       "handle": {
+                                          "anyOf": [
+                                             {
+                                                "type": "object",
+                                                "properties": {
+                                                   "element_index": {
+                                                      "anyOf": [
+                                                         {
+                                                            "$ref": "#/$defs/std::variant<std::string,uint32_t>"
+                                                         },
+                                                         {
+                                                            "type": "null"
+                                                         }
+                                                      ]
+                                                   },
+                                                   "name": {
+                                                      "type": "string"
+                                                   }
+                                                },
+                                                "additionalProperties": false
+                                             },
+                                             {
+                                                "type": "null"
+                                             }
+                                          ]
+                                       },
+                                       "immediates_f32": {
+                                          "type": "array",
+                                          "items": {
+                                             "$ref": "#/$defs/std::variant<std::string,float>"
+                                          }
+                                       },
+                                       "immediates_u32": {
+                                          "type": "array",
+                                          "items": {
+                                             "$ref": "#/$defs/std::variant<std::string,uint32_t>"
+                                          }
+                                       },
+                                       "kind": {
+                                          "type": [
+                                             "string",
+                                             "null"
+                                          ]
+                                       },
+                                       "mask": {
+                                          "type": "string"
+                                       },
+                                       "match_capture": {
+                                          "type": "string"
+                                       },
+                                       "operand_index": {
+                                          "$ref": "#/$defs/uint32_t"
+                                       },
+                                       "select": {
+                                          "type": "string"
+                                       },
+                                       "swizzle": {
+                                          "type": "string"
+                                       },
+                                       "type": {
+                                          "type": [
+                                             "string",
+                                             "null"
+                                          ]
+                                       }
+                                    },
+                                    "additionalProperties": false
+                                 }
+                              },
+                              "replace_captured": {
+                                 "type": [
+                                    "string",
+                                    "null"
+                                 ]
+                              },
+                              "saturate": {
+                                 "type": [
+                                    "boolean",
+                                    "null"
+                                 ]
+                              },
+                              "test_boolean": {
+                                 "$ref": "#/$defs/int32_t"
+                              }
+                           },
+                           "additionalProperties": false
+                        }
+                     },
+                     "kind": {
+                        "const": "declare_template"
+                     },
+                     "name": {
+                        "type": "string"
+                     },
+                     "required": {
+                        "type": "boolean"
+                     },
+                     "temps": {
+                        "$ref": "#/$defs/std::vector<std::string>"
+                     }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                     "kind"
+                  ],
+                  "title": "declare_template"
                }
             ]
          }
@@ -624,6 +841,11 @@
             }
          ]
       },
+      "float": {
+         "type": "number",
+         "minimum": -3.4028234663852886E38,
+         "maximum": 3.4028234663852886E38
+      },
       "int32_t": {
          "type": "integer",
          "minimum": -2147483648,
@@ -720,6 +942,42 @@
                "title": "double",
                "minimum": -1.7976931348623157E308,
                "maximum": 1.7976931348623157E308
+            }
+         ]
+      },
+      "std::variant<std::string,float>": {
+         "type": [
+            "number",
+            "string"
+         ],
+         "oneOf": [
+            {
+               "type": "string",
+               "title": "std::string"
+            },
+            {
+               "type": "number",
+               "title": "float",
+               "minimum": -3.4028234663852886E38,
+               "maximum": 3.4028234663852886E38
+            }
+         ]
+      },
+      "std::variant<std::string,uint32_t>": {
+         "type": [
+            "number",
+            "string"
+         ],
+         "oneOf": [
+            {
+               "type": "string",
+               "title": "std::string"
+            },
+            {
+               "type": "integer",
+               "title": "uint32_t",
+               "minimum": 0,
+               "maximum": 4294967295
             }
          ]
       },
@@ -822,6 +1080,11 @@
          "type": "integer",
          "minimum": 0,
          "maximum": 4294967295
+      },
+      "uint64_t": {
+         "type": "integer",
+         "minimum": 0,
+         "maximum": 1.8446744073709552E19
       }
    },
    "title": "SM6 YAML Recipe Schema",

@@ -247,7 +247,7 @@ static void BindRepeatParams(const RepeatConfig& repeat, uint32_t iteration, Ite
     else if (!arr.i64.empty() && iteration < arr.i64.size())
       scope.Bind(name, arr.i64[iteration]);
     else if (!arr.f32.empty() && iteration < arr.f32.size())
-      scope.Bind(name, arr.f32[iteration]);
+      scope.Bind(name, static_cast<double>(arr.f32[iteration]));
     else if (!arr.f64.empty() && iteration < arr.f64.size())
       scope.Bind(name, arr.f64[iteration]);
   }
@@ -292,31 +292,72 @@ static bool ExpandTemplate(const std::string& template_name,
                            std::vector<Instruction>& out_instructions,
                            std::string& error,
                            ExecutionContext& ctx,
-                           const std::optional<RepeatConfig>* override_repeat = nullptr) {
+                           const std::optional<RepeatConfig>* override_repeat = nullptr,
+                           const std::map<std::string, std::string>* entry_params = nullptr) {
   const std::vector<std::string>& template_temps = tpl.temps;
   const std::vector<EmitPattern>& template_emits = tpl.emits;
-  // Entry-level repeat (rule emit entry) overrides the template's declared
-  // repeat (which lives on the template emits); no entry repeat → the
-  // declared repeat applies.
+  // Entry-level repeat (on the template: emit entry): repeats the whole body
+  // N times with caller params. Per-emit repeat (on the template's emits)
+  // is template-set and expands inside each body iteration.
   static const std::optional<RepeatConfig> kNoRepeat;
   const std::optional<RepeatConfig>* effective_repeat = &kNoRepeat;
   if (override_repeat != nullptr && override_repeat->has_value()) {
     effective_repeat = override_repeat;
-  } else if (!template_emits.empty()) {
-    effective_repeat = &template_emits[0].repeat;
+  }
+  std::vector<std::string> bound_params;
+  if (entry_params != nullptr && !entry_params->empty()) {
+    auto& temp_bindings = ctx.Bindings(BindingClass::Temp);
+    for (const auto& [param_name, provided] : *entry_params) {
+      uint32_t register_index = 0;
+      bool resolved = false;
+      if (auto it = temp_bindings.find(provided); it != temp_bindings.end()) {
+        register_index = it->second;
+        resolved = true;
+      } else if (auto it = ctx.captures.operands.find(provided); it != ctx.captures.operands.end()) {
+        const auto& captured = it->second.operand_data;
+        if (!captured.index_entries.empty() && captured.index_entries[0].immediate_lo.has_value()) {
+          register_index = captured.index_entries[0].immediate_lo.value();
+          resolved = true;
+        }
+      }
+      if (!resolved) {
+        error = "template '" + template_name + "' param '" + param_name + "': provided name '" + provided + "' is not a known add_resource temp or capture";
+        return false;
+      }
+      temp_bindings[param_name] = register_index;
+      bound_params.push_back(param_name);
+    }
   }
   // Reuse pool model: every instantiation binds its temps to the same fixed
   // block (safe — temp names are unbound after the expansion, so nothing
   // outside it can reference those registers by name).
   BindTemplateTemps(template_temps, ctx.template_pool_base, ctx);
 
-  auto cleanup = [&]() { UnbindTemplateTemps(template_temps, ctx); };
+  auto cleanup = [&]() {
+    UnbindTemplateTemps(template_temps, ctx);
+    for (const auto& param_name : bound_params) {
+      ctx.Bindings(BindingClass::Temp).erase(param_name);
+    }
+  };
 
   auto expand_once = [&]() -> bool {
     for (size_t i = 0; i < template_emits.size(); ++i) {
       const std::string path = "template '" + template_name + "'.emits[" + std::to_string(i) + "]";
       const auto& emit = template_emits[i];
-      if (!ResolveEmitPattern({}, emit, path, out_instructions, error, ctx)) {
+      if (emit.repeat.has_value()) {
+        const auto& repeat = *emit.repeat;
+        IterationScopeGuard scope(ctx);
+        for (uint32_t iter = 0; iter < repeat.times; ++iter) {
+          BindRepeatParams(repeat, iter, scope);
+          scope.Bind("iteration", static_cast<dxp::PrimitiveValue>(iter));
+          const bool ok = ResolveEmitPattern({}, emit, path, out_instructions, error, ctx);
+          for (const auto& [name, arr] : repeat.params) scope.Unbind(name);
+          scope.Unbind("iteration");
+          if (!ok) {
+            return false;
+          }
+        }
+      } else if (!ResolveEmitPattern({}, emit, path, out_instructions, error, ctx)) {
         return false;
       }
     }
@@ -365,7 +406,7 @@ static bool ResolveEmitEntry(const MatchResult& match, const EmitPattern& entry,
       error = path + ": unknown template '" + entry.template_name + "'";
       return false;
     }
-    return ExpandTemplate(entry.template_name, it->second, out, error, ctx, &entry.repeat);
+    return ExpandTemplate(entry.template_name, it->second, out, error, ctx, &entry.repeat, &entry.params);
   }
   if (entry.repeat.has_value()) {
     const auto& repeat = *entry.repeat;
@@ -1964,12 +2005,18 @@ auto RuleData::Compile() const -> std::expected<Rule, std::string> {
         return std::unexpected(r.error());
       }
     }
+    if (emit_entry.template_name.empty() && !emit_entry.params.empty()) {
+      error = "rule emit entry [" + std::to_string(emit_index) + "] params are only valid on template: entries";
+      return std::unexpected(error);
+    }
     EmitPattern tpl;
     tpl.opcode = emit_entry.opcode;
     tpl.capture = emit_entry.capture;
     tpl.blob = emit_entry.blob;
     tpl.template_name = emit_entry.template_name;
     tpl.repeat = entry_repeat;
+    tpl.params = emit_entry.params;
+    tpl.params = emit_entry.params;
     if (emit_entry.saturate.has_value()) {
       tpl.saturate = *emit_entry.saturate;
     }
@@ -2322,8 +2369,41 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, dxp::Valida
   }
 
   for (const auto& emit : step.rule.emit_patterns) {
+    if (emit.template_name.empty() && !emit.params.empty()) {
+      return std::unexpected("step '" + step.name + "': params are only valid on template: entries");
+    }
     if (!emit.template_name.empty() && !ctx.template_names.contains(emit.template_name)) {
       return std::unexpected("unknown template '" + emit.template_name + "' (referenced template must be declared by a preceding declare_template step)");
+    }
+    // Template params (declaration contract): every declared param must be
+    // provided by the instantiating emit entry; each provided name must be an
+    // add_resource temp name declared so far or a capture name producible by
+    // a previous or current match step (registers resolved at expansion).
+    if (!emit.template_name.empty()) {
+      const auto param_it = ctx.template_params.find(emit.template_name);
+      if (param_it != ctx.template_params.end()) {
+        for (const auto& param_name : param_it->second) {
+          if (!emit.params.contains(param_name)) {
+            return std::unexpected("step '" + step.name + "': template '" + emit.template_name + "' param '" + param_name + "' is not provided by the instantiating emit entry");
+          }
+        }
+      }
+      if (!emit.params.empty()) {
+        for (const auto& [param_name, provided] : emit.params) {
+          const bool declared = param_it != ctx.template_params.end() && std::find(param_it->second.begin(), param_it->second.end(), param_name) != param_it->second.end();
+          if (!declared) {
+            return std::unexpected("step '" + step.name + "': template '" + emit.template_name + "' does not declare param '" + param_name + "'");
+          }
+          const bool is_temp = ctx.handles.contains(provided);
+          const bool is_capture =
+              ctx.operand_captures.contains(provided) || global_operand_captures.contains(provided)
+              || ctx.instruction_captures.contains(provided) || global_instruction_captures.contains(provided)
+              || ctx.index_captures.contains(provided) || global_index_captures.contains(provided);
+          if (!is_temp && !is_capture) {
+            return std::unexpected("step '" + step.name + "': template '" + emit.template_name + "' param '" + param_name + "' provided name '" + provided + "' is neither a known add_resource temp nor a known capture");
+          }
+        }
+      }
     }
     // Enforce the template's required captures (registered at declare_template
     // Validate): each must be producible by a previous or current match step.

@@ -241,7 +241,8 @@ steps:
 | `mode` | optional `SamplerMode` — emitted sampler mode |
 | `uav_flags` | optional uint — emitted UAV flags |
 | `template` | instantiates a template declared by a preceding `declare_template` step (mutually exclusive with `opcode`, `capture`, and `blob`) |
-| `repeat` | per-iteration repeat: `times` (literal, `>= 1`) + `params` (typed value arrays, one length-`times` array per param); on `template:` entries it overrides the template's declared repeat; on `opcode`/`capture`/`blob:` entries it emits `times` identical copies with per-iteration param binding |
+| `params` | caller-provided params (template entries only): map of declared param name → add_resource temp name or capture name (puts caller handles in scope for the template); rejected on `opcode`/`capture`/`blob:` entries |
+| `repeat` | per-iteration repeat: `times` (literal, `>= 1`) + `params` (typed value arrays, one length-`times` array per param); on `template:` entries it repeats the whole template body `times` times with caller params; on `template` emits the repeat + params are template-set (see `declare_template`); on `opcode`/`capture`/`blob:` entries it emits `times` identical copies with per-iteration param binding |
 
 YAML anchors/aliases (`&`/`*`) are supported anywhere in a recipe: an emit
 entry (or any other fragment) anchored once and aliased elsewhere expands
@@ -476,8 +477,8 @@ instantiation (`template:` inside a template's emit) is rejected at compile
 |---|---|
 | `name` | required, unique template name |
 | `temps` | required, flat list of temp register names — unique across all templates and all `add_resource` temps; become bindings in the shared handle namespace scoped to each instantiation's expansion |
-| `repeat` | optional repeat applied to every emit in the template (see `repeat` on emit entries); entry-level `repeat` on `template:` emit entries overrides it |
-| `emit` | required, list of emit instruction patterns (the template body) |
+| `params` | optional, flat list of declared param names (caller handle scope) — unique per template, disjoint from `temps`, unique across all templates, and disjoint from all `add_resource` temp/handle names; the template's bodies may reference them as temp-type `handle:` |
+| `emit` | required, list of emit instruction patterns (the template body); each emit may carry its own `repeat:` (template-set `times` + `params`) |
 
 Semantics:
 
@@ -490,15 +491,30 @@ Semantics:
   original + pool + added temps.
 - **Ordering** — every `declare_template` step must precede every
   `add_resource` step (validated).
-- **Iteration** — `repeat` iterates `0..times-1`; the 0-based `iteration`
-  variable is bound per iteration (usable as `element_index:` values) and
-  unbound after the expansion, together with the `params`.
+- **Repeat** — repeats live on emits only. Template emits carry template-set
+  `repeat:` (`times` + `params` set by the template, not the caller); each
+  repeated emit expands `times` copies with per-iteration param binding and
+  the 0-based `iteration` variable (bound per iteration, usable as
+  `element_index:` values, unbound after). Entry-level `repeat` on `template:`
+  entries repeats the whole body `times` times with caller params (composing
+  with per-emit repeats).
 - **Names** — a repeat `params` entry named `iteration` is rejected (reserved);
-  a temp named `iteration` is rejected. Template temp names referenced via
-  `handle:` outside template instantiations are rejected at validate time.
+  a temp named `iteration` is rejected; a param named `iteration` is rejected.
+  Template temp names referenced via `handle:` outside template instantiations
+  are rejected at validate time.
 - **Handle references inside templates** — temp-type `handle:` must name one
-  of the template's own temps; other handle types must name a known global
-  handle (validated; forward `add_resource` references are rejected).
+  of the template's own temps or one of its declared `params`; other handle
+  types must name a known global handle (validated; forward `add_resource`
+  references are rejected).
+- **Param contract** — a template's declared `params` are caller-provided
+  handle scope: each declared param must be provided by every instantiating
+  emit entry (`params:` map), and each provided name must be either an
+  add_resource temp name (owner-owned register) or a capture name producible
+  by a previous or current match step (writes back to the original register).
+  Provided registers are bound for the whole expansion (including repeat
+  iterations) and unbound after; the instantiating owner reads the results
+  through its own handles. The pool stays private scratch — results flow only
+  through explicit params.
 - **Template emit validation** — template emits are validated like rule emits
   (shared validation: operand count per layout, temp-handle `components:`
   requirement, destination mask mode, per-slot types).

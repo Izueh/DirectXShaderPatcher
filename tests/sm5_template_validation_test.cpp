@@ -2,6 +2,8 @@
 /// @brief Tests template feature failure modes (no execution needed):
 ///        unknown template reference, nested template:, reserved `iteration`
 ///        param name, rule emit referencing a template temp by handle:,
+///        template output contract (declared outputs provided by caller
+///        temps or captures, collision + provision violations),
 ///        operand-count violations (rule + template emits), temp-handle
 ///        operands without components (rule + template emits), and a
 ///        template requiring a capture the invoking rule's match does not
@@ -91,7 +93,7 @@ steps:
     return 1;
   }
 
-  // --- Test 3: Param named `iteration` (template repeat) ---
+  // --- Test 3: Param named `iteration` (per-emit repeat on a template emit) ---
   const char* iteration_param = R"YAML(version: 1
 steps:
   - kind: declare_template
@@ -99,6 +101,11 @@ steps:
     temps: [r0]
     emit:
       - opcode: mov
+        repeat:
+          times: 2
+          params:
+            iteration:
+              u32: [0, 1]
         operands:
           - type: temp
             handle:
@@ -107,11 +114,6 @@ steps:
               selection_mode: mask
               value: x
           - capture: src
-    repeat:
-      times: 2
-      params:
-        iteration:
-          u32: [0, 1]
   - kind: apply_rule
     name: rule
     rule:
@@ -332,6 +334,234 @@ steps:
 )YAML";
   if (!expectValidationContains(template_requires_capture, "inline-sm5-template-requires-capture", "requires capture")) {
     std::cerr << "Test 10: template required capture not enforced.\n";
+    return 1;
+  }
+
+  // --- Test 11: Output contract happy path — declared output provided by an
+  // add_resource temp (owner register) ---
+  const char* output_valid = R"YAML(version: 1
+steps:
+  - kind: declare_template
+    name: tmpl
+    temps: [r0]
+    params: [acc]
+    emit:
+      - opcode: add
+        operands:
+          - type: temp
+            handle:
+              name: acc
+            components:
+              selection_mode: mask
+              value: x
+          - type: temp
+            capture: dst
+          - type: temp
+            handle:
+              name: r0
+            components:
+              selection_mode: mask
+              value: x
+  - kind: add_resource
+    name: extra_res
+    temps: [owner_acc]
+  - kind: apply_rule
+    name: rule
+    rule:
+      match:
+        - opcode: mul
+          operands:
+            - capture: dst
+            - capture: src
+      emit:
+        - template: tmpl
+          params:
+            acc: owner_acc
+)YAML";
+  if (!expectValidationOk(output_valid, "inline-sm5-template-output-valid")) {
+    std::cerr << "Test 11: valid template output recipe rejected.\n";
+    return 1;
+  }
+
+  // --- Test 12: Declared output not provided by the instantiating entry ---
+  const char* output_missing = R"YAML(version: 1
+steps:
+  - kind: declare_template
+    name: tmpl
+    temps: [r0]
+    params: [acc]
+    emit:
+      - opcode: mov
+        operands:
+          - type: temp
+            handle:
+              name: acc
+            components:
+              selection_mode: mask
+              value: x
+          - type: temp
+            capture: dst
+  - kind: apply_rule
+    name: rule
+    rule:
+      match:
+        - opcode: mul
+          operands:
+            - capture: dst
+            - capture: src
+      emit:
+        - template: tmpl
+)YAML";
+  if (!expectValidationContains(output_missing, "inline-sm5-template-output-missing", "is not provided by the instantiating emit entry")) {
+    std::cerr << "Test 12: missing output provision not rejected.\n";
+    return 1;
+  }
+
+  // --- Test 13: Entry provides an output the template does not declare ---
+  const char* output_undeclared = R"YAML(version: 1
+steps:
+  - kind: declare_template
+    name: tmpl
+    temps: [r0]
+    emit:
+      - opcode: mov
+        operands:
+          - type: temp
+            handle:
+              name: r0
+            components:
+              selection_mode: mask
+              value: x
+          - type: temp
+            capture: dst
+  - kind: add_resource
+    name: extra_res
+    temps: [owner_acc]
+  - kind: apply_rule
+    name: rule
+    rule:
+      match:
+        - opcode: mul
+          operands:
+            - capture: dst
+            - capture: src
+      emit:
+        - template: tmpl
+          params:
+            acc: owner_acc
+)YAML";
+  if (!expectValidationContains(output_undeclared, "inline-sm5-template-output-undeclared", "does not declare param")) {
+    std::cerr << "Test 13: undeclared output provision not rejected.\n";
+    return 1;
+  }
+
+  // --- Test 14: Output provided name is neither a known temp nor capture ---
+  const char* output_unknown_provider = R"YAML(version: 1
+steps:
+  - kind: declare_template
+    name: tmpl
+    temps: [r0]
+    params: [acc]
+    emit:
+      - opcode: mov
+        operands:
+          - type: temp
+            handle:
+              name: acc
+            components:
+              selection_mode: mask
+              value: x
+          - type: temp
+            capture: dst
+  - kind: apply_rule
+    name: rule
+    rule:
+      match:
+        - opcode: mul
+          operands:
+            - capture: dst
+            - capture: src
+      emit:
+        - template: tmpl
+          params:
+            acc: no_such_register
+)YAML";
+  if (!expectValidationContains(output_unknown_provider, "inline-sm5-template-output-unknown-provider", "is neither a known add_resource temp nor a known capture")) {
+    std::cerr << "Test 14: unknown output provider not rejected.\n";
+    return 1;
+  }
+
+  // --- Test 15: Output name collides with a template temp name ---
+  const char* output_temp_collision = R"YAML(version: 1
+steps:
+  - kind: declare_template
+    name: tmpl
+    temps: [r0]
+    params: [r0]
+    emit:
+      - opcode: mov
+        operands:
+          - type: temp
+            handle:
+              name: r0
+            components:
+              selection_mode: mask
+              value: x
+          - type: temp
+            capture: dst
+)YAML";
+  if (!expectValidationContains(output_temp_collision, "inline-sm5-template-output-temp-collision", "collides with a template temp")) {
+    std::cerr << "Test 15: output/temp name collision not rejected.\n";
+    return 1;
+  }
+
+  // --- Test 16: Output name collides with an add_resource temp name ---
+  const char* output_handle_collision = R"YAML(version: 1
+steps:
+  - kind: declare_template
+    name: tmpl
+    temps: [r0]
+    params: [owner_acc]
+    emit:
+      - opcode: mov
+        operands:
+          - type: temp
+            handle:
+              name: r0
+            components:
+              selection_mode: mask
+              value: x
+          - type: temp
+            capture: dst
+  - kind: add_resource
+    name: extra_res
+    temps: [owner_acc]
+)YAML";
+  if (!expectValidationContains(output_handle_collision, "inline-sm5-template-output-handle-collision", "collides with a declared template param")) {
+    std::cerr << "Test 16: output/handle name collision not rejected.\n";
+    return 1;
+  }
+
+  // --- Test 17: outputs on a non-template emit entry ---
+  const char* output_non_template_entry = R"YAML(version: 1
+steps:
+  - kind: apply_rule
+    name: rule
+    rule:
+      match:
+        - opcode: mul
+          operands:
+            - capture: dst
+      emit:
+        - opcode: mov
+          params:
+            acc: owner_acc
+          operands:
+            - type: temp
+              capture: dst
+)YAML";
+  if (!expectValidationContains(output_non_template_entry, "inline-sm5-template-output-non-template-entry", "only valid on template: entries")) {
+    std::cerr << "Test 17: outputs on non-template entry not rejected.\n";
     return 1;
   }
 

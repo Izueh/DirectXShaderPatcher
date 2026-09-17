@@ -45,7 +45,7 @@ if (-not (Test-Path $vswhere)) {
 }
 
 Write-Host "[1/6] Locating Visual Studio installation..." -ForegroundColor Cyan
-$vsPath = & $vswhere -latest -prerelease -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+$vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 if (-not $vsPath) {
     Write-Error "Error: No matching Visual Studio installation detected."
 }

@@ -6,16 +6,10 @@
 #include <vector>
 
 #include "dxp/Condition.hpp"
-#include "dxp/sm5/step/common/Rule.hpp"
+#include "dxp/sm6/step/ApplyRuleStep.hpp"
 #include "dxp/StepResults.hpp"
 
-namespace dxp::sm5::step {
-
-/// @brief Minimal wrapper for a template's emit sequence — protects the public API
-/// so we can add more fields later without breaking compatibility.
-struct Template {
-  std::vector<EmitPattern> emits;
-};
+namespace dxp::sm6::step {
 
 /// @brief Runtime step type for declaring a reusable template emit sequence.
 /// Templates are registered in the execution context and can be instantiated
@@ -36,17 +30,12 @@ struct DeclareTemplateStep {
   std::optional<ConditionNode> condition;
 
   /// @brief Template temp names — flat list of handle names used in the emit
-  ///        sequence. These form the per-instantiation temp namespace.
+  ///        sequence. These form the per-instantiation value map namespace.
   std::vector<std::string> temps;
-
-  /// @brief Declared param names (handle scope): the template's bodies may
-  ///        reference them as temp handles; the instantiating emit provides
-  ///        the registers (add_resource temps or match captures).
-  std::vector<std::string> params;
 
   /// @brief The template's emit sequence — compiled emit patterns that are
   ///        expanded when the template is instantiated from an emit stream.
-  std::vector<Template> emits;
+  std::vector<EmitPattern> emits;
 
   /// @brief Default constructor.
   DeclareTemplateStep() = default;
@@ -56,11 +45,11 @@ struct DeclareTemplateStep {
   /// @param required_val Whether the step is required.
   /// @param condition_val Optional condition.
   /// @param temps_val Template temp names.
-  /// @param emits_val Template emits.
+  /// @param emits_val Emit patterns.
   DeclareTemplateStep(std::string name_val, bool required_val,
                       std::optional<ConditionNode> condition_val,
                       std::vector<std::string> temps_val,
-                      std::vector<Template> emits_val)
+                      std::vector<EmitPattern> emits_val)
       : name(std::move(name_val)),
         required(required_val),
         condition(std::move(condition_val)),
@@ -68,4 +57,4 @@ struct DeclareTemplateStep {
         emits(std::move(emits_val)) {}
 };
 
-}  // namespace dxp::sm5::step
+}  // namespace dxp::sm6::step

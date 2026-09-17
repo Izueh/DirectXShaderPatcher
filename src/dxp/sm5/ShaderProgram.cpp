@@ -914,7 +914,7 @@ void CollectSignatureRegisters(const std::vector<Instruction>& instructions,
                                std::unordered_set<uint32_t>& occupied, bool inputs) {
   for (const auto& instr : instructions) {
     const auto op = instr.opcode;
-    const bool is_input = op == Opcode::DclInput || op == Opcode::DclInputPs || op == Opcode::DclInputPsSiv || op == Opcode::DclInputSgv || op == Opcode::DclInputSiv;
+    const bool is_input = op == Opcode::DclInput || op == Opcode::DclInputPs || op == Opcode::DclInputPsSiv || op == Opcode::DclInputPsSgv || op == Opcode::DclInputSgv || op == Opcode::DclInputSiv;
     const bool is_output = op == Opcode::DclOutput || op == Opcode::DclOutputSgv || op == Opcode::DclOutputSiv;
     if ((inputs && is_input) || (!inputs && is_output)) {
       if (!instr.operands.empty() && !instr.operands.front().index_entries.empty()) {

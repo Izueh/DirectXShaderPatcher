@@ -2,6 +2,7 @@
 #include <dxp/sm6/ResourceTypes.hpp>
 #include <dxp/sm6/step/ApplyRuleStep.hpp>
 #include <glaze/glaze.hpp>
+#include <unordered_map>
 #include "dxp/Condition_impl.hpp"
 #include "dxp/sm6/ExecutionContext.hpp"
 #include "dxp/StepConcept.hpp"
@@ -9,6 +10,20 @@
 #include "dxp/ValidationContext.hpp"
 
 namespace dxp::sm6::step {
+
+/// @brief Repeat configuration — literal count with per-iteration typed params.
+struct RepeatData {
+  uint32_t times = 1;
+  struct ParamArray {
+    std::vector<uint32_t> u32;
+    std::vector<int32_t> i32;
+    std::vector<uint64_t> u64;
+    std::vector<int64_t> i64;
+    std::vector<float> f32;
+    std::vector<double> f64;
+  };
+  std::unordered_map<std::string, ParamArray> params;
+};
 
 /// @brief Execute the ApplyRuleStep against the shader program.
 /// @param step The step to execute.
@@ -83,6 +98,8 @@ struct EmitPatternData {
   unsigned extract_index = 0;
   std::string capture;
   std::string replace_captured;
+  std::string template_name;           ///< Template instantiation (mutually exclusive with opcode/capture).
+  std::unique_ptr<RepeatData> repeat;  ///< Per-iteration repeat configuration.
 
   [[nodiscard]] auto Compile() const -> std::expected<EmitPattern, std::string>;
 };
@@ -146,6 +163,17 @@ struct meta<dxp::sm6::step::ApplyRuleData> {
       error = "apply_rule step '" + self.name + "': rule name must be specified";
     }
   };
+};
+
+template <>
+struct meta<dxp::sm6::step::EmitPatternData> {
+  using T = dxp::sm6::step::EmitPatternData;
+  static constexpr auto value = object("opcode", &T::opcode, "name", &T::name,
+                                       "operands", &T::operands, "result_component_type", &T::result_component_type,
+                                       "cast_opcode", &T::cast_opcode, "aggregate", &T::aggregate,
+                                       "extract_index", &T::extract_index, "capture", &T::capture,
+                                       "replace_captured", &T::replace_captured, "template", &T::template_name,
+                                       "repeat", &T::repeat);
 };
 
 }  // namespace glz

@@ -86,6 +86,7 @@ struct ExecutionContext : VariableStore {
   /// colocated (one struct per template, no parallel maps).
   struct RegisteredTemplate {
     std::vector<std::string> temps;
+    std::vector<std::string> params;
     std::vector<step::EmitPattern> emits;
     /// @brief Capture names (instruction + operand + index level) referenced by
     /// the template's emits; resolved against the global capture store at

@@ -32,10 +32,10 @@ std::string DescribeOutcome(const DeclareTemplateStep&, const dxp::DeclareTempla
 struct TemplateStepData {
   std::string name;
   std::vector<std::string> temps;
+  std::vector<std::string> params;
   std::vector<EmitInstructionData> emit;
   dxp::ConditionData condition;
   bool required = true;
-  std::optional<RepeatData> repeat;
 
   /// @brief Compile this YAML data into a DeclareTemplateStep.
   [[nodiscard]] auto Compile() const -> std::expected<DeclareTemplateStep, std::string>;
@@ -51,10 +51,10 @@ struct meta<dxp::sm5::step::TemplateStepData> {
   static constexpr auto value = glz::object(
       "name", &T::name,
       "temps", &T::temps,
+      "params", &T::params,
       "emit", &T::emit,
       "condition", &T::condition,
-      "required", &T::required,
-      "repeat", &T::repeat);
+      "required", &T::required);
   static constexpr auto validate = [](const T& self, std::string& error) {
     if (self.name.empty()) {
       error = "declare_template requires a name";
@@ -68,16 +68,14 @@ struct meta<dxp::sm5::step::TemplateStepData> {
       error = "declare_template requires at least one emit pattern";
       return;
     }
-    if (self.repeat.has_value()) {
-      if (self.repeat->times == 0) {
-        error = "declare_template repeat times must be >= 1";
+    for (const auto& param_name : self.params) {
+      if (param_name.empty()) {
+        error = "declare_template param names must be non-empty";
         return;
       }
-      for (const auto& [param_name, _] : self.repeat->params) {
-        if (param_name == "iteration") {
-          error = "declare_template repeat param name 'iteration' is reserved (implicit 0-based repeat index variable)";
-          return;
-        }
+      if (param_name == "iteration") {
+        error = "declare_template param name 'iteration' is reserved (implicit 0-based repeat index variable)";
+        return;
       }
     }
   };
