@@ -1371,7 +1371,7 @@ auto MatchesInstruction(const Instruction& instr, std::unordered_map<std::string
   if (pattern.saturate.has_value() && instr.controls.saturate != *pattern.saturate) return false;
   if (pattern.test_boolean >= 0 && instr.controls.test_boolean != static_cast<uint32_t>(pattern.test_boolean)) return false;
   if (pattern.interpolation_mode.has_value()) {
-    if (instr.opcode != static_cast<uint32_t>(Opcode::DclInputPs) && instr.opcode != static_cast<uint32_t>(Opcode::DclInputPsSiv)) return false;
+    if (instr.opcode != static_cast<uint32_t>(Opcode::DclInputPs) && instr.opcode != static_cast<uint32_t>(Opcode::DclInputPsSiv) && instr.opcode != static_cast<uint32_t>(Opcode::DclInputPsSgv)) return false;
     if (instr.controls.input_interpolation_mode.has_value() && *instr.controls.input_interpolation_mode != static_cast<uint32_t>(*pattern.interpolation_mode)) return false;
   }
   if (pattern.dimension.has_value() && instr.controls.resource_dimension != pattern.dimension) return false;
@@ -2446,8 +2446,8 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, dxp::Valida
     for (const auto& pattern : step.rule.match_patterns) {
       if (pattern.interpolation_mode.has_value()) {
         if (pattern.opcode.has_value()) {
-          if (*pattern.opcode != Opcode::DclInputPs && *pattern.opcode != Opcode::DclInputPsSiv) {
-            return std::unexpected("interpolation is only valid for dcl_input_ps and dcl_input_ps_siv (in " + context + ")");
+          if (*pattern.opcode != Opcode::DclInputPs && *pattern.opcode != Opcode::DclInputPsSiv && *pattern.opcode != Opcode::DclInputPsSgv) {
+            return std::unexpected("interpolation is only valid for dcl_input_ps, dcl_input_ps_siv, and dcl_input_ps_sgv (in " + context + ")");
           }
         }
       }
@@ -2455,8 +2455,8 @@ std::expected<void, std::string> Validate(const ApplyRuleStep& step, dxp::Valida
     for (const auto& emit : step.rule.emit_patterns) {
       if (emit.interpolation_mode.has_value()) {
         if (emit.opcode.has_value()) {
-          if (*emit.opcode != Opcode::DclInputPs && *emit.opcode != Opcode::DclInputPsSiv) {
-            return std::unexpected("interpolation is only valid for dcl_input_ps and dcl_input_ps_siv (in " + context + ")");
+          if (*emit.opcode != Opcode::DclInputPs && *emit.opcode != Opcode::DclInputPsSiv && *emit.opcode != Opcode::DclInputPsSgv) {
+            return std::unexpected("interpolation is only valid for dcl_input_ps, dcl_input_ps_siv, and dcl_input_ps_sgv (in " + context + ")");
           }
         }
       }

@@ -255,7 +255,11 @@ auto EncodeInstructionToken0(const Instruction& instruction, uint32_t total_dwor
         static_cast<D3D10_SB_RESINFO_INSTRUCTION_RETURN_TYPE>(instruction.controls.resinfo_return_type));
   }
 
-  if ((opcode == D3D10_SB_OPCODE_DCL_INPUT_PS || opcode == D3D10_SB_OPCODE_DCL_INPUT_PS_SIV) && instruction.controls.input_interpolation_mode.has_value()) {
+  // Mirror the compiler: PS input declarations carry the input interpolation
+  // mode in the opcode token's opcode-specific controls — including the SGV
+  // form (dcl_input_ps_sgv "constant" vN.x, is_front_face). Dropping it on
+  // encode turned front-face declarations into "undefined" (Flugan BUG).
+  if ((opcode == D3D10_SB_OPCODE_DCL_INPUT_PS || opcode == D3D10_SB_OPCODE_DCL_INPUT_PS_SIV || opcode == D3D10_SB_OPCODE_DCL_INPUT_PS_SGV) && instruction.controls.input_interpolation_mode.has_value()) {
     token0 |= ENCODE_D3D10_SB_INPUT_INTERPOLATION_MODE(
         static_cast<D3D10_SB_INTERPOLATION_MODE>(*instruction.controls.input_interpolation_mode));
   }

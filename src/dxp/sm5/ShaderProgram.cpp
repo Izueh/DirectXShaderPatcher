@@ -241,7 +241,11 @@ auto ParseOpcodeControls(std::span<const uint8_t> data, uint32_t instruction_sta
       controls.resource_return_type[component] = static_cast<ResourceReturnType>(DECODE_D3D10_SB_RESOURCE_RETURN_TYPE(token0, component));
     }
   }
-  if (kOpcode == D3D10_SB_OPCODE_DCL_INPUT_PS || kOpcode == D3D10_SB_OPCODE_DCL_INPUT_PS_SIV) {
+  // The compiler encodes the input interpolation mode in the opcode token's
+  // opcode-specific controls for all PS input declarations, including the SGV
+  // form (e.g. dcl_input_ps_sgv "constant" v12.x, is_front_face) — decoding
+  // only PS/SIV dropped that bit on re-serialize.
+  if (kOpcode == D3D10_SB_OPCODE_DCL_INPUT_PS || kOpcode == D3D10_SB_OPCODE_DCL_INPUT_PS_SIV || kOpcode == D3D10_SB_OPCODE_DCL_INPUT_PS_SGV) {
     controls.input_interpolation_mode = static_cast<uint32_t>(DECODE_D3D10_SB_INPUT_INTERPOLATION_MODE(token0));
   }
   if (dxp::sm5::model::OpcodeUsesSemanticName(ParseDecodeOpcode(token0))) {
