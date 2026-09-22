@@ -117,6 +117,7 @@ struct Recipe {
    * @return Parsed recipe or error message.
    */
   static std::expected<Recipe, std::string> ParseFromFile(const std::string& path);
+
   /**
    * @brief Parse a recipe from a YAML string.
    * @param text YAML string content.
@@ -130,6 +131,12 @@ struct Recipe {
    * @return Number of steps.
    */
   size_t GetStepCount() const;
+
+  /**
+   * @brief Check whether the recipe contains any add_resource steps.
+   * @return true if at least one add_resource step is present.
+   */
+  bool HasAddResourceSteps() const;
 
   /**
    * @brief Execute the recipe on the given DXBC container bytes.

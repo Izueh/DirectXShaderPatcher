@@ -95,6 +95,12 @@ struct Recipe {
    */
   size_t GetStepCount() const;
 
+  /**
+   * @brief Check whether the recipe contains any add_resource steps.
+   * @return true if at least one add_resource step is present.
+   */
+  bool HasAddResourceSteps() const;
+
   /// @brief Execute the recipe on the given DXIL container bytes.
   /// @param input DXIL container bytes to patch (borrowed view; the caller must
   ///        keep the buffer alive for the duration of the call).

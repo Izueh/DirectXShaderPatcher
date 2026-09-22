@@ -45,6 +45,15 @@ size_t Recipe::GetStepCount() const {
   return steps_.size();
 }
 
+bool Recipe::HasAddResourceSteps() const {
+  for (const auto& entry : steps_) {
+    if (std::holds_alternative<step::AddResourceStep>(entry)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 std::expected<Recipe, std::string> Recipe::ParseFromFile(const std::string& path) {
   return dxp::detail::ParseRecipeFromFile<Recipe, RecipeData>(path);
 }
