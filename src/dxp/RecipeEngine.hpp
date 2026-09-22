@@ -104,6 +104,9 @@ std::expected<Recipe, std::string> ParseRecipeFromText(const std::string& text,
   if (!convert_error.empty()) {
     return std::unexpected(std::move(convert_error));
   }
+  if constexpr (requires { recipe.SetSerializationOptions(doc.serialization); }) {
+    recipe.SetSerializationOptions(doc.serialization);
+  }
   return std::move(recipe);
 }
 
@@ -118,6 +121,9 @@ std::expected<Recipe, std::string> ParseRecipeFromFile(const std::string& path) 
   auto [recipe, convert_error] = ConvertRecipeData<Recipe>(doc.steps, doc.env);
   if (!convert_error.empty()) {
     return std::unexpected(std::move(convert_error));
+  }
+  if constexpr (requires { recipe.SetSerializationOptions(doc.serialization); }) {
+    recipe.SetSerializationOptions(doc.serialization);
   }
   return std::move(recipe);
 }

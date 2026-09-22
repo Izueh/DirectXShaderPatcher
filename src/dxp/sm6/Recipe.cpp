@@ -63,6 +63,8 @@ auto Recipe::Execute(std::span<const uint8_t> input,
     return std::unexpected(std::move(validationError.error()));
   }
 
+  const SerializationOptions serialization = serialization_options_;
+
   return dxp::detail::ExecuteSteps<ExecutionContext>(
       steps_, env_, input, options,
       [](std::span<const uint8_t> bytes, const PatchOptions& options) -> std::expected<ExecutionContext, std::string> {
@@ -72,7 +74,7 @@ auto Recipe::Execute(std::span<const uint8_t> input,
         if (const std::string& runtime_error = DxcRuntime::Ensure(); !runtime_error.empty()) {
           return std::unexpected("failed to initialize DXC runtime: " + runtime_error);
         }
-        if (auto load_result = ShaderProgram::FromBytes(bytes, ctx.program, false); !load_result) {
+        if (auto load_result = ShaderProgram::FromBytes(bytes, ctx.program, true); !load_result) {
           return std::unexpected(std::move(load_result.error()));
         }
         for (const auto& warning : ctx.program.warnings) {
@@ -87,13 +89,13 @@ auto Recipe::Execute(std::span<const uint8_t> input,
         }
         return ctx;
       },
-      [](ExecutionContext& ctx, std::span<const uint8_t> input_bytes)
+      [serialization](ExecutionContext& ctx, std::span<const uint8_t> input_bytes)
           -> std::expected<dxp::detail::ExecutionOutput, std::string> {
         dxp::detail::ExecutionOutput output;
         const HRESULT kHr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
         const bool kComShouldUninitialize = !DXC_FAILED(kHr);
         if (ctx.program_modified) {
-          auto serialized = ctx.program.Serialize();
+          auto serialized = ctx.program.Serialize(serialization.strip_reflection);
           if (!serialized) {
             if (kComShouldUninitialize) {
               CoUninitialize();

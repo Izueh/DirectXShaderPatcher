@@ -9,7 +9,6 @@
 #include "dxp/Condition_impl.hpp"
 #include "dxp/ExportTypes.hpp"
 #include "dxp/ResultFieldTraits.hpp"
-#include "dxp/sm6/ShaderProgram.hpp"
 #include "dxp/sm6/step/ApplyRuleStep_impl.hpp"
 #include "dxp/StepConcept.hpp"
 #include "dxp/StepResults.hpp"
@@ -40,16 +39,16 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Use.h"
-#include "llvm/IR/ValueHandle.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Regex.h"
-#include "llvm/Transforms/Utils/Local.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <limits>
 #include <optional>
 #include <ranges>
+#include <span>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -90,10 +89,36 @@ unsigned CollectSequenceMatches(llvm::Function& function,
                                 std::vector<MatchResult>& results,
                                 hlsl::DxilModule* dxil_module,
                                 const std::unordered_map<std::string, llvm::Value*>* global_captures);
-void PruneCandidateInstructions(const std::vector<llvm::WeakTrackingVH>& candidates,
-                                const std::unordered_map<std::string, llvm::Value*>* protected_values);
 
 namespace {
+
+std::string PrintType(llvm::Type* type) {
+  if (type == nullptr) return "null";
+  std::string printed;
+  llvm::raw_string_ostream ostream(printed);
+  type->print(ostream);
+  return printed;
+}
+
+std::expected<ValueTypePattern, std::string> CompileValueTypePattern(const ValueTypePatternData& data) {
+  if (data.struct_name.has_value() && data.struct_name->empty()) {
+    return std::unexpected("struct_name cannot be empty");
+  }
+  if (data.struct_name.has_value() && data.kind.has_value() && *data.kind != ValueTypeKind::Struct) {
+    return std::unexpected("struct_name requires kind 'struct'");
+  }
+  if (data.struct_name.has_value() && data.component_type.has_value()) {
+    return std::unexpected("struct_name cannot be combined with component_type");
+  }
+  if (data.component_type.has_value() && data.kind.has_value() && (*data.kind == ValueTypeKind::Array || *data.kind == ValueTypeKind::Struct)) {
+    return std::unexpected("component_type cannot be combined with kind 'array' or 'struct'");
+  }
+  ValueTypePattern result;
+  result.kind = data.kind;
+  result.struct_name = data.struct_name;
+  result.component_type = data.component_type;
+  return result;
+}
 
 /// @brief Maps an LLVM scalar type to the shared ComponentType vocabulary.
 /// Falls back to I32/F32 for unknown widths (bfloat16, exotic types) — best effort.
@@ -272,28 +297,6 @@ auto MatchesCapturedValue(const std::string& match_capture_name, llvm::Value* va
   return capture_it->second == value;
 }
 
-auto IsPrunableDxilInstruction(const llvm::Instruction& instruction) -> bool {
-  if (const auto* call = llvm::dyn_cast<llvm::CallInst>(&instruction)) {
-    const llvm::Function* callee = call->getCalledFunction();
-    if (callee == nullptr) return false;
-    if (call->doesNotAccessMemory() || call->onlyReadsMemory()) return true;
-    const llvm::StringRef callee_name = callee->getName();
-    return callee_name == "dx.op.annotateHandle" || callee_name == "dx.op.createHandleFromBinding";
-  }
-  return !instruction.mayHaveSideEffects();
-}
-
-void CollectPrunableOperands(llvm::Instruction* instruction, std::unordered_set<llvm::Instruction*>& visited,
-                             std::vector<llvm::WeakTrackingVH>& post_order) {
-  if (instruction == nullptr || !visited.insert(instruction).second) return;
-  post_order.emplace_back(instruction);
-  for (const llvm::Use& operand_use : instruction->operands()) {
-    auto* operand_instruction = llvm::dyn_cast<llvm::Instruction>(operand_use.get());
-    if (operand_instruction == nullptr || !operand_instruction->use_empty()) continue;
-    CollectPrunableOperands(operand_instruction, visited, post_order);
-  }
-}
-
 auto ResolveInstructionAtOffset(llvm::Instruction* base, uint32_t offset, llvm::Instruction*& resolved) -> bool {
   resolved = nullptr;
   if (base == nullptr) return false;
@@ -392,6 +395,8 @@ auto MatchOperandPattern(llvm::Value* value, const OperandPattern& pattern,
                          hlsl::DxilModule* dxil_module,
                          const std::unordered_map<std::string, llvm::Value*>* global_captures) -> bool;
 
+
+
 auto CheckMatchInstructionPattern(llvm::Value* value, const InstructionPattern& pattern,
                                   std::unordered_map<std::string, llvm::Value*>& captures,
                                   hlsl::DxilModule* dxil_module,
@@ -414,6 +419,7 @@ auto CheckMatchInstructionPattern(llvm::Value* value, const InstructionPattern& 
       if (dxil_op.has_value()) return false;
     }
   }
+  if (pattern.extract.has_value() && !detail::MatchesExtractValue(value, *pattern.extract)) return false;
   if (call != nullptr) {
     for (const OperandPattern& operand_pattern : pattern.operand_patterns) {
       if (operand_pattern.operand_index >= call->getNumArgOperands() || !MatchOperandPattern(call->getArgOperand(operand_pattern.operand_index), operand_pattern, captures, dxil_module, global_captures)) {
@@ -447,7 +453,9 @@ auto MatchOperandPattern(llvm::Value* value, const OperandPattern& pattern,
   }
   if (pattern.kind.has_value()) {
     switch (*pattern.kind) {
-      case OperandKind::Constant:
+      case OperandKind::Constant: {
+        // A constant matcher must not accept a dynamic SSA value.
+        if (!llvm::isa<llvm::Constant>(value)) return false;
         // Optional type restriction: the constant's scalar type must match.
         if (pattern.component_type.has_value()) {
           auto* want = LlvmTypeFor(*pattern.component_type, value->getContext());
@@ -467,11 +475,9 @@ auto MatchOperandPattern(llvm::Value* value, const OperandPattern& pattern,
               if ((ce == nullptr) || !IsConstantFloatValue(ce, pattern.constant_float_values[i])) return false;
             }
           }
-        } else if (!pattern.component_type.has_value()) {
-          // No value spec and no type spec — nothing to match.
-          return false;
         }
         break;
+      }
       case OperandKind::Call: {
         if (pattern.instruction) {
           if (!CheckMatchInstructionPattern(value, **pattern.instruction, captures, dxil_module, global_captures)) {
@@ -541,6 +547,7 @@ auto MatchInstructionPattern(llvm::Instruction* instr, const InstructionPattern&
     if (dxil_op.has_value()) return false;
     if (llvm_op.has_value() && instr->getOpcode() != *llvm_op) return false;
   }
+  if (pattern.extract.has_value() && !detail::MatchesExtractValue(instr, *pattern.extract)) return false;
   CaptureMatchedValue(pattern.capture_name, instr, captures);
   if (!MatchesCapturedValue(pattern.match_capture, instr, captures, global_captures)) return false;
   for (const OperandPattern& operand_pattern : pattern.operand_patterns) {
@@ -705,18 +712,42 @@ std::expected<llvm::Value*, std::string> ResolveEmitPattern(const EmitPattern& p
     if (consumed_captures != nullptr) consumed_captures->emplace_back(pattern.capture, captured);
     return captured;
   }
-  // Aggregate extraction: pull one field out of a struct-producing emit
-  // (ResRet/CBufRet) captured by an earlier emit pattern in the same rule.
-  if (!pattern.aggregate.empty()) {
-    llvm::Value* aggregate = ResolveCapture(match, ctx, pattern.aggregate);
-    if (aggregate == nullptr) return EmitError(emit_name, "aggregate '" + pattern.aggregate + "' was not produced by any earlier emit");
-    if (consumed_captures != nullptr) consumed_captures->emplace_back(pattern.aggregate, aggregate);
-    auto* aggregate_type = llvm::dyn_cast<llvm::StructType>(aggregate->getType());
-    if (aggregate_type == nullptr) return EmitError(emit_name, "aggregate '" + pattern.aggregate + "' is " + aggregate->getType()->getStructName().str() + ", expected a struct (ResRet/CBufRet)");
-    if (pattern.extract_index >= aggregate_type->getNumElements()) {
-      return EmitError(emit_name, "extract_index " + std::to_string(pattern.extract_index) + " out of range for " + aggregate_type->getStructName().str() + " (" + std::to_string(aggregate_type->getNumElements()) + " fields)");
+  // Extractvalue emission: pull a field (or nested field) out of an aggregate
+  // captured by an earlier match or emit pattern (ResRet/CBufRet etc.).
+  if (pattern.extract.has_value()) {
+    const EmitExtractValue& ex = *pattern.extract;
+    llvm::Value* aggregate = ResolveCapture(match, ctx, ex.aggregate);
+    if (aggregate == nullptr) return EmitError(emit_name, "aggregate '" + ex.aggregate + "' was not produced by any match or earlier emit");
+    if (consumed_captures != nullptr) consumed_captures->emplace_back(ex.aggregate, aggregate);
+    if (ex.aggregate_type.has_value() && !detail::MatchesTypePattern(aggregate->getType(), *ex.aggregate_type)) {
+      return EmitError(emit_name, "aggregate '" + ex.aggregate + "' has type " + PrintType(aggregate->getType()) + ", which does not satisfy the requested aggregate type");
     }
-    return builder.CreateExtractValue(aggregate, pattern.extract_index);
+    std::vector<uint32_t> indices;
+    for (size_t depth = 0; depth < ex.indices.size(); ++depth) {
+      if (const auto* literal = std::get_if<uint32_t>(&ex.indices[depth])) {
+        indices.push_back(*literal);
+        continue;
+      }
+      const CaptureExtractIndex& cap = std::get<CaptureExtractIndex>(ex.indices[depth]);
+      llvm::Value* index_value = ResolveCapture(match, ctx, cap.capture);
+      if (index_value == nullptr) {
+        return EmitError(emit_name, "extract index " + std::to_string(depth) + ": capture '" + cap.capture + "' was not produced by any match or earlier emit");
+      }
+      auto* ci = llvm::dyn_cast<llvm::ConstantInt>(index_value);
+      auto index_as_uint = detail::ConstantIntToExtractIndex(cap.capture, depth, ci);
+      if (!index_as_uint) {
+        return EmitError(emit_name, std::move(index_as_uint.error()));
+      }
+      indices.push_back(*index_as_uint);
+    }
+    auto extracted_type = detail::ResolveExtractType(aggregate->getType(), indices);
+    if (!extracted_type) {
+      return EmitError(emit_name, std::move(extracted_type.error()));
+    }
+    if (ex.result_type.has_value() && !detail::MatchesTypePattern(*extracted_type, *ex.result_type)) {
+      return EmitError(emit_name, "extracted type " + PrintType(*extracted_type) + " does not satisfy result_type");
+    }
+    return builder.CreateExtractValue(aggregate, indices);
   }
   llvm::Type* result_type = GetEmitValueScalarTypeFromPattern(pattern, module.getContext(), llvm::Type::getVoidTy(module.getContext()));
   if (result_type == nullptr) {
@@ -1039,7 +1070,6 @@ std::expected<void, std::string> ApplyDxilRewriteRules(llvm::Function& function,
       }
     }
   }
-  std::vector<llvm::WeakTrackingVH> prune_roots;
   std::vector<llvm::Value*> rule_emitted;
   std::string apply_error;
   auto apply_single_match = [&](MatchResult& match) -> bool {
@@ -1054,23 +1084,6 @@ std::expected<void, std::string> ApplyDxilRewriteRules(llvm::Function& function,
     if (!rule_mutating) {
       ++applied_count;
       return true;
-    }
-    // Collect prune candidates for the end-of-step pass (never prune mid-loop):
-    // for Before/After the matched instructions may have become dead; for
-    // Replace/ReplaceRange their operands may be dead after erasure.
-    if (rule.prune_dead_instructions) {
-      for (llvm::Instruction* inst : match.instructions) {
-        if (inst == nullptr) continue;
-        if (rewrite_mode == RewriteKind::Before || rewrite_mode == RewriteKind::After) {
-          prune_roots.emplace_back(inst);
-        } else if (rewrite_mode == RewriteKind::Replace || rewrite_mode == RewriteKind::ReplaceRange) {
-          for (llvm::Use& use : inst->operands()) {
-            if (auto* op_inst = llvm::dyn_cast<llvm::Instruction>(use.get())) {
-              prune_roots.emplace_back(op_inst);
-            }
-          }
-        }
-      }
     }
     llvm::IRBuilder<> builder(match.instructions.front());
     if (auto applied = match.ApplyRule(rewrite_mode, rule, insert_index, range_start_offset, range_end_offset, builder, module, dxil_module, ctx, &rule_emitted); !applied) {
@@ -1094,10 +1107,6 @@ std::expected<void, std::string> ApplyDxilRewriteRules(llvm::Function& function,
     default:
       if (!apply_single_match(matches.front())) return std::unexpected(apply_error);
       break;
-  }
-  // End-of-step prune: one pass after all matches applied, capture-aware.
-  if (rule.prune_dead_instructions && !prune_roots.empty()) {
-    PruneCandidateInstructions(prune_roots, (ctx != nullptr) ? &ctx->captures.values : nullptr);
   }
   if (applied_rule_count != nullptr) *applied_rule_count = applied_count;
   if (mutated_rule_count != nullptr) *mutated_rule_count = mutation_count;
@@ -1131,13 +1140,6 @@ unsigned CollectBinaryOpMatches(llvm::Function& function, const InstructionPatte
                                 std::vector<MatchResult>& results, hlsl::DxilModule* dxil_module,
                                 const std::unordered_map<std::string, llvm::Value*>* global_captures) {
   results.clear();
-  for (const auto& op : pattern.operand_patterns) {
-    if (!op.kind.has_value()) {
-      if (!op.capture_name.empty()) return 0;
-      continue;
-    }
-    if (*op.kind == OperandKind::Call) return 0;
-  }
   for (llvm::BasicBlock& basic_block : function) {
     for (llvm::Instruction& instruction : basic_block) {
       if (llvm::isa<llvm::CallInst>(&instruction)) continue;
@@ -1170,6 +1172,122 @@ std::expected<void, std::string> ValidateEmitDominance(
   return {};
 }
 }  // anonymous namespace
+
+namespace detail {
+
+std::expected<uint32_t, std::string> ConstantIntToExtractIndex(const std::string& capture_name, size_t depth, llvm::ConstantInt* ci) {
+  if (ci == nullptr) {
+    return std::unexpected("extract index " + std::to_string(depth) + ": capture '" + capture_name + "' must resolve to an integer ConstantInt");
+  }
+  // Interpret the ConstantInt bit pattern as an unsigned integer (LLVM
+  // integers are signless); a signed-negative conceptual value widens to
+  // a large unsigned value and fails the aggregate bounds check.
+  if (ci->getValue().getActiveBits() > std::numeric_limits<uint32_t>::digits) {
+    return std::unexpected("extract index " + std::to_string(depth) + ": capture '" + capture_name + "' is outside the supported unsigned index range");
+  }
+  return static_cast<uint32_t>(ci->getZExtValue());
+}
+
+bool MatchesTypePattern(llvm::Type* type, const ValueTypePattern& pattern) {
+  if (type == nullptr) return false;
+  if (!pattern.kind.has_value() && !pattern.struct_name.has_value() && !pattern.component_type.has_value()) {
+    return true;
+  }
+  auto* struct_type = llvm::dyn_cast<llvm::StructType>(type);
+  if (pattern.kind.has_value()) {
+    switch (*pattern.kind) {
+      case ValueTypeKind::Struct:
+        if (struct_type == nullptr) return false;
+        break;
+      case ValueTypeKind::Array:
+        if (!llvm::isa<llvm::ArrayType>(type)) return false;
+        break;
+      case ValueTypeKind::Vector:
+        if (!llvm::isa<llvm::VectorType>(type)) return false;
+        break;
+      case ValueTypeKind::Scalar:
+        if (!type->isIntegerTy() && !type->isFloatingPointTy()) return false;
+        break;
+    }
+  }
+  if (pattern.struct_name.has_value()) {
+    if (struct_type == nullptr || !struct_type->hasName()) return false;
+    if (struct_type->getName() != *pattern.struct_name) return false;
+  }
+  // component_type constrains scalar values or vector element types only;
+  // array/struct guards are structural (kind/struct_name).
+  if (pattern.component_type.has_value()) {
+    auto* want = LlvmTypeFor(*pattern.component_type, type->getContext());
+    llvm::Type* actual = nullptr;
+    if (auto* vec = llvm::dyn_cast<llvm::VectorType>(type)) {
+      actual = vec->getElementType();
+    } else if (!llvm::isa<llvm::ArrayType>(type) && !llvm::isa<llvm::StructType>(type)) {
+      actual = type;
+    }
+    if (actual == nullptr || actual != want) return false;
+  }
+  return true;
+}
+
+std::expected<llvm::Type*, std::string> ResolveExtractType(llvm::Type* aggregate_type, std::span<const uint32_t> indices) {
+  if (aggregate_type == nullptr) {
+    return std::unexpected("extractvalue aggregate type is null");
+  }
+  if (indices.empty()) {
+    return std::unexpected("extractvalue requires at least one index");
+  }
+  llvm::Type* current = aggregate_type;
+  for (size_t depth = 0; depth < indices.size(); ++depth) {
+    const uint32_t index = indices[depth];
+    if (auto* st = llvm::dyn_cast<llvm::StructType>(current)) {
+      if (st->isOpaque()) {
+        return std::unexpected("extract path enters opaque struct at index depth " + std::to_string(depth));
+      }
+      if (index >= st->getNumElements()) {
+        return std::unexpected("extract index " + std::to_string(index) + " out of range at depth " + std::to_string(depth) + " for " + PrintType(st));
+      }
+      current = st->getElementType(index);
+      continue;
+    }
+    if (auto* at = llvm::dyn_cast<llvm::ArrayType>(current)) {
+      if (index >= at->getNumElements()) {
+        return std::unexpected("extract index " + std::to_string(index) + " out of range at depth " + std::to_string(depth) + " for " + PrintType(at));
+      }
+      current = at->getElementType();
+      continue;
+    }
+    return std::unexpected("extract path enters non-aggregate type " + PrintType(current) + " at depth " + std::to_string(depth));
+  }
+  return current;
+}
+
+bool MatchesExtractValue(llvm::Value* value, const ExtractValuePattern& pattern) {
+  if (value == nullptr) return false;
+  const auto* extract = llvm::dyn_cast<llvm::ExtractValueInst>(value);
+  if (extract == nullptr) return false;
+  if (pattern.indices.empty()) return false;
+  const auto actual = extract->getIndices();
+  if (actual.size() != pattern.indices.size()) return false;
+  for (size_t i = 0; i < actual.size(); ++i) {
+    if (actual[i] != pattern.indices[i]) return false;
+  }
+  if (pattern.aggregate_type.has_value() && !MatchesTypePattern(extract->getAggregateOperand()->getType(), *pattern.aggregate_type)) {
+    return false;
+  }
+  auto resolved_type = ResolveExtractType(extract->getAggregateOperand()->getType(), pattern.indices);
+  if (!resolved_type) {
+    return false;
+  }
+  if (resolved_type.value() != extract->getType()) {
+    return false;
+  }
+  if (pattern.result_type.has_value() && !MatchesTypePattern(extract->getType(), *pattern.result_type)) {
+    return false;
+  }
+  return true;
+}
+
+}  // namespace detail
 
 /// @brief Matches a consecutive sequence of instruction patterns within a single
 /// basic block (block-local: a sequence cannot span a terminator/block boundary).
@@ -1217,36 +1335,6 @@ unsigned CollectSequenceMatches(llvm::Function& function,
     }
   }
   return static_cast<unsigned>(results.size());
-}
-
-void PruneDeadDxilTree(llvm::Instruction* root, const std::unordered_set<llvm::Instruction*>* protected_set) {
-  if (root == nullptr) return;
-  std::unordered_set<llvm::Instruction*> visited;
-  std::vector<llvm::WeakTrackingVH> post_order;
-  CollectPrunableOperands(root, visited, post_order);
-  for (auto& it : std::ranges::reverse_view(post_order)) {
-    auto* candidate = llvm::dyn_cast_or_null<llvm::Instruction>(static_cast<llvm::Value*>(it));
-    if (candidate == nullptr || !candidate->use_empty() || !IsPrunableDxilInstruction(*candidate)) continue;
-    if (protected_set != nullptr && protected_set->contains(candidate)) continue;
-    candidate->eraseFromParent();
-  }
-}
-
-void PruneCandidateInstructions(const std::vector<llvm::WeakTrackingVH>& candidates,
-                                const std::unordered_map<std::string, llvm::Value*>* protected_values) {
-  // Instructions referenced by the cross-step capture store are never pruned
-  // (a later step may still emit them).
-  std::unordered_set<llvm::Instruction*> protected_set;
-  if (protected_values != nullptr) {
-    for (const auto& [name, value] : *protected_values) {
-      if (auto* inst = llvm::dyn_cast<llvm::Instruction>(value)) protected_set.insert(inst);
-    }
-  }
-  for (const llvm::WeakTrackingVH& candidate_handle : candidates) {
-    auto* candidate = llvm::dyn_cast_or_null<llvm::Instruction>(static_cast<llvm::Value*>(candidate_handle));
-    if (candidate == nullptr || protected_set.contains(candidate)) continue;
-    PruneDeadDxilTree(candidate, &protected_set);
-  }
 }
 
 llvm::Instruction* MatchResult::ResolveAnchor(RewriteKind rewrite_mode, int32_t insert_index,
@@ -1394,7 +1482,9 @@ std::expected<void, std::string> MatchResult::ApplyRule(RewriteKind rewrite_mode
         }
       }
       if (!insert_before) {
-        anchor = llvm::cast<llvm::Instruction>(emitted);
+        if (auto* emitted_inst = llvm::dyn_cast<llvm::Instruction>(emitted)) {
+          anchor = emitted_inst;
+        }
       }
     }
   }
@@ -1410,8 +1500,8 @@ std::expected<void, std::string> MatchResult::ApplyRule(RewriteKind rewrite_mode
     }
     if (rewrite_mode == RewriteKind::Replace) {
       for (auto* inst : instructions) {
-        // Erase only instructions with no remaining uses; anything still used is
-        // left for the end-of-step prune.
+        // Erase only instructions with no remaining uses. Any dead dependency
+        // trees are intentionally left for the single global DCE pass at serialization.
         if (inst != nullptr && inst->getParent() != nullptr && inst->use_empty()) inst->eraseFromParent();
       }
     } else if (range_start != nullptr && range_end != nullptr) {
@@ -1421,33 +1511,6 @@ std::expected<void, std::string> MatchResult::ApplyRule(RewriteKind rewrite_mode
     }
   }
   return {};
-}
-
-void PruneFunctionDeadCode(llvm::Function& function) {
-  bool changed = true;
-  while (changed) {
-    changed = false;
-    std::vector<llvm::WeakTrackingVH> candidates;
-    for (llvm::BasicBlock& basic_block : function) {
-      for (llvm::Instruction& instruction : basic_block) {
-        if (!instruction.use_empty()) continue;
-        if (instruction.isTerminator()) continue;
-        candidates.emplace_back(&instruction);
-      }
-    }
-    for (const llvm::WeakTrackingVH& candidate_handle : candidates) {
-      auto* candidate = llvm::dyn_cast_or_null<llvm::Instruction>(static_cast<llvm::Value*>(candidate_handle));
-      if (candidate == nullptr || !candidate->use_empty()) continue;
-      if (llvm::isInstructionTriviallyDead(candidate)) {
-        llvm::RecursivelyDeleteTriviallyDeadInstructions(candidate);
-        changed = true;
-        continue;
-      }
-      const llvm::WeakTrackingVH kPruneProbe(candidate);
-      PruneDeadDxilTree(candidate, nullptr);
-      if (static_cast<llvm::Value*>(kPruneProbe) == nullptr) changed = true;
-    }
-  }
 }
 
 auto OperandPatternData::Compile() const -> std::expected<OperandPattern, std::string> {
@@ -1508,7 +1571,6 @@ auto EmitOperandPatternData::Compile() const -> std::expected<EmitOperand, std::
 auto RuleData::Compile() const -> std::expected<Rule, std::string> {
   Rule result;
   result.name = name;
-  result.prune_dead_instructions = prune;
   for (const auto& m : match) {
     auto compiled = m.Compile();
     if (!compiled) return std::unexpected(std::move(compiled.error()));
@@ -1537,9 +1599,47 @@ auto ApplyRuleData::Compile() const -> std::expected<ApplyRuleStep, std::string>
 }
 
 auto MatchInstructionPatternData::Compile() const -> std::expected<InstructionPattern, std::string> {
+  if (extract.has_value() && opcode != "extractvalue") {
+    return std::unexpected("extract is only valid with opcode 'extractvalue'");
+  }
+  if (extract_index.has_value() && opcode != "extractvalue") {
+    return std::unexpected("extract_index is only valid with opcode 'extractvalue'");
+  }
+  if (extract.has_value() && extract_index.has_value()) {
+    return std::unexpected("extract and extract_index cannot both be specified");
+  }
+  if (extract.has_value() && extract->indices.empty()) {
+    return std::unexpected("extract.indices requires at least one index");
+  }
+  const bool is_extractvalue = opcode == "extractvalue" || extract.has_value() || extract_index.has_value();
+  for (const auto& op : operands) {
+    if (is_extractvalue && op.index > 0) {
+      return std::unexpected("extractvalue has only aggregate operand 0; operand index " + std::to_string(op.index) + " is invalid");
+    }
+  }
   InstructionPattern result;
   result.capture_name = capture;
   result.match_capture = match_capture;
+  if (extract.has_value()) {
+    ExtractValuePattern compiled_extract;
+    compiled_extract.indices = extract->indices;
+    if (extract->aggregate_type.has_value()) {
+      auto aggregate_type = CompileValueTypePattern(*extract->aggregate_type);
+      if (!aggregate_type) return std::unexpected("extract.aggregate_type: " + std::move(aggregate_type.error()));
+      compiled_extract.aggregate_type = std::move(*aggregate_type);
+    }
+    if (extract->result_type.has_value()) {
+      auto result_type = CompileValueTypePattern(*extract->result_type);
+      if (!result_type) return std::unexpected("extract.result_type: " + std::move(result_type.error()));
+      compiled_extract.result_type = std::move(*result_type);
+    }
+    result.extract = std::move(compiled_extract);
+  } else if (extract_index.has_value()) {
+    // v1 normalization: legacy single index becomes a single-element path.
+    ExtractValuePattern compiled_extract;
+    compiled_extract.indices = {*extract_index};
+    result.extract = std::move(compiled_extract);
+  }
   if (!opcode.empty()) result.opcode = opcode;
   for (const auto& op : operands) {
     auto compiled = op.Compile();
@@ -1550,13 +1650,80 @@ auto MatchInstructionPatternData::Compile() const -> std::expected<InstructionPa
 }
 
 auto EmitPatternData::Compile() const -> std::expected<EmitPattern, std::string> {
+  const std::string emit_name = name.empty() ? (opcode.empty() ? std::string("<unnamed>") : opcode) : name;
+  const bool legacy_extract_mode = !aggregate.empty() || extract_index.has_value();
+  if (extract.has_value()) {
+    if (!opcode.empty() || cast_opcode.has_value() || !capture.empty() || !operands.empty()) {
+      return std::unexpected("emit '" + emit_name + "': extract cannot be combined with opcode, cast_opcode, capture, or operands");
+    }
+    // SM6 template instantiation (template_name/repeat) is parsed for schema
+    // compatibility but is not consumed by SM6 emission; reject the
+    // combination explicitly rather than silently dropping it.
+    if (!template_name.empty() || (repeat != nullptr)) {
+      return std::unexpected("emit '" + emit_name + "': extract cannot be combined with template or repeat");
+    }
+    if (legacy_extract_mode) {
+      return std::unexpected("emit '" + emit_name + "': extract cannot be combined with legacy aggregate/extract_index");
+    }
+    if (extract->indices.empty()) {
+      return std::unexpected("emit '" + emit_name + "': extract.indices requires at least one index");
+    }
+    if (extract->aggregate.empty()) {
+      return std::unexpected("emit '" + emit_name + "': extract.aggregate is required");
+    }
+    if (result_component_type.has_value()) {
+      return std::unexpected("emit '" + emit_name + "': extract cannot be combined with result_component_type");
+    }
+  }
+  if (legacy_extract_mode) {
+    if (!opcode.empty() || cast_opcode.has_value() || !capture.empty() || !operands.empty()) {
+      return std::unexpected("emit '" + emit_name + "': aggregate cannot be combined with opcode, cast_opcode, capture, or operands");
+    }
+    if (extract_index.has_value() && aggregate.empty()) {
+      return std::unexpected("emit '" + emit_name + "': legacy extract_index requires aggregate");
+    }
+    if (result_component_type.has_value()) {
+      return std::unexpected("emit '" + emit_name + "': aggregate extraction cannot be combined with result_component_type");
+    }
+  }
   EmitPattern result;
   result.name = name;
-  result.extract_index = extract_index;
-  result.aggregate = aggregate;
   result.result_component_type = result_component_type;
   result.capture = capture;
   result.replace_captured = replace_captured;
+  if (extract.has_value()) {
+    EmitExtractValue compiled_extract;
+    compiled_extract.aggregate = extract->aggregate;
+    for (const auto& index : extract->indices) {
+      if (const auto* literal = std::get_if<uint32_t>(&index)) {
+        compiled_extract.indices.push_back(*literal);
+      } else if (const auto* cap = std::get_if<CaptureExtractIndexData>(&index)) {
+        if (cap->capture.empty()) {
+          return std::unexpected("emit '" + emit_name + "': extract index capture requires a name");
+        }
+        compiled_extract.indices.emplace_back(CaptureExtractIndex{cap->capture});
+      }
+    }
+    if (extract->aggregate_type.has_value()) {
+      auto aggregate_type = CompileValueTypePattern(*extract->aggregate_type);
+      if (!aggregate_type) return std::unexpected("emit '" + emit_name + "': extract.aggregate_type: " + std::move(aggregate_type.error()));
+      compiled_extract.aggregate_type = std::move(*aggregate_type);
+    }
+    if (extract->result_type.has_value()) {
+      auto result_type = CompileValueTypePattern(*extract->result_type);
+      if (!result_type) return std::unexpected("emit '" + emit_name + "': extract.result_type: " + std::move(result_type.error()));
+      compiled_extract.result_type = std::move(*result_type);
+    }
+    result.extract = std::move(compiled_extract);
+  } else if (!aggregate.empty()) {
+    // v1 normalization: legacy aggregate (with optional index, default 0).
+    // Legacy result_component_type is rejected above; the canonical
+    // extract.result_type is the explicit mechanism.
+    EmitExtractValue compiled_extract;
+    compiled_extract.aggregate = aggregate;
+    compiled_extract.indices.push_back(extract_index.value_or(0));
+    result.extract = std::move(compiled_extract);
+  }
   if (!opcode.empty()) result.opcode = opcode;
   if (cast_opcode.has_value()) result.cast_opcode = *cast_opcode;
   for (const auto& op : operands) {
@@ -1598,7 +1765,7 @@ std::expected<::dxp::ApplyRuleResults, std::string> Execute(const ApplyRuleStep&
       }
     }
     if (!has_valid_opcode && (!pattern.cast_opcode.has_value() || pattern.cast_opcode->empty())
-        && pattern.capture.empty() && pattern.operands.empty() && pattern.aggregate.empty()) {
+        && pattern.capture.empty() && pattern.operands.empty() && !pattern.extract.has_value()) {
       return std::unexpected("'" + step.name + "': emit pattern " + std::to_string(i) + " has no opcode");
     }
   }

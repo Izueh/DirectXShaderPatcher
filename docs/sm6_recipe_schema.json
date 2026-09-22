@@ -7,6 +7,15 @@
             "$ref": "#/$defs/std::variant<bool,int32_t,uint32_t,int64_t,uint64_t,double>"
          }
       },
+      "serialization": {
+         "type": "object",
+         "properties": {
+            "strip_reflection": {
+               "type": "boolean"
+            }
+         },
+         "additionalProperties": false
+      },
       "steps": {
          "type": "array",
          "items": {
@@ -197,8 +206,57 @@
                                           "null"
                                        ]
                                     },
+                                    "extract": {
+                                       "anyOf": [
+                                          {
+                                             "type": "object",
+                                             "properties": {
+                                                "aggregate": {
+                                                   "type": "string"
+                                                },
+                                                "aggregate_type": {
+                                                   "anyOf": [
+                                                      {
+                                                         "$ref": "#/$defs/dxp::sm6::step::ValueTypePatternData"
+                                                      },
+                                                      {
+                                                         "type": "null"
+                                                      }
+                                                   ]
+                                                },
+                                                "indices": {
+                                                   "type": "array",
+                                                   "items": {
+                                                      "$ref": "#/$defs/std::variant<uint32_t,dxp::sm6::step::CaptureExtractIndexData>"
+                                                   }
+                                                },
+                                                "result_type": {
+                                                   "anyOf": [
+                                                      {
+                                                         "$ref": "#/$defs/dxp::sm6::step::ValueTypePatternData"
+                                                      },
+                                                      {
+                                                         "type": "null"
+                                                      }
+                                                   ]
+                                                }
+                                             },
+                                             "additionalProperties": false
+                                          },
+                                          {
+                                             "type": "null"
+                                          }
+                                       ]
+                                    },
                                     "extract_index": {
-                                       "$ref": "#/$defs/uint32_t"
+                                       "anyOf": [
+                                          {
+                                             "$ref": "#/$defs/uint32_t"
+                                          },
+                                          {
+                                             "type": "null"
+                                          }
+                                       ]
                                     },
                                     "name": {
                                        "type": "string"
@@ -289,10 +347,7 @@
                                                             "$ref": "#/$defs/std::vector<int64_t>"
                                                          },
                                                          "u32": {
-                                                            "type": "array",
-                                                            "items": {
-                                                               "$ref": "#/$defs/uint32_t"
-                                                            }
+                                                            "$ref": "#/$defs/std::vector<uint32_t>"
                                                          },
                                                          "u64": {
                                                             "type": "array",
@@ -705,6 +760,52 @@
             "capture": {
                "type": "string"
             },
+            "extract": {
+               "anyOf": [
+                  {
+                     "type": "object",
+                     "properties": {
+                        "aggregate_type": {
+                           "anyOf": [
+                              {
+                                 "$ref": "#/$defs/dxp::sm6::step::ValueTypePatternData"
+                              },
+                              {
+                                 "type": "null"
+                              }
+                           ]
+                        },
+                        "indices": {
+                           "$ref": "#/$defs/std::vector<uint32_t>"
+                        },
+                        "result_type": {
+                           "anyOf": [
+                              {
+                                 "$ref": "#/$defs/dxp::sm6::step::ValueTypePatternData"
+                              },
+                              {
+                                 "type": "null"
+                              }
+                           ]
+                        }
+                     },
+                     "additionalProperties": false
+                  },
+                  {
+                     "type": "null"
+                  }
+               ]
+            },
+            "extract_index": {
+               "anyOf": [
+                  {
+                     "$ref": "#/$defs/uint32_t"
+                  },
+                  {
+                     "type": "null"
+                  }
+               ]
+            },
             "match_capture": {
                "type": "string"
             },
@@ -840,6 +941,56 @@
                "const": "resource"
             }
          ]
+      },
+      "dxp::sm6::step::ValueTypePatternData": {
+         "type": "object",
+         "properties": {
+            "component_type": {
+               "anyOf": [
+                  {
+                     "$ref": "#/$defs/dxp::ComponentType"
+                  },
+                  {
+                     "type": "null"
+                  }
+               ]
+            },
+            "kind": {
+               "anyOf": [
+                  {
+                     "type": "string",
+                     "oneOf": [
+                        {
+                           "title": "scalar",
+                           "const": "scalar"
+                        },
+                        {
+                           "title": "vector",
+                           "const": "vector"
+                        },
+                        {
+                           "title": "array",
+                           "const": "array"
+                        },
+                        {
+                           "title": "struct",
+                           "const": "struct"
+                        }
+                     ]
+                  },
+                  {
+                     "type": "null"
+                  }
+               ]
+            },
+            "struct_name": {
+               "type": [
+                  "string",
+                  "null"
+               ]
+            }
+         },
+         "additionalProperties": false
       },
       "float": {
          "type": "number",
@@ -981,6 +1132,30 @@
             }
          ]
       },
+      "std::variant<uint32_t,dxp::sm6::step::CaptureExtractIndexData>": {
+         "type": [
+            "number",
+            "object"
+         ],
+         "oneOf": [
+            {
+               "type": "integer",
+               "title": "uint32_t",
+               "minimum": 0,
+               "maximum": 4294967295
+            },
+            {
+               "type": "object",
+               "properties": {
+                  "capture": {
+                     "type": "string"
+                  }
+               },
+               "additionalProperties": false,
+               "title": "dxp::sm6::step::CaptureExtractIndexData"
+            }
+         ]
+      },
       "std::vector<double>": {
          "type": "array",
          "items": {
@@ -1074,6 +1249,12 @@
          "type": "array",
          "items": {
             "type": "string"
+         }
+      },
+      "std::vector<uint32_t>": {
+         "type": "array",
+         "items": {
+            "$ref": "#/$defs/uint32_t"
          }
       },
       "uint32_t": {

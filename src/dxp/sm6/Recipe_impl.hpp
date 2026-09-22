@@ -21,6 +21,7 @@ using StepDataVariant = std::variant<
 /// @brief Top-level SM6 recipe data structure.
 struct RecipeData {
   uint32_t version = 1;
+  SerializationOptions serialization{};
   std::unordered_map<std::string, PrimitiveValue> env;
   std::vector<StepDataVariant> steps;
 };
@@ -41,10 +42,16 @@ struct meta<dxp::sm6::StepDataVariant> {
 };
 
 template <>
+struct meta<dxp::sm6::SerializationOptions> {
+  using T = dxp::sm6::SerializationOptions;
+  static constexpr auto value = object("strip_reflection", &T::strip_reflection);
+};
+
+template <>
 struct meta<dxp::sm6::RecipeData> {
   using T = dxp::sm6::RecipeData;
   static constexpr auto value =
-      object("version", &T::version, "env", &T::env, "steps", &T::steps);
+      object("version", &T::version, "serialization", &T::serialization, "env", &T::env, "steps", &T::steps);
   static constexpr auto validate = [](const dxp::sm6::RecipeData& self, std::string& error) {
     if (self.version != 1) {
       error = "unsupported recipe schema version";

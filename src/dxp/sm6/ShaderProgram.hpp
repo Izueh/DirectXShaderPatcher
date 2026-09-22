@@ -70,7 +70,7 @@ struct ShaderProgram {
   std::expected<void, std::string> AddSampler(const SamplerDesc& desc);
 
   /// @brief Serialize to DXIL container bytes.
-  std::expected<std::vector<uint8_t>, std::string> Serialize();
+  std::expected<std::vector<uint8_t>, std::string> Serialize(bool strip_reflection = false);
 
   /// @brief Count DXIL and LLVM opcodes in the entry function.
   [[nodiscard]] std::pair<std::unordered_map<std::string, int32_t>, std::unordered_map<std::string, int32_t>> GetOpcodeCounts() const;
@@ -93,10 +93,7 @@ struct ShaderProgram {
 
   [[nodiscard]] std::expected<void, std::string> Verify() const;
 
-  /// @brief Prune dead code from a single instruction tree.
-  static void PruneInstruction(llvm::Instruction* instruction);
-
-  /// @brief Prune all dead code from the entry function.
+  /// @brief Run final dead-code/module cleanup before serialization.
   void PruneDeadCode() const;
 
   [[nodiscard]] llvm::Module* GetModule() const {
@@ -137,7 +134,9 @@ struct ShaderProgram {
 
   std::expected<void, std::string> UpdateContainerHash(std::vector<uint8_t>& container);
   std::vector<uint8_t> SerializeBitcode();
-  std::expected<void, std::string> SerializeContainer(std::span<const uint8_t> bitcode, std::vector<uint8_t>& output_container);
+  std::expected<void, std::string> SerializeContainer(std::span<const uint8_t> bitcode,
+                                                      std::vector<uint8_t>& output_container,
+                                                      bool strip_reflection);
 
   template <typename TResource>
   unsigned FindNextAvailable(const std::vector<std::unique_ptr<TResource>>& resources, unsigned space,

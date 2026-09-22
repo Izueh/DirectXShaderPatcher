@@ -25,6 +25,10 @@
 
 namespace dxp::sm6 {
 
+struct SerializationOptions {
+  bool strip_reflection = false;
+};
+
 struct Recipe {
   using StepVariant = std::variant<
       step::AddResourceStep, step::ApplyRuleStep,
@@ -38,7 +42,8 @@ struct Recipe {
   Recipe(const Recipe& other)
       : steps_(other.steps_),
         env_(other.env_),
-        validated_(other.validated_.load(std::memory_order_relaxed)) {}
+        validated_(other.validated_.load(std::memory_order_relaxed)),
+        serialization_options_(other.serialization_options_) {}
 
   /// @brief Copy assignment — see copy constructor.
   Recipe& operator=(const Recipe& other) {
@@ -46,6 +51,7 @@ struct Recipe {
       steps_ = other.steps_;
       env_ = other.env_;
       validated_.store(other.validated_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+      serialization_options_ = other.serialization_options_;
     }
     return *this;
   }
@@ -54,7 +60,8 @@ struct Recipe {
   Recipe(Recipe&& other) noexcept
       : steps_(std::move(other.steps_)),
         env_(std::move(other.env_)),
-        validated_(other.validated_.load(std::memory_order_relaxed)) {}
+        validated_(other.validated_.load(std::memory_order_relaxed)),
+        serialization_options_(other.serialization_options_) {}
 
   /// @brief Move assignment — see move constructor.
   Recipe& operator=(Recipe&& other) noexcept {
@@ -62,6 +69,7 @@ struct Recipe {
       steps_ = std::move(other.steps_);
       env_ = std::move(other.env_);
       validated_.store(other.validated_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+      serialization_options_ = other.serialization_options_;
     }
     return *this;
   }
@@ -127,6 +135,15 @@ struct Recipe {
     return *this;
   }
 
+  Recipe& SetSerializationOptions(SerializationOptions options) {
+    serialization_options_ = options;
+    return *this;
+  }
+
+  [[nodiscard]] const SerializationOptions& GetSerializationOptions() const {
+    return serialization_options_;
+  }
+
  private:
   std::vector<StepVariant> steps_;
 
@@ -141,6 +158,7 @@ struct Recipe {
   /// load in Execute.
   mutable std::atomic<bool> validated_{false};
   std::unordered_map<std::string, PrimitiveValue> env_;
+  SerializationOptions serialization_options_{};
 
   friend std::expected<void, std::string> ValidateRecipe(const Recipe& recipe);
 };

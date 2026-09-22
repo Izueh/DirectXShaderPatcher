@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "dxp/Condition.hpp"
@@ -39,6 +40,44 @@ struct Rule;
 struct InstructionPattern;
 struct EmitOperand;
 
+/// @brief LLVM type kind for extractvalue type guards.
+enum class ValueTypeKind : std::uint8_t {
+  Scalar,
+  Vector,
+  Array,
+  Struct,
+};
+
+/// @brief Optional type guards for extractvalue aggregates/results (v1 minimal set).
+struct ValueTypePattern {
+  std::optional<ValueTypeKind> kind;
+  /// Exact, case-sensitive LLVM identified-struct name, without the leading '%'.
+  std::optional<std::string> struct_name;
+  std::optional<dxp::ComponentType> component_type;
+};
+
+/// @brief Exact LLVM extractvalue index path plus optional type guards.
+struct ExtractValuePattern {
+  std::vector<uint32_t> indices;
+  std::optional<ValueTypePattern> aggregate_type;
+  std::optional<ValueTypePattern> result_type;
+};
+
+/// @brief Captured integer index for emitted extractvalue paths.
+struct CaptureExtractIndex {
+  std::string capture;
+};
+
+using EmitExtractIndex = std::variant<uint32_t, CaptureExtractIndex>;
+
+/// @brief Emitted extractvalue specification.
+struct EmitExtractValue {
+  std::string aggregate;
+  std::vector<EmitExtractIndex> indices;
+  std::optional<ValueTypePattern> aggregate_type;
+  std::optional<ValueTypePattern> result_type;
+};
+
 /// @brief Operand pattern — delegates instruction logic to InstructionPattern.
 struct OperandPattern {
   uint32_t operand_index = 0;
@@ -65,6 +104,9 @@ struct InstructionPattern {
   uint32_t operand_index = 0;
   std::optional<std::string> callee_name;
   std::optional<std::string> opcode;
+  /// Optional exact LLVM extractvalue index path with optional type guards.
+  /// Only valid with opcode 'extractvalue'; aggregate binding uses operand 0.
+  std::optional<ExtractValuePattern> extract;
   std::string capture_name;
   std::string match_capture;
   std::vector<OperandPattern> operand_patterns;
@@ -106,8 +148,8 @@ struct EmitPattern {
   std::string capture_name;
   std::vector<EmitOperand> operands;
   std::optional<dxp::ComponentType> result_component_type;
-  uint32_t extract_index = 0;
-  std::string aggregate;
+  /// Optional extractvalue emission (mutually exclusive with opcode/capture/operands).
+  std::optional<EmitExtractValue> extract;
   std::string name;
   std::string capture;
   std::string replace_captured;
@@ -120,7 +162,6 @@ struct EmitPattern {
 struct Rule {
   std::vector<InstructionPattern> match_patterns;
   std::vector<EmitPattern> emit_patterns;
-  bool prune_dead_instructions = true;
   std::string name;
 };
 

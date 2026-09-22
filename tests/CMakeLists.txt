@@ -202,6 +202,9 @@ dxp_add_test(sm5_recipe_add_resource_tolerance_test "sm5_recipe_add_resource_tol
 dxp_add_test(sm5_recipe_element_index_variable_test "sm5_recipe_element_index_variable_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x7AFF256C.ps_5_0.cso")
 dxp_add_test(sm5_reverse_bind_test "sm5_reverse_bind_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x7AFF256C.ps_5_0.cso")
 dxp_add_test(sm6_recipe_error_contract_test "sm6_recipe_error_contract_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x56C468C3.cs_6_6.cso")
+dxp_add_test(sm6_extract_value_test "sm6_extract_value_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x56C468C3.cs_6_6.cso")
+dxp_add_test(sm6_extract_value_detail_test "sm6_extract_value_detail_test.cpp")
+
 dxp_add_test(sm6_recipe_match_captured_test "sm6_recipe_match_captured_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x56C468C3.cs_6_6.cso")
 
 # Benchmarks (conditional)

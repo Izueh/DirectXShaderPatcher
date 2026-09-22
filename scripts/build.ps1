@@ -1,6 +1,6 @@
 param (
     [Parameter(Mandatory = $false)]
-    [ValidateSet("ninja-x64", "ninja-x86", "clang-x64", "clang-x86")]
+    [ValidateSet("ninja-x64", "ninja-x64-static", "ninja-x86", "ninja-x86-static", "clang-x64", "clang-x64-static", "clang-x86", "clang-x86-static")]
     [string]$Preset = "ninja-x64",
 
     [Parameter(Mandatory = $false)]

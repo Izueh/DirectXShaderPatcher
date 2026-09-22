@@ -1,7 +1,11 @@
 #pragma once
+#include <cstdint>
 #include <dxp/sm6/ResourceTypes.hpp>
 #include <dxp/sm6/step/ApplyRuleStep.hpp>
 #include <glaze/glaze.hpp>
+#include <expected>
+#include <span>
+#include <string>
 #include <unordered_map>
 #include "dxp/Condition_impl.hpp"
 #include "dxp/sm6/ExecutionContext.hpp"
@@ -42,6 +46,40 @@ std::string DescribeOutcome(const ApplyRuleStep& step, const dxp::ApplyRuleResul
 
 struct MatchInstructionPatternData;
 
+/// @brief Optional type guards for extractvalue aggregates/results (YAML form).
+struct ValueTypePatternData {
+  std::optional<ValueTypeKind> kind;
+  /// Exact struct name (no leading %, case-sensitive). Optional = no constraint;
+  /// explicitly-present-but-empty is rejected at Compile.
+  std::optional<std::string> struct_name;
+  std::optional<dxp::ComponentType> component_type;
+};
+
+/// @brief Exact LLVM extractvalue index path plus optional type guards (YAML form).
+struct ExtractValuePatternData {
+  std::vector<uint32_t> indices;
+  std::optional<ValueTypePatternData> aggregate_type;
+  std::optional<ValueTypePatternData> result_type;
+};
+
+/// @brief Captured integer index (YAML form of {capture: name}).
+struct CaptureExtractIndexData {
+  std::string capture;
+
+  /// Comparison is required by glaze's `ordered` trait check on the index variant.
+  auto operator<=>(const CaptureExtractIndexData&) const = default;
+};
+
+using EmitExtractIndexData = std::variant<uint32_t, CaptureExtractIndexData>;
+
+/// @brief Emitted extractvalue specification (YAML form).
+struct EmitExtractValueData {
+  std::string aggregate;
+  std::vector<EmitExtractIndexData> indices;
+  std::optional<ValueTypePatternData> aggregate_type;
+  std::optional<ValueTypePatternData> result_type;
+};
+
 /// @brief Operand pattern data — YAML-declarative form for match operands.
 struct OperandPatternData {
   unsigned index = 0;
@@ -80,6 +118,10 @@ struct EmitOperandPatternData {
 /// @brief Match instruction pattern data — YAML-declarative form for matching DXIL instructions.
 struct MatchInstructionPatternData {
   std::string opcode;
+  /// Canonical extractvalue specification (v1+).
+  std::optional<ExtractValuePatternData> extract;
+  /// Legacy v1 spelling (single index); normalized to extract at Compile.
+  std::optional<uint32_t> extract_index;
   std::string capture;
   std::string match_capture;
   std::vector<OperandPatternData> operands;
@@ -94,8 +136,12 @@ struct EmitPatternData {
   std::vector<EmitOperandPatternData> operands;
   std::optional<ComponentType> result_component_type;
   std::optional<std::string> cast_opcode;
+  /// Legacy v1 aggregate name; normalized to extract at Compile.
   std::string aggregate;
-  unsigned extract_index = 0;
+  /// Legacy v1 single index (default 0); normalized to extract at Compile.
+  std::optional<uint32_t> extract_index;
+  /// Canonical extractvalue specification (v1+).
+  std::optional<EmitExtractValueData> extract;
   std::string capture;
   std::string replace_captured;
   std::string template_name;           ///< Template instantiation (mutually exclusive with opcode/capture).
@@ -109,7 +155,11 @@ struct RuleData {
   std::string name;
   std::vector<MatchInstructionPatternData> match;
   std::vector<EmitPatternData> emit;
-  bool prune = false;
+  /// Deprecated no-op: per-rule dead-code pruning was removed (DCE runs at
+  /// serialization). Parsed for v1 recipe compatibility; ignored at Compile.
+  /// Default kept at `true` per prior SM6 documentation for schema-level
+  /// compatibility (generated schema shows no default change).
+  bool prune = true;
 
   /**
    * @brief Compile this YAML data into a Rule.
@@ -157,6 +207,11 @@ struct meta<dxp::sm6::step::OperandKind> {
 };
 
 template <>
+struct meta<dxp::sm6::step::ValueTypeKind> {
+  static constexpr auto value = enumerate("scalar", dxp::sm6::step::ValueTypeKind::Scalar, "vector", dxp::sm6::step::ValueTypeKind::Vector, "array", dxp::sm6::step::ValueTypeKind::Array, "struct", dxp::sm6::step::ValueTypeKind::Struct);
+};
+
+template <>
 struct meta<dxp::sm6::step::ApplyRuleData> {
   static constexpr auto validate = [](const auto& self, std::string& error) {
     if (self.rule.name.empty()) {
@@ -171,9 +226,37 @@ struct meta<dxp::sm6::step::EmitPatternData> {
   static constexpr auto value = object("opcode", &T::opcode, "name", &T::name,
                                        "operands", &T::operands, "result_component_type", &T::result_component_type,
                                        "cast_opcode", &T::cast_opcode, "aggregate", &T::aggregate,
-                                       "extract_index", &T::extract_index, "capture", &T::capture,
+                                       "extract_index", &T::extract_index, "extract", &T::extract,
+                                       "capture", &T::capture,
                                        "replace_captured", &T::replace_captured, "template", &T::template_name,
                                        "repeat", &T::repeat);
 };
 
 }  // namespace glz
+
+namespace llvm {
+class Type;
+class Value;
+class ConstantInt;
+}  // namespace llvm
+
+namespace dxp::sm6::step::detail {
+
+/// @brief Type-guard check for extractvalue aggregates/results (v1 minimal set).
+///
+/// component_type constrains scalar values or vector element types only;
+/// array/struct guards are structural (kind/struct_name).
+bool MatchesTypePattern(llvm::Type* type, const ValueTypePattern& pattern);
+
+/// @brief Walks an extractvalue index path against an aggregate LLVM type.
+/// Reports the failing depth/type for out-of-range, opaque, and non-aggregate paths.
+std::expected<llvm::Type*, std::string> ResolveExtractType(llvm::Type* aggregate_type, std::span<const uint32_t> indices);
+
+/// @brief Full-path extractvalue match: exact index path plus optional guards.
+bool MatchesExtractValue(llvm::Value* value, const ExtractValuePattern& pattern);
+
+/// @brief Interprets a captured ConstantInt as an unsigned extract index
+/// (signless bit pattern, uint32_t range).
+std::expected<uint32_t, std::string> ConstantIntToExtractIndex(const std::string& capture_name, size_t depth, llvm::ConstantInt* ci);
+
+}  // namespace dxp::sm6::step::detail

@@ -23,9 +23,9 @@
 #include <llvm/IR/GlobalValue.h>
 #include <llvm/IR/GlobalVariable.h>
 #include <llvm/IR/IRBuilder.h>
-#include <llvm/IR/Use.h>
-#include <llvm/IR/ValueHandle.h>
+#include <llvm/IR/LegacyPassManager.h>
 #include <llvm/Support/Casting.h>
+#include <llvm/Transforms/Scalar.h>
 #include <objidlbase.h>
 #include <winnt.h>
 #include <algorithm>
@@ -68,7 +68,6 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/MSFileSystem.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Transforms/Utils/Local.h"
 
 namespace {
 
@@ -1020,75 +1019,34 @@ auto ShaderProgram::AddSampler(const SamplerDesc& desc) -> std::expected<void, s
   return {};
 }
 
-void ShaderProgram::PruneInstruction(llvm::Instruction* instruction) {
-  if (instruction == nullptr) return;
-  std::unordered_set<llvm::Instruction*> visited;
-  std::vector<llvm::WeakTrackingVH> post_order;
-  std::vector<llvm::Instruction*> worklist;
-  worklist.push_back(instruction);
-  while (!worklist.empty()) {
-    llvm::Instruction* current = worklist.back();
-    worklist.pop_back();
-    if (!visited.insert(current).second) continue;
-    post_order.emplace_back(current);
-    for (const llvm::Use& operand_use : current->operands()) {
-      auto* operand_instruction = llvm::dyn_cast<llvm::Instruction>(operand_use.get());
-      if (operand_instruction == nullptr || !operand_instruction->use_empty()) continue;
-      worklist.push_back(operand_instruction);
-    }
-  }
-  for (auto& it : std::ranges::reverse_view(post_order)) {
-    auto* candidate = llvm::dyn_cast_or_null<llvm::Instruction>(static_cast<llvm::Value*>(it));
-    if (candidate == nullptr || !candidate->use_empty()) continue;
-    bool prunable = false;
-    if (const auto* call = llvm::dyn_cast<llvm::CallInst>(candidate)) {
-      const llvm::Function* callee = call->getCalledFunction();
-      if (callee != nullptr && (call->doesNotAccessMemory() || call->onlyReadsMemory())) {
-        prunable = true;
-      } else if (callee != nullptr) {
-        const llvm::StringRef callee_name = callee->getName();
-        if (callee_name == "dx.op.annotateHandle" || callee_name == "dx.op.createHandleFromBinding") {
-          prunable = true;
-        }
-      }
-    } else {
-      prunable = !candidate->mayHaveSideEffects();
-    }
-    if (!prunable) continue;
-    if (llvm::isInstructionTriviallyDead(candidate)) {
-      llvm::RecursivelyDeleteTriviallyDeadInstructions(candidate);
-    } else {
-      candidate->eraseFromParent();
-    }
-  }
-}
-
 void ShaderProgram::PruneDeadCode() const {
-  auto* entryFunc = GetEntryFunction();
-  if (entryFunc == nullptr) return;
-  bool changed = true;
-  while (changed) {
-    changed = false;
-    std::vector<llvm::WeakTrackingVH> candidates;
-    for (llvm::BasicBlock& basic_block : *entryFunc) {
-      for (llvm::Instruction& instruction : basic_block) {
-        if (!instruction.use_empty()) continue;
-        if (instruction.isTerminator()) continue;
-        candidates.emplace_back(&instruction);
-      }
-    }
-    for (const llvm::WeakTrackingVH& candidate_handle : candidates) {
-      auto* candidate = llvm::dyn_cast_or_null<llvm::Instruction>(static_cast<llvm::Value*>(candidate_handle));
-      if (candidate == nullptr || !candidate->use_empty()) continue;
-      if (llvm::isInstructionTriviallyDead(candidate)) {
-        llvm::RecursivelyDeleteTriviallyDeadInstructions(candidate);
-        changed = true;
-      } else {
-        const llvm::WeakTrackingVH kPruneProbe(candidate);
-        ShaderProgram::PruneInstruction(candidate);
-        if (static_cast<llvm::Value*>(kPruneProbe) == nullptr) changed = true;
-      }
-    }
+  if (module == nullptr) return;
+
+  // Run LLVM's worklist-driven DCE once at finalization instead of recursively
+  // pruning dependency trees after each recipe rule.
+  llvm::legacy::PassManager pass_manager;
+  pass_manager.add(llvm::createDeadCodeEliminationPass());
+  pass_manager.run(*module);
+
+  // DXIL validation rejects unused dx.op declarations after DCE removes their
+  // last call. Do not use createStripDeadPrototypesPass() here: it also removes
+  // unused external global declarations, which may still be referenced by
+  // DxilModule resource/reflection state.
+  for (auto it = module->begin(); it != module->end();) {
+    llvm::Function* function = &*it++;
+    if (!function->isDeclaration() || !function->use_empty()) continue;
+    if (!function->getName().startswith("dx.op.")) continue;
+    function->eraseFromParent();
+  }
+
+  // Function erasure invalidates hlsl::OP's pointer cache. RefreshCache() only
+  // adds/refreshes live entries; it does not clear stale entries. Rebuild OP so
+  // no cached pointer can refer to an erased dx.op declaration.
+  if (dxil_module != nullptr) {
+    auto* op = new hlsl::OP(module->getContext(), module.get());
+    op->InitWithMinPrecision(dxil_module->GetUseMinPrecision());
+    dxil_module->ResetOP(op);
+    op->RefreshCache();
   }
 }
 
@@ -1115,8 +1073,6 @@ auto ShaderProgram::UpdateContainerHash(std::vector<uint8_t>& container) -> std:
 
 
 auto ShaderProgram::SerializeBitcode() -> std::vector<uint8_t> {
-  PruneDeadCode();
-
   std::string bitcode_bytes;
   llvm::raw_string_ostream ostream(bitcode_bytes);
   llvm::WriteBitcodeToFile(module.get(), ostream);
@@ -1124,8 +1080,8 @@ auto ShaderProgram::SerializeBitcode() -> std::vector<uint8_t> {
   return {bitcode_bytes.begin(), bitcode_bytes.end()};
 }
 
-auto ShaderProgram::SerializeContainer(std::span<const uint8_t> bitcode, std::vector<uint8_t>& output_container)
-    -> std::expected<void, std::string> {
+auto ShaderProgram::SerializeContainer(std::span<const uint8_t> bitcode, std::vector<uint8_t>& output_container,
+                                       bool strip_reflection) -> std::expected<void, std::string> {
   CComPtr<IMalloc> malloc_interface;
   if (DXC_FAILED(::CoGetMalloc(1, &malloc_interface)) || !malloc_interface) {
     return std::unexpected("serialize: CoGetMalloc failed");
@@ -1150,8 +1106,11 @@ auto ShaderProgram::SerializeContainer(std::span<const uint8_t> bitcode, std::ve
 
   // StripRootSignature prevents SerializeDxilContainerForModule from re-serializing
   // the module mid-write (the passed stream is at its end position, matching DXC).
-  constexpr auto kFlags = hlsl::SerializeDxilFlags::StripRootSignature;
-  hlsl::SerializeDxilContainerForModule(dxil_module, bitcode_stream, nullptr, output_stream, "", kFlags, nullptr, nullptr,
+  auto flags = hlsl::SerializeDxilFlags::StripRootSignature;
+  if (strip_reflection) {
+    flags |= hlsl::SerializeDxilFlags::StripReflectionFromDxilPart;
+  }
+  hlsl::SerializeDxilContainerForModule(dxil_module, bitcode_stream, nullptr, output_stream, "", flags, nullptr, nullptr,
                                         nullptr, nullptr, 0);
 
   if ((output_stream->GetPtr() == nullptr) || output_stream->GetPtrSize() == 0) {
@@ -1166,7 +1125,9 @@ auto ShaderProgram::SerializeContainer(std::span<const uint8_t> bitcode, std::ve
   return {};
 }
 
-auto ShaderProgram::Serialize() -> std::expected<std::vector<uint8_t>, std::string> {
+auto ShaderProgram::Serialize(bool strip_reflection) -> std::expected<std::vector<uint8_t>, std::string> {
+  PruneDeadCode();
+
   if (dxil_module != nullptr) {
     if (auto* op = dxil_module->GetOP()) op->RefreshCache();
     dxil_module->EmitLLVMUsed();
@@ -1182,7 +1143,7 @@ auto ShaderProgram::Serialize() -> std::expected<std::vector<uint8_t>, std::stri
   }
   auto bitcode = SerializeBitcode();
   std::vector<uint8_t> container;
-  if (auto container_result = SerializeContainer(bitcode, container); !container_result) {
+  if (auto container_result = SerializeContainer(bitcode, container, strip_reflection); !container_result) {
     return std::unexpected(std::move(container_result.error()));
   }
   // Unconditional full DXIL validation of the produced container. A patch that
