@@ -312,7 +312,8 @@ else()
         "${DXC_SOURCE_DIR}/include"
         "${DXC_BINARY_DIR}/include"
     )
-    # dxcompiler is SHARED - a runtime dependency, excluded from the merge.
+    # Execute uses the static LLVM/DXIL implementation. Linking dxcompiler
+    # unnecessarily makes every consumer, including tests, build the compiler DLL.
     target_link_libraries(dxpatcher PRIVATE 
         LLVMipo
         LLVMScalarOpts
@@ -335,7 +336,6 @@ else()
         LLVMPasses
         LLVMSupport
         LLVMDxilValidation
-        dxcompiler
         Ole32
         glaze
         value_types
@@ -349,7 +349,7 @@ else()
     foreach(_dep ${_DXP_LINK_LIBS})
         if(TARGET "${_dep}")
             get_target_property(_dep_type "${_dep}" TYPE)
-            # Merge STATIC libs only; SHARED (dxcompiler) and INTERFACE stay out
+            # Merge STATIC libs only; INTERFACE targets stay out
             if(_dep_type STREQUAL "STATIC_LIBRARY")
                 list(APPEND DXP_MERGED_LIBS "${_dep}")
             endif()

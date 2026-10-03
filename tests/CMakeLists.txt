@@ -35,18 +35,15 @@ function(dxp_add_test EXECUTABLE_NAME SOURCE_FILE)
                 ${CMAKE_SOURCE_DIR}
                 ${CMAKE_SOURCE_DIR}/include
                 ${CMAKE_SOURCE_DIR}/src
-                ${DXC_SOURCE_DIR}/include
-                ${DXC_BINARY_DIR}/include
                 ${CMAKE_SOURCE_DIR}/external
                 ${CMAKE_SOURCE_DIR}/external/WDK/includes
                 ${CMAKE_SOURCE_DIR}/external/glaze/include
             )
             target_compile_definitions(${RUN_BINARY} PRIVATE NOMINMAX)
             target_link_libraries(${RUN_BINARY} PRIVATE dxpatcher)
+            # LLVM/DXIL includes come from dxpatcher. Tests consume precompiled
+            # fixtures and do not invoke DXC or need its runtime DLL copied.
 
-            if(WIN32)
-                add_dependencies(${RUN_BINARY} copy_dxcompiler_runtime)
-            endif()
         endif()
         # Test outputs (patched shaders) go next to the test binary in the
         # per-config build directory, never into the source tree.
@@ -202,10 +199,12 @@ dxp_add_test(sm5_recipe_add_resource_tolerance_test "sm5_recipe_add_resource_tol
 dxp_add_test(sm5_recipe_element_index_variable_test "sm5_recipe_element_index_variable_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x7AFF256C.ps_5_0.cso")
 dxp_add_test(sm5_reverse_bind_test "sm5_reverse_bind_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x7AFF256C.ps_5_0.cso")
 dxp_add_test(sm6_recipe_error_contract_test "sm6_recipe_error_contract_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x56C468C3.cs_6_6.cso")
-dxp_add_test(sm6_extract_value_test "sm6_extract_value_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x56C468C3.cs_6_6.cso")
-dxp_add_test(sm6_extract_value_detail_test "sm6_extract_value_detail_test.cpp")
+dxp_add_test(sm6_extract_value_test "sm6_extract_value_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/sm6_rule_patterns.cs_6_6.cso")
+dxp_add_test(sm6_extract_value_execute_test "sm6_extract_value_execute_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/sm6_rule_edge_cases.cso")
 
 dxp_add_test(sm6_recipe_match_captured_test "sm6_recipe_match_captured_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x56C468C3.cs_6_6.cso")
+dxp_add_test(sm6_recipe_env_constants_test "sm6_recipe_env_constants_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/sm6_rule_patterns.cs_6_6.cso")
+dxp_add_test(sm6_constant_array_test "sm6_constant_array_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/sm6_rule_edge_cases.cso")
 
 # Benchmarks (conditional)
 if(DXP_BUILD_BENCHMARKS)
@@ -216,9 +215,6 @@ if(DXP_BUILD_BENCHMARKS)
     target_include_directories(sm5_benchmarks PRIVATE ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/external/glaze/include)
     target_link_libraries(sm5_benchmarks PRIVATE dxpatcher benchmark::benchmark)
 
-    if(WIN32)
-        add_dependencies(sm5_benchmarks copy_dxcompiler_runtime)
-    endif()
 
     add_test(NAME sm5_benchmarks COMMAND sm5_benchmarks --benchmark_min_time=0.01s)
 endif()

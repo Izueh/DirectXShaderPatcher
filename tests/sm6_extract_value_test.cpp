@@ -1,4 +1,4 @@
-// extractvalue redesign integration tests against a real SM6.6 fixture.
+// extractvalue integration tests against the compiled rule-pattern sample.
 //
 // Covers (per the approved plan):
 //   * canonical emit extract single-index success + legacy v1 equivalence
@@ -57,7 +57,7 @@ int main(int argc, char** argv_) {
     return 1;
   }
 
-  // Base recipe: the proven blue_noise match/emit sequence (legacy extract).
+  // The sample contains one live texture load at t7 followed by its x extract.
   const std::string base_yaml_head = R"YAML(
 steps:
   - kind: add_resource
@@ -89,6 +89,10 @@ steps:
               - index: 3
                 kind: call
                 capture: coord_x
+          - opcode: extractvalue
+            capture: shader_x
+            extract:
+              indices: [0]
         emit:
           - opcode: CBufferLoadLegacy
             result_component_type: I32
@@ -102,12 +106,33 @@ steps:
                 constant_int_values: [0]
 )YAML";
 
+  // Connect the extracted register value to the shader's buffer write, so
+  // canonical/legacy equivalence checks observable Execute output.
+  const std::string output_emit = R"YAML(
+          - opcode: sitofp
+            name: frame_value
+            result_component_type: F32
+            operands:
+              - index: 0
+                capture: frame_index
+          - opcode: fadd
+            name: adjusted_x
+            result_component_type: F32
+            replace_captured: shader_x
+            operands:
+              - index: 0
+                capture: shader_x
+              - index: 1
+                capture: frame_value
+)YAML";
+
   // ─── 1. Canonical emit single-index vs legacy v1 equivalence ──────────────
   {
     const std::string legacy = base_yaml_head + R"YAML(
           - aggregate: frame_load
             extract_index: 0
             name: frame_index
+)YAML" + output_emit + R"YAML(
     match_mode: match_all
     required: false
 )YAML";
@@ -118,6 +143,7 @@ steps:
               indices: [0]
               result_type:
                 component_type: I32
+)YAML" + output_emit + R"YAML(
     match_mode: match_all
     required: false
 )YAML";
@@ -135,6 +161,10 @@ steps:
       if (canonical_run) canonical_matches = RuleMatches(*canonical_run);
       Check(legacy_matches > 0, "legacy recipe has matches");
       Check(canonical_matches == legacy_matches, "canonical match count equals legacy");
+      if (legacy_run && canonical_run) {
+        Check(canonical_run->output_bytes == legacy_run->output_bytes, "canonical and legacy Execute output are identical");
+        Check(canonical_run->output_bytes != input_bytes, "extraction replacement changes shader output");
+      }
     }
   }
 

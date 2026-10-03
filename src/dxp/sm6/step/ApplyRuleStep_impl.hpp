@@ -2,8 +2,8 @@
 #include <cstdint>
 #include <dxp/sm6/ResourceTypes.hpp>
 #include <dxp/sm6/step/ApplyRuleStep.hpp>
-#include <glaze/glaze.hpp>
 #include <expected>
+#include <glaze/glaze.hpp>
 #include <span>
 #include <string>
 #include <unordered_map>
@@ -87,8 +87,8 @@ struct OperandPatternData {
   std::string capture;
   std::string match_capture;
   std::unique_ptr<MatchInstructionPatternData> instruction;
-  std::vector<int64_t> constant_int_values;
-  std::vector<double> constant_float_values;
+  std::vector<std::variant<std::string, int64_t>> constant_int_values;
+  std::vector<std::variant<std::string, double>> constant_float_values;
   std::optional<dxp::ComponentType> component_type;  ///< Optional: restrict constant matching to this type.
   std::optional<ResourceClass> resource_class;
   std::optional<ResourceKind> resource_kind;
@@ -108,8 +108,8 @@ struct EmitOperandPatternData {
   std::string capture;
   std::string handle;
   std::unique_ptr<MatchInstructionPatternData> instruction;
-  std::vector<int64_t> constant_int_values;
-  std::vector<double> constant_float_values;
+  std::vector<std::variant<std::string, int64_t>> constant_int_values;
+  std::vector<std::variant<std::string, double>> constant_float_values;
   std::optional<dxp::ComponentType> component_type;  ///< Optional: emit the constant with this type.
 
   [[nodiscard]] auto Compile() const -> std::expected<EmitOperand, std::string>;
@@ -233,30 +233,3 @@ struct meta<dxp::sm6::step::EmitPatternData> {
 };
 
 }  // namespace glz
-
-namespace llvm {
-class Type;
-class Value;
-class ConstantInt;
-}  // namespace llvm
-
-namespace dxp::sm6::step::detail {
-
-/// @brief Type-guard check for extractvalue aggregates/results (v1 minimal set).
-///
-/// component_type constrains scalar values or vector element types only;
-/// array/struct guards are structural (kind/struct_name).
-bool MatchesTypePattern(llvm::Type* type, const ValueTypePattern& pattern);
-
-/// @brief Walks an extractvalue index path against an aggregate LLVM type.
-/// Reports the failing depth/type for out-of-range, opaque, and non-aggregate paths.
-std::expected<llvm::Type*, std::string> ResolveExtractType(llvm::Type* aggregate_type, std::span<const uint32_t> indices);
-
-/// @brief Full-path extractvalue match: exact index path plus optional guards.
-bool MatchesExtractValue(llvm::Value* value, const ExtractValuePattern& pattern);
-
-/// @brief Interprets a captured ConstantInt as an unsigned extract index
-/// (signless bit pattern, uint32_t range).
-std::expected<uint32_t, std::string> ConstantIntToExtractIndex(const std::string& capture_name, size_t depth, llvm::ConstantInt* ci);
-
-}  // namespace dxp::sm6::step::detail

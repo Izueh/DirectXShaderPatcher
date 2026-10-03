@@ -85,9 +85,12 @@ struct OperandPattern {
   std::string capture_name;
   std::string match_capture;
   std::optional<xyz::indirect<InstructionPattern>> instruction;  ///< Deep-copying, uniquely-owning nested instruction (std::indirect-style).
-  std::vector<int64_t> constant_int_values;
-  std::vector<double> constant_float_values;
-  std::optional<dxp::ComponentType> component_type;  ///< Optional: restrict constant matching to this type.
+  /// @brief Integer literals or env names; one entry broadcasts to the operand width.
+  std::vector<std::variant<std::string, int64_t>> constant_int_values;
+  /// @brief Floating-point literals or env names, converted at operand precision.
+  std::vector<std::variant<std::string, double>> constant_float_values;
+  /// @brief Constant type guard; unsigned types select unsigned literal comparisons.
+  std::optional<dxp::ComponentType> component_type;
   std::optional<ResourceClass> resource_class;
   std::optional<ResourceKind> resource_kind;
   std::optional<std::string> resource_name;
@@ -129,9 +132,12 @@ struct EmitOperand {
   OperandKind kind = OperandKind::Call;
 
   std::optional<std::string> capture;
-  std::vector<int64_t> constant_int_values;
-  std::vector<double> constant_float_values;
-  std::optional<dxp::ComponentType> component_type;  ///< Optional: emit the constant with this type (default i32 / f32).
+  /// @brief Integer literals or env names; one entry broadcasts to the operand width.
+  std::vector<std::variant<std::string, int64_t>> constant_int_values;
+  /// @brief Floating-point literals or env names, converted at operand precision.
+  std::vector<std::variant<std::string, double>> constant_float_values;
+  /// @brief Explicit operand type; required for constant and undefined cast sources.
+  std::optional<dxp::ComponentType> component_type;
   std::string handle;
   std::optional<xyz::indirect<InstructionPattern>> instruction;  ///< Deep-copying, uniquely-owning nested instruction (std::indirect-style).
 
@@ -147,6 +153,7 @@ struct EmitPattern {
   std::optional<std::string> cast_opcode;
   std::string capture_name;
   std::vector<EmitOperand> operands;
+  /// @brief Scalar result/overload type; supports I1, 8/16/32/64-bit integers and F16/F32/F64.
   std::optional<dxp::ComponentType> result_component_type;
   /// Optional extractvalue emission (mutually exclusive with opcode/capture/operands).
   std::optional<EmitExtractValue> extract;

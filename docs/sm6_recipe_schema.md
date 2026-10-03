@@ -245,6 +245,9 @@ in the generated JSON. Key semantics:
 - `resource_*` fields describe resource handles; `register_index`/`space` match
   the binding.
 - `export_as` publishes matched resource/immediate data into the patch report.
+  Numeric scalar/vector constants export their shader bits, including broadcast
+  elements, data vectors and aggregate-zero constants. An explicit constant
+  `component_type` is retained in the export.
 
 ### Emit instruction pattern
 
@@ -252,12 +255,63 @@ Fields: `opcode`, `name`, `operands`, `result_component_type` (result
 `ComponentType`), `cast_opcode`, `aggregate`/`extract_index`,
 `capture`/`replace_captured`.
 
+Numeric `result_component_type` values are `I1`, `I8`/`U8`, `I16`/`U16`,
+`I32`/`U32`, `I64`/`U64`, and `F16`/`F32`/`F64`. Unsupported component types
+produce execution errors; opcode and shader-model restrictions still apply.
+
 ### Emit operand pattern
 
 Fields: `index`, `kind` (`call`/`constant`/`resource`/`undefined`), `capture`,
 `handle`, `instruction`, `constant_int_values`/`constant_float_values`,
-`component_type`. `component_type` controls the emitted constant's type
-(default: signature-derived; float shorthand defaults to `F32`).
+`component_type`. An explicit constant type must agree with the instruction's
+operand type; otherwise the type is signature-derived.
+
+For `kind: constant`, entries in `constant_int_values` and
+`constant_float_values` may be numeric literals or variable names, following
+SM5's typed immediate array syntax. Variable names read recipe `env` values
+or per-call `PatchOptions` overrides at execution time, for both match and emit
+operands. `capture` retains its SSA capture meaning and does not read env.
+The instruction operand type determines integer/float width. For example:
+
+```yaml
+env:
+  temporal_slices: 32
+  dither_strength: 0.5
+# Integer instruction operand:
+# {index: 1, kind: constant, constant_int_values: [temporal_slices]}
+# Floating-point instruction operand:
+# {index: 1, kind: constant, constant_float_values: [dither_strength]}
+# Mixed vector entries:
+# {index: 1, kind: constant, constant_float_values: [0.25, dither_strength]}
+```
+
+Integer env values may feed float arrays. Floating-point env values feeding
+integer arrays must be finite, integral and representable at the requested width;
+booleans convert to 0/1. Missing variables and invalid conversions produce execution
+errors, including during matching. Integer arrays require integer operands and
+float arrays require floating-point operands. Explicit emit `component_type`
+must agree with the operand type; match `component_type` remains a type guard.
+Constant and undefined cast sources must specify `component_type` independently
+of the result type, for both `opcode` and `cast_opcode`. Captured cast sources
+retain their own type. Missing or unsupported source types produce execution errors.
+One array entry broadcasts to the full vector width; multiple entries must match
+that width. Scalar operands require one entry. In matching, incompatible candidate
+shapes are skipped; emit shape mismatches remain execution errors.
+`constant_int_values` takes precedence if both arrays are populated. Emit literals
+retain LLVM's existing conversion behavior.
+Integer match literals use signed comparisons by default. Explicit `U8`, `U16`,
+`U32` and `U64` guards use unsigned comparisons and require nonnegative literals;
+`i1` literals match only 0 or 1. Float comparisons use operand precision. Env
+references convert to the matched operand's type before comparison.
+
+These arrays describe scalar/vector instruction constants, not aggregate array,
+struct or pointer constants. Direct integer literals are limited to `int64_t`;
+full-range `U64` values can be supplied through env variables.
+
+The C++ `OperandPattern` and `EmitOperand` array member types are now
+`std::vector<std::variant<std::string, int64_t>>` and
+`std::vector<std::variant<std::string, double>>`. Callers assigning an existing
+numeric `std::vector` must copy its elements into the variant array.
 
 <details>
 <summary>Example</summary>

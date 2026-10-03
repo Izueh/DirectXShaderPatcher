@@ -283,10 +283,10 @@
                                                 ]
                                              },
                                              "constant_float_values": {
-                                                "$ref": "#/$defs/std::vector<double>"
+                                                "$ref": "#/$defs/std::vector<std::variant<std::string,double>>"
                                              },
                                              "constant_int_values": {
-                                                "$ref": "#/$defs/std::vector<int64_t>"
+                                                "$ref": "#/$defs/std::vector<std::variant<std::string,int64_t>>"
                                              },
                                              "handle": {
                                                 "type": "string"
@@ -831,10 +831,10 @@
                         ]
                      },
                      "constant_float_values": {
-                        "$ref": "#/$defs/std::vector<double>"
+                        "$ref": "#/$defs/std::vector<std::variant<std::string,double>>"
                      },
                      "constant_int_values": {
-                        "$ref": "#/$defs/std::vector<int64_t>"
+                        "$ref": "#/$defs/std::vector<std::variant<std::string,int64_t>>"
                      },
                      "export_as": {
                         "type": [
@@ -1096,6 +1096,24 @@
             }
          ]
       },
+      "std::variant<std::string,double>": {
+         "type": [
+            "number",
+            "string"
+         ],
+         "oneOf": [
+            {
+               "type": "string",
+               "title": "std::string"
+            },
+            {
+               "type": "number",
+               "title": "double",
+               "minimum": -1.7976931348623157E308,
+               "maximum": 1.7976931348623157E308
+            }
+         ]
+      },
       "std::variant<std::string,float>": {
          "type": [
             "number",
@@ -1111,6 +1129,24 @@
                "title": "float",
                "minimum": -3.4028234663852886E38,
                "maximum": 3.4028234663852886E38
+            }
+         ]
+      },
+      "std::variant<std::string,int64_t>": {
+         "type": [
+            "number",
+            "string"
+         ],
+         "oneOf": [
+            {
+               "type": "string",
+               "title": "std::string"
+            },
+            {
+               "type": "integer",
+               "title": "int64_t",
+               "minimum": -9.223372036854776E18,
+               "maximum": 9.223372036854776E18
             }
          ]
       },
@@ -1249,6 +1285,18 @@
          "type": "array",
          "items": {
             "type": "string"
+         }
+      },
+      "std::vector<std::variant<std::string,double>>": {
+         "type": "array",
+         "items": {
+            "$ref": "#/$defs/std::variant<std::string,double>"
+         }
+      },
+      "std::vector<std::variant<std::string,int64_t>>": {
+         "type": "array",
+         "items": {
+            "$ref": "#/$defs/std::variant<std::string,int64_t>"
          }
       },
       "std::vector<uint32_t>": {

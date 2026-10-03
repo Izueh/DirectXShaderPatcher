@@ -4,7 +4,10 @@
 #include <llvm/ADT/SmallString.h>
 #include <llvm/IR/Dominators.h>
 #include <llvm/IR/InstrTypes.h>
+#include <cmath>
 #include <format>
+#include <type_traits>
+#include <variant>
 #include "dxc/DxilValidation/DxilValidation.h"
 #include "dxp/Condition_impl.hpp"
 #include "dxp/ExportTypes.hpp"
@@ -59,6 +62,8 @@
 
 namespace dxp::sm6::step {
 
+namespace {
+
 struct MatchResult {
   llvm::CallInst* rootCall = nullptr;
   std::unordered_map<std::string, llvm::Value*> captures;
@@ -82,15 +87,22 @@ struct MatchResult {
   }
 };
 
-// Forward declarations for namespace-scope helpers defined after the matcher
-// (the matcher calls them from within the anonymous namespace).
+struct MatchConstantContext {
+  const sm6::ExecutionContext* execution = nullptr;
+  std::string error;
+};
+
+// Forward declarations for helpers defined after the matcher.
 unsigned CollectSequenceMatches(llvm::Function& function,
                                 const std::vector<InstructionPattern>& patterns,
                                 std::vector<MatchResult>& results,
                                 hlsl::DxilModule* dxil_module,
-                                const std::unordered_map<std::string, llvm::Value*>* global_captures);
+                                const std::unordered_map<std::string, llvm::Value*>* global_captures, MatchConstantContext& constant_context);
 
-namespace {
+bool MatchesTypePattern(llvm::Type* type, const ValueTypePattern& pattern);
+std::expected<llvm::Type*, std::string> ResolveExtractType(llvm::Type* aggregate_type, std::span<const uint32_t> indices);
+bool MatchesExtractValue(llvm::Value* value, const ExtractValuePattern& pattern);
+std::expected<uint32_t, std::string> ConstantIntToExtractIndex(const std::string& capture_name, size_t depth, llvm::ConstantInt* ci);
 
 std::string PrintType(llvm::Type* type) {
   if (type == nullptr) return "null";
@@ -160,6 +172,30 @@ llvm::Type* LlvmTypeFor(dxp::ComponentType type, llvm::LLVMContext& context) {
   }
 }
 
+auto TryGetImmediateValue(llvm::Value* value, std::optional<dxp::ComponentType> component_type,
+                          dxp::ImmediateValue& immediate) -> bool {
+  auto* constant = llvm::dyn_cast_or_null<llvm::Constant>(value);
+  if (constant == nullptr) return false;
+  const bool vector = constant->getType()->isVectorTy();
+  const unsigned count = vector ? constant->getType()->getVectorNumElements() : 1;
+  immediate.type = component_type.value_or(ComponentTypeOf(constant->getType()->getScalarType()));
+  immediate.raw_values.reserve(count);
+  for (unsigned i = 0; i < count; ++i) {
+    auto* element = vector ? constant->getAggregateElement(i) : constant;
+    if (auto* integer = llvm::dyn_cast_or_null<llvm::ConstantInt>(element)) {
+      if (integer->getBitWidth() > std::numeric_limits<uint64_t>::digits) return false;
+      immediate.raw_values.push_back(integer->getZExtValue());
+    } else if (auto* floating = llvm::dyn_cast_or_null<llvm::ConstantFP>(element)) {
+      const auto bits = floating->getValueAPF().bitcastToAPInt();
+      if (bits.getBitWidth() > std::numeric_limits<uint64_t>::digits) return false;
+      immediate.raw_values.push_back(bits.getZExtValue());
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+
 std::pair<std::optional<hlsl::OP::OpCode>, std::optional<unsigned>>
 ResolveOpCode(const std::string& opcode) {
   std::optional<hlsl::OP::OpCode> dxil_op_code;
@@ -190,16 +226,7 @@ auto GetEmitValueScalarTypeFromPattern(const EmitPattern& pattern, llvm::LLVMCon
   if (!pattern.result_component_type.has_value()) {
     return fallback_type;
   }
-  auto comp = static_cast<hlsl::DXIL::ComponentType>(*pattern.result_component_type);
-  switch (comp) {
-    case hlsl::DXIL::ComponentType::F32:
-      return llvm::Type::getFloatTy(context);
-    case hlsl::DXIL::ComponentType::U32:
-    case hlsl::DXIL::ComponentType::I32:
-      return llvm::Type::getInt32Ty(context);
-    default:
-      return nullptr;
-  }
+  return LlvmTypeFor(*pattern.result_component_type, context);
 }
 
 /// @brief Formats and stores an emit error; always returns nullptr so callers can
@@ -219,14 +246,11 @@ auto IsDxOpCall(const llvm::Instruction& instruction, hlsl::OP::OpCode op_code) 
   return hlsl::OP::GetDxilOpFuncCallInst(&instruction) == op_code;
 }
 
-auto IsConstantIntValue(const llvm::Value* value, int64_t expected_value) -> bool {
-  const auto* constant_int = llvm::dyn_cast<llvm::ConstantInt>(value);
-  return constant_int != nullptr && constant_int->getSExtValue() == expected_value;
-}
-
-auto IsConstantFloatValue(const llvm::Value* value, double expected_value) -> bool {
-  const auto* constant_fp = llvm::dyn_cast<llvm::ConstantFP>(value);
-  return constant_fp != nullptr && constant_fp->isExactlyValue(expected_value);
+auto IsConstantIntValue(const llvm::ConstantInt& value, int64_t expected_value,
+                        std::optional<dxp::ComponentType> component_type) -> bool {
+  const bool unsigned_value = value.getBitWidth() == 1 || component_type == dxp::ComponentType::U8 || component_type == dxp::ComponentType::U16 || component_type == dxp::ComponentType::U32 || component_type == dxp::ComponentType::U64;
+  if (unsigned_value) return expected_value >= 0 && value.getZExtValue() == static_cast<uint64_t>(expected_value);
+  return value.getSExtValue() == expected_value;
 }
 
 auto TryGetConstantStructIntField(const llvm::Value* value, unsigned field_index, uint64_t& field_value) -> bool {
@@ -390,18 +414,95 @@ auto TryResolveResourceFromHandle(llvm::Value* value, hlsl::DxilModule& dxil_mod
   return resource != nullptr;
 }
 
+template <typename Literal>
+std::expected<llvm::Constant*, std::string> ResolveConstantArray(
+    const std::vector<std::variant<std::string, Literal>>& entries,
+    llvm::Type* type, const sm6::ExecutionContext* ctx) {
+  if (type == nullptr) return std::unexpected("constant requires an operand type");
+  auto* element_type = type->getScalarType();
+  constexpr bool integer_array = std::is_same_v<Literal, int64_t>;
+  if (integer_array ? !element_type->isIntegerTy() : !element_type->isFloatingPointTy()) {
+    return std::unexpected(std::string(integer_array ? "integer" : "floating-point") + " constant array is incompatible with " + PrintType(type));
+  }
+  const size_t width = type->isVectorTy() ? type->getVectorNumElements() : 1;
+  if (entries.size() != 1 && entries.size() != width) {
+    return std::unexpected("constant array length must be one or match operand width " + std::to_string(width));
+  }
+  if (entries.empty()) return std::unexpected("constant array requires at least one value");
+  std::vector<llvm::Constant*> values;
+  values.reserve(width);
+  for (const auto& entry : entries) {
+    if (const auto* literal = std::get_if<Literal>(&entry)) {
+      if constexpr (integer_array) {
+        values.push_back(llvm::ConstantInt::get(element_type, *literal));
+      } else {
+        values.push_back(llvm::ConstantFP::get(element_type, *literal));
+      }
+      continue;
+    }
+    const auto& name = std::get<std::string>(entry);
+    const auto* variable = ctx != nullptr ? ctx->FindVariable(name) : nullptr;
+    if (variable == nullptr) return std::unexpected("unknown environment constant '" + name + "'");
+    auto scalar = std::visit([&](auto value) -> std::expected<llvm::Constant*, std::string> {
+      if constexpr (integer_array) {
+        const unsigned bits = element_type->getIntegerBitWidth();
+        bool representable = true;
+        if constexpr (std::is_floating_point_v<decltype(value)>) {
+          const auto number = static_cast<long double>(value);
+          const auto exponent = static_cast<int>(bits);
+          representable = std::isfinite(number) && std::trunc(number) == number && number >= -std::ldexp(1.0L, exponent - 1) && number < std::ldexp(1.0L, exponent);
+        } else if (bits < std::numeric_limits<uint64_t>::digits) {
+          if constexpr (std::is_signed_v<decltype(value)>) {
+            if (value < 0) {
+              representable = static_cast<int64_t>(value) >= -(int64_t{1} << (bits - 1));
+            } else {
+              representable = static_cast<uint64_t>(value) < (uint64_t{1} << bits);
+            }
+          } else {
+            representable = static_cast<uint64_t>(value) < (uint64_t{1} << bits);
+          }
+        }
+        if (!representable) return std::unexpected("environment constant '" + name + "' is not an integral value representable by " + PrintType(element_type));
+        uint64_t raw = 0;
+        if constexpr (std::is_floating_point_v<decltype(value)>) {
+          raw = value < 0 ? static_cast<uint64_t>(static_cast<int64_t>(value)) : static_cast<uint64_t>(value);
+        } else {
+          raw = static_cast<uint64_t>(value);
+        }
+        return llvm::ConstantInt::get(element_type, raw);
+      } else {
+        return llvm::ConstantFP::get(element_type, static_cast<double>(value));
+      }
+    },
+                             *variable);
+    if (!scalar) return std::unexpected(scalar.error());
+    values.push_back(*scalar);
+  }
+  if (!type->isVectorTy()) return values.front();
+  if (values.size() == 1) values.resize(width, values.front());
+  return llvm::ConstantVector::get(values);
+}
+
+template <typename Operand>
+std::expected<llvm::Constant*, std::string> ResolveConstantValues(
+    const Operand& operand, llvm::Type* type, const sm6::ExecutionContext* ctx) {
+  if (!operand.constant_int_values.empty()) return ResolveConstantArray(operand.constant_int_values, type, ctx);
+  if (!operand.constant_float_values.empty()) return ResolveConstantArray(operand.constant_float_values, type, ctx);
+  return std::unexpected("kind 'constant' requires 'constant_int_values' or 'constant_float_values'");
+}
+
 auto MatchOperandPattern(llvm::Value* value, const OperandPattern& pattern,
                          std::unordered_map<std::string, llvm::Value*>& captures,
                          hlsl::DxilModule* dxil_module,
-                         const std::unordered_map<std::string, llvm::Value*>* global_captures) -> bool;
+                         const std::unordered_map<std::string, llvm::Value*>* global_captures, MatchConstantContext& constant_context) -> bool;
 
-
-
+// Nested instruction patterns require recursive operand matching.
+// NOLINTNEXTLINE(misc-no-recursion)
 auto CheckMatchInstructionPattern(llvm::Value* value, const InstructionPattern& pattern,
                                   std::unordered_map<std::string, llvm::Value*>& captures,
                                   hlsl::DxilModule* dxil_module,
-                                  const std::unordered_map<std::string, llvm::Value*>* global_captures) -> bool {
-  if (value == nullptr) return false;
+                                  const std::unordered_map<std::string, llvm::Value*>* global_captures, MatchConstantContext& constant_context) -> bool {
+  if (value == nullptr || !constant_context.error.empty()) return false;
   const llvm::CallInst* call = llvm::dyn_cast<llvm::CallInst>(value);
   if (call != nullptr) {
     if (pattern.callee_name.has_value() && !IsDxOpCall(*call, *pattern.callee_name)) return false;
@@ -419,10 +520,10 @@ auto CheckMatchInstructionPattern(llvm::Value* value, const InstructionPattern& 
       if (dxil_op.has_value()) return false;
     }
   }
-  if (pattern.extract.has_value() && !detail::MatchesExtractValue(value, *pattern.extract)) return false;
+  if (pattern.extract.has_value() && !MatchesExtractValue(value, *pattern.extract)) return false;
   if (call != nullptr) {
     for (const OperandPattern& operand_pattern : pattern.operand_patterns) {
-      if (operand_pattern.operand_index >= call->getNumArgOperands() || !MatchOperandPattern(call->getArgOperand(operand_pattern.operand_index), operand_pattern, captures, dxil_module, global_captures)) {
+      if (operand_pattern.operand_index >= call->getNumArgOperands() || !MatchOperandPattern(call->getArgOperand(operand_pattern.operand_index), operand_pattern, captures, dxil_module, global_captures, constant_context)) {
         return false;
       }
     }
@@ -430,7 +531,7 @@ auto CheckMatchInstructionPattern(llvm::Value* value, const InstructionPattern& 
     const auto* instruction = llvm::dyn_cast<llvm::Instruction>(value);
     if (instruction != nullptr) {
       for (const OperandPattern& operand_pattern : pattern.operand_patterns) {
-        if (operand_pattern.operand_index >= instruction->getNumOperands() || !MatchOperandPattern(instruction->getOperand(operand_pattern.operand_index), operand_pattern, captures, dxil_module, global_captures)) {
+        if (operand_pattern.operand_index >= instruction->getNumOperands() || !MatchOperandPattern(instruction->getOperand(operand_pattern.operand_index), operand_pattern, captures, dxil_module, global_captures, constant_context)) {
           return false;
         }
       }
@@ -443,8 +544,8 @@ auto CheckMatchInstructionPattern(llvm::Value* value, const InstructionPattern& 
 auto MatchOperandPattern(llvm::Value* value, const OperandPattern& pattern,
                          std::unordered_map<std::string, llvm::Value*>& captures,
                          hlsl::DxilModule* dxil_module,
-                         const std::unordered_map<std::string, llvm::Value*>* global_captures) -> bool {
-  if (value == nullptr) return false;
+                         const std::unordered_map<std::string, llvm::Value*>* global_captures, MatchConstantContext& constant_context) -> bool {
+  if (value == nullptr || !constant_context.error.empty()) return false;
   if (!pattern.capture_name.empty()) {
     captures[pattern.capture_name] = value;
   }
@@ -461,18 +562,32 @@ auto MatchOperandPattern(llvm::Value* value, const OperandPattern& pattern,
           auto* want = LlvmTypeFor(*pattern.component_type, value->getContext());
           if (want == nullptr || value->getType()->getScalarType() != want) return false;
         }
-        if (!pattern.constant_int_values.empty()) {
-          if (!IsConstantIntValue(value, pattern.constant_int_values[0])) return false;
-        } else if (!pattern.constant_float_values.empty()) {
-          if (pattern.constant_float_values.size() == 1) {
-            const auto* cf = llvm::dyn_cast<llvm::ConstantFP>(value);
-            if ((cf == nullptr) || !IsConstantFloatValue(cf, pattern.constant_float_values[0])) return false;
-          } else {
-            const auto* cv = llvm::dyn_cast<llvm::ConstantVector>(value);
-            if ((cv == nullptr) || cv->getNumOperands() != pattern.constant_float_values.size()) return false;
-            for (size_t i = 0; i < pattern.constant_float_values.size(); i++) {
-              const auto* ce = llvm::dyn_cast<llvm::ConstantFP>(cv->getOperand(i));
-              if ((ce == nullptr) || !IsConstantFloatValue(ce, pattern.constant_float_values[i])) return false;
+        if (!pattern.constant_int_values.empty() || !pattern.constant_float_values.empty()) {
+          auto* element_type = value->getType()->getScalarType();
+          const bool integer_array = !pattern.constant_int_values.empty();
+          if (integer_array ? !element_type->isIntegerTy() : !element_type->isFloatingPointTy()) return false;
+          const unsigned count = value->getType()->isVectorTy() ? value->getType()->getVectorNumElements() : 1;
+          const size_t entries = integer_array ? pattern.constant_int_values.size() : pattern.constant_float_values.size();
+          if (entries != 1 && entries != count) return false;
+          auto expected = ResolveConstantValues(pattern, value->getType(), constant_context.execution);
+          if (!expected) {
+            constant_context.error = "match operand " + std::to_string(pattern.operand_index) + ": " + expected.error();
+            return false;
+          }
+          // LLVM uniquifies constants, including aggregate-zero and data vectors.
+          if (*expected != value) return false;
+          // Integer literals also enforce signedness after conversion.
+          auto* constant = llvm::cast<llvm::Constant>(value);
+          for (unsigned i = 0; i < count; ++i) {
+            auto* element = count == 1 && !value->getType()->isVectorTy() ? constant : constant->getAggregateElement(i);
+            if (integer_array) {
+              const auto& entry = pattern.constant_int_values[pattern.constant_int_values.size() == 1 ? 0 : i];
+              if (const auto* literal = std::get_if<int64_t>(&entry);
+                  literal != nullptr && !IsConstantIntValue(*llvm::cast<llvm::ConstantInt>(element), *literal, pattern.component_type)) return false;
+            } else {
+              const auto& entry = pattern.constant_float_values[pattern.constant_float_values.size() == 1 ? 0 : i];
+              if (const auto* literal = std::get_if<double>(&entry);
+                  literal != nullptr && !llvm::cast<llvm::ConstantFP>(element)->isExactlyValue(*literal)) return false;
             }
           }
         }
@@ -480,7 +595,7 @@ auto MatchOperandPattern(llvm::Value* value, const OperandPattern& pattern,
       }
       case OperandKind::Call: {
         if (pattern.instruction) {
-          if (!CheckMatchInstructionPattern(value, **pattern.instruction, captures, dxil_module, global_captures)) {
+          if (!CheckMatchInstructionPattern(value, **pattern.instruction, captures, dxil_module, global_captures, constant_context)) {
             return false;
           }
         }
@@ -516,7 +631,7 @@ auto MatchOperandPattern(llvm::Value* value, const OperandPattern& pattern,
 auto MatchInstructionPattern(llvm::CallInst* call, const InstructionPattern& pattern,
                              std::unordered_map<std::string, llvm::Value*>& captures,
                              hlsl::DxilModule* dxil_module,
-                             const std::unordered_map<std::string, llvm::Value*>* global_captures) -> bool {
+                             const std::unordered_map<std::string, llvm::Value*>* global_captures, MatchConstantContext& constant_context) -> bool {
   if (call == nullptr) return false;
   if (pattern.callee_name.has_value() && !IsDxOpCall(*call, *pattern.callee_name)) return false;
   if (pattern.opcode.has_value() && !pattern.opcode->empty()) {
@@ -527,7 +642,7 @@ auto MatchInstructionPattern(llvm::CallInst* call, const InstructionPattern& pat
   CaptureMatchedValue(pattern.capture_name, call, captures);
   if (!MatchesCapturedValue(pattern.match_capture, call, captures, global_captures)) return false;
   for (const OperandPattern& operand_pattern : pattern.operand_patterns) {
-    if (operand_pattern.operand_index >= call->getNumArgOperands() || !MatchOperandPattern(call->getArgOperand(operand_pattern.operand_index), operand_pattern, captures, dxil_module, global_captures)) {
+    if (operand_pattern.operand_index >= call->getNumArgOperands() || !MatchOperandPattern(call->getArgOperand(operand_pattern.operand_index), operand_pattern, captures, dxil_module, global_captures, constant_context)) {
       return false;
     }
   }
@@ -537,7 +652,7 @@ auto MatchInstructionPattern(llvm::CallInst* call, const InstructionPattern& pat
 auto MatchInstructionPattern(llvm::Instruction* instr, const InstructionPattern& pattern,
                              std::unordered_map<std::string, llvm::Value*>& captures,
                              hlsl::DxilModule* dxil_module,
-                             const std::unordered_map<std::string, llvm::Value*>* global_captures) -> bool {
+                             const std::unordered_map<std::string, llvm::Value*>* global_captures, MatchConstantContext& constant_context) -> bool {
   if (instr == nullptr) return false;
   if (pattern.callee_name.has_value()) return false;
   if (pattern.opcode.has_value() && !pattern.opcode->empty()) {
@@ -547,11 +662,11 @@ auto MatchInstructionPattern(llvm::Instruction* instr, const InstructionPattern&
     if (dxil_op.has_value()) return false;
     if (llvm_op.has_value() && instr->getOpcode() != *llvm_op) return false;
   }
-  if (pattern.extract.has_value() && !detail::MatchesExtractValue(instr, *pattern.extract)) return false;
+  if (pattern.extract.has_value() && !MatchesExtractValue(instr, *pattern.extract)) return false;
   CaptureMatchedValue(pattern.capture_name, instr, captures);
   if (!MatchesCapturedValue(pattern.match_capture, instr, captures, global_captures)) return false;
   for (const OperandPattern& operand_pattern : pattern.operand_patterns) {
-    if (operand_pattern.operand_index >= instr->getNumOperands() || !MatchOperandPattern(instr->getOperand(operand_pattern.operand_index), operand_pattern, captures, dxil_module, global_captures)) {
+    if (operand_pattern.operand_index >= instr->getNumOperands() || !MatchOperandPattern(instr->getOperand(operand_pattern.operand_index), operand_pattern, captures, dxil_module, global_captures, constant_context)) {
       return false;
     }
   }
@@ -602,6 +717,7 @@ std::expected<llvm::Value*, std::string> ResolveEmitOperand(const EmitOperand& o
         // Kind-less DXIL operands with no capture/instruction conventionally mean
         // an undefined value (e.g. unused textureLoad offsets) � any other
         // intentional operand kind must be stated explicitly.
+        if (arg_type == nullptr) return EmitError(emit_name, "undefined operand requires an operand type");
         return llvm::UndefValue::get(arg_type);
       }
       if (arg_type != nullptr && value->getType() != arg_type) {
@@ -610,65 +726,13 @@ std::expected<llvm::Value*, std::string> ResolveEmitOperand(const EmitOperand& o
       return value;
     }
     case OperandKind::Constant: {
-      if (!operand.constant_int_values.empty() || !operand.constant_float_values.empty()) {
-        const bool arg_is_vector = arg_type->isVectorTy();
-        llvm::Type* elem_type = arg_is_vector ? arg_type->getVectorElementType() : arg_type;
-        if (operand.component_type.has_value()) {
-          if (auto* t = LlvmTypeFor(*operand.component_type, module.getContext()); t != nullptr) elem_type = t;
-        }
-        if (!operand.constant_int_values.empty()) {
-          if (arg_is_vector) {
-            std::vector<llvm::Constant*> elems(operand.constant_int_values.size());
-            for (size_t i = 0; i < operand.constant_int_values.size(); i++) {
-              elems[i] = llvm::ConstantInt::get(elem_type, operand.constant_int_values[i]);
-            }
-            if (elems.size() == 1) {
-              for (unsigned j = 0; j < arg_type->getVectorNumElements(); j++) elems.push_back(elems[0]);
-            }
-            return llvm::ConstantVector::get(llvm::ArrayRef<llvm::Constant*>(elems));
-          }
-          if (!elem_type->isIntegerTy()) {
-            return EmitError(emit_name, "operand " + std::to_string(operand.operand_index) + ": integer constant but argument type is " + type_name(arg_type));
-          }
-          return llvm::ConstantInt::get(elem_type, operand.constant_int_values[0]);
-        }
-        // Float constants: honor a float element type (explicit or signature),
-        // otherwise default to F32 (previously always created F64).
-        if (!elem_type->isHalfTy() && !elem_type->isFloatTy() && !elem_type->isDoubleTy()) {
-          elem_type = llvm::Type::getFloatTy(module.getContext());
-        }
-        const auto make_float = [&](double value) -> llvm::Constant* {
-          if (elem_type->isHalfTy()) {
-            return llvm::ConstantFP::get(module.getContext(), llvm::APFloat(llvm::APFloat::IEEEhalf, value));
-          }
-          if (elem_type->isFloatTy()) {
-            return llvm::ConstantFP::get(module.getContext(), llvm::APFloat(static_cast<float>(value)));
-          }
-          return llvm::ConstantFP::get(module.getContext(), llvm::APFloat(value));
-        };
-        if (arg_is_vector) {
-          std::vector<llvm::Constant*> elems(operand.constant_float_values.size());
-          for (size_t i = 0; i < operand.constant_float_values.size(); i++) {
-            elems[i] = make_float(operand.constant_float_values[i]);
-          }
-          if (elems.size() == 1) {
-            for (unsigned j = 0; j < arg_type->getVectorNumElements(); j++) elems.push_back(elems[0]);
-          }
-          return llvm::ConstantVector::get(llvm::ArrayRef<llvm::Constant*>(elems));
-        }
-        return make_float(operand.constant_float_values[0]);
+      if (arg_type == nullptr) return EmitError(emit_name, "constant requires an operand type");
+      if (operand.component_type.has_value() && LlvmTypeFor(*operand.component_type, module.getContext()) != arg_type->getScalarType()) {
+        return EmitError(emit_name, "operand " + std::to_string(operand.operand_index) + ": component_type disagrees with operand type " + type_name(arg_type));
       }
-      if (ctx != nullptr && operand.capture.has_value()) {
-        auto it = ctx->variables.find(*operand.capture);
-        if (it != ctx->variables.end()) {
-          const std::any& val = it->second;
-          if (const auto* ip = std::any_cast<int64_t>(&val)) return builder.getInt64(*ip);
-          if (const auto* fp = std::any_cast<double>(&val)) return llvm::ConstantFP::get(module.getContext(), llvm::APFloat(*fp));
-          if (const auto* ip32 = std::any_cast<int32_t>(&val)) return builder.getInt32(*ip32);
-          if (const auto* fp32 = std::any_cast<float>(&val)) return llvm::ConstantFP::get(module.getContext(), llvm::APFloat(static_cast<double>(*fp32)));
-        }
-      }
-      return EmitError(emit_name, "operand " + std::to_string(operand.operand_index) + ": kind 'constant' requires 'constant_int_values', 'constant_float_values', or a resolvable variable capture");
+      auto result = ResolveConstantValues(operand, arg_type, ctx);
+      if (!result) return EmitError(emit_name, "operand " + std::to_string(operand.operand_index) + ": " + result.error());
+      return *result;
     }
     case OperandKind::Resource: {
       if (operand.handle.empty()) {
@@ -697,6 +761,7 @@ std::expected<llvm::Value*, std::string> ResolveEmitOperand(const EmitOperand& o
       return EmitError(emit_name, "operand " + std::to_string(operand.operand_index) + ": resource handle '" + operand.handle + "' was not declared by any add_resource step and not captured by this match");
     }
     case OperandKind::Undefined:
+      if (arg_type == nullptr) return EmitError(emit_name, "undefined operand requires an operand type");
       return llvm::UndefValue::get(arg_type);
   }
   return EmitError(emit_name, "operand " + std::to_string(operand.operand_index) + ": unknown operand kind");
@@ -719,7 +784,7 @@ std::expected<llvm::Value*, std::string> ResolveEmitPattern(const EmitPattern& p
     llvm::Value* aggregate = ResolveCapture(match, ctx, ex.aggregate);
     if (aggregate == nullptr) return EmitError(emit_name, "aggregate '" + ex.aggregate + "' was not produced by any match or earlier emit");
     if (consumed_captures != nullptr) consumed_captures->emplace_back(ex.aggregate, aggregate);
-    if (ex.aggregate_type.has_value() && !detail::MatchesTypePattern(aggregate->getType(), *ex.aggregate_type)) {
+    if (ex.aggregate_type.has_value() && !MatchesTypePattern(aggregate->getType(), *ex.aggregate_type)) {
       return EmitError(emit_name, "aggregate '" + ex.aggregate + "' has type " + PrintType(aggregate->getType()) + ", which does not satisfy the requested aggregate type");
     }
     std::vector<uint32_t> indices;
@@ -734,26 +799,36 @@ std::expected<llvm::Value*, std::string> ResolveEmitPattern(const EmitPattern& p
         return EmitError(emit_name, "extract index " + std::to_string(depth) + ": capture '" + cap.capture + "' was not produced by any match or earlier emit");
       }
       auto* ci = llvm::dyn_cast<llvm::ConstantInt>(index_value);
-      auto index_as_uint = detail::ConstantIntToExtractIndex(cap.capture, depth, ci);
+      auto index_as_uint = ConstantIntToExtractIndex(cap.capture, depth, ci);
       if (!index_as_uint) {
         return EmitError(emit_name, std::move(index_as_uint.error()));
       }
       indices.push_back(*index_as_uint);
     }
-    auto extracted_type = detail::ResolveExtractType(aggregate->getType(), indices);
+    auto extracted_type = ResolveExtractType(aggregate->getType(), indices);
     if (!extracted_type) {
       return EmitError(emit_name, std::move(extracted_type.error()));
     }
-    if (ex.result_type.has_value() && !detail::MatchesTypePattern(*extracted_type, *ex.result_type)) {
+    if (ex.result_type.has_value() && !MatchesTypePattern(*extracted_type, *ex.result_type)) {
       return EmitError(emit_name, "extracted type " + PrintType(*extracted_type) + " does not satisfy result_type");
     }
     return builder.CreateExtractValue(aggregate, indices);
   }
   llvm::Type* result_type = GetEmitValueScalarTypeFromPattern(pattern, module.getContext(), llvm::Type::getVoidTy(module.getContext()));
-  if (result_type == nullptr) {
-    // Unsupported component type � fall back to void, matching the previous inline behavior.
-    result_type = llvm::Type::getVoidTy(module.getContext());
-  }
+  if (result_type == nullptr) return EmitError(emit_name, "unsupported result_component_type");
+  const auto resolve_cast_source = [&]() -> std::expected<llvm::Value*, std::string> {
+    const auto& operand = pattern.operands.front();
+    const bool undefined_source = operand.kind == OperandKind::Undefined || (operand.kind == OperandKind::Call && !operand.capture.has_value() && !operand.instruction);
+    llvm::Type* source_type = nullptr;
+    if (operand.kind == OperandKind::Constant || undefined_source) {
+      if (!operand.component_type.has_value()) {
+        return EmitError(emit_name, operand.kind == OperandKind::Constant ? "cast constant source requires component_type" : "cast undefined source requires component_type");
+      }
+      source_type = LlvmTypeFor(*operand.component_type, module.getContext());
+      if (source_type == nullptr) return EmitError(emit_name, "unsupported cast source component_type");
+    }
+    return ResolveEmitOperand(operand, source_type, builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+  };
   std::optional<hlsl::OP::OpCode> resolved_dxil_op;
   std::optional<unsigned> resolved_llvm_op;
   if (pattern.opcode.has_value() && !pattern.opcode->empty()) {
@@ -761,7 +836,7 @@ std::expected<llvm::Value*, std::string> ResolveEmitPattern(const EmitPattern& p
   }
   // Opcode-less emit with operands: pass-through alias of the first captured
   // operand value (re-exposes an earlier capture under pattern.name).
-  if (!resolved_dxil_op.has_value() && !resolved_llvm_op.has_value() && !pattern.operands.empty()) {
+  if (!resolved_dxil_op.has_value() && !resolved_llvm_op.has_value() && !pattern.cast_opcode.has_value() && !pattern.operands.empty()) {
     return ResolveEmitOperand(pattern.operands.front(), nullptr, builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
   }
   if (resolved_dxil_op.has_value()) {
@@ -848,9 +923,10 @@ std::expected<llvm::Value*, std::string> ResolveEmitPattern(const EmitPattern& p
       case llvm::Instruction::BitCast:
       case llvm::Instruction::AddrSpaceCast: {
         if (pattern.operands.size() != 1 || pattern.operands[0].operand_index != 0) return nullptr;
-        auto source_result = ResolveEmitOperand(pattern.operands[0], result_type, builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+        auto source_result = resolve_cast_source();
         if (!source_result) return std::unexpected(source_result.error());
         llvm::Value* source = *source_result;
+        if (!llvm::CastInst::castIsValid(static_cast<llvm::Instruction::CastOps>(*resolved_llvm_op), source, result_type)) return EmitError(emit_name, "invalid cast source/result types");
         return builder.CreateCast(static_cast<llvm::Instruction::CastOps>(*resolved_llvm_op), source, result_type);
       }
       case llvm::Instruction::ICmp: {
@@ -962,9 +1038,11 @@ std::expected<llvm::Value*, std::string> ResolveEmitPattern(const EmitPattern& p
     auto [dxil_op, llvm_op] = ResolveOpCode(*pattern.cast_opcode);
     if (llvm_op.has_value()) {
       if (pattern.operands.size() != 1 || pattern.operands[0].operand_index != 0) return nullptr;
-      auto source_result = ResolveEmitOperand(pattern.operands[0], result_type, builder, module, dxil_module, match, ctx, emit_name, consumed_captures);
+      if (!llvm::Instruction::isCast(*llvm_op)) return EmitError(emit_name, "cast_opcode must name a cast instruction");
+      auto source_result = resolve_cast_source();
       if (!source_result) return std::unexpected(source_result.error());
       llvm::Value* source = *source_result;
+      if (!llvm::CastInst::castIsValid(static_cast<llvm::Instruction::CastOps>(*llvm_op), source, result_type)) return EmitError(emit_name, "invalid cast source/result types");
       return builder.CreateCast(static_cast<llvm::Instruction::CastOps>(*llvm_op), source, result_type);
     }
   }
@@ -973,19 +1051,19 @@ std::expected<llvm::Value*, std::string> ResolveEmitPattern(const EmitPattern& p
 
 unsigned CollectDxilCallMatches(llvm::Function& function, const InstructionPattern& pattern,
                                 std::vector<MatchResult>& results, hlsl::DxilModule* dxil_module,
-                                const std::unordered_map<std::string, llvm::Value*>* global_captures);
+                                const std::unordered_map<std::string, llvm::Value*>* global_captures, MatchConstantContext& constant_context);
 unsigned CollectBinaryOpMatches(llvm::Function& function, const InstructionPattern& pattern,
                                 std::vector<MatchResult>& results, hlsl::DxilModule* dxil_module,
-                                const std::unordered_map<std::string, llvm::Value*>* global_captures);
+                                const std::unordered_map<std::string, llvm::Value*>* global_captures, MatchConstantContext& constant_context);
 
 /// @brief Collects all matches for one pattern (call-based + binary-op based).
 void CollectAllMatches(llvm::Function& function, const InstructionPattern& pattern,
                        std::vector<MatchResult>& matches, hlsl::DxilModule* dxil_module,
-                       const std::unordered_map<std::string, llvm::Value*>* global_captures) {
+                       const std::unordered_map<std::string, llvm::Value*>* global_captures, MatchConstantContext& constant_context) {
   std::vector<MatchResult> call_matches;
-  CollectDxilCallMatches(function, pattern, call_matches, dxil_module, global_captures);
+  CollectDxilCallMatches(function, pattern, call_matches, dxil_module, global_captures, constant_context);
   std::vector<MatchResult> binary_op_matches;
-  CollectBinaryOpMatches(function, pattern, binary_op_matches, dxil_module, global_captures);
+  CollectBinaryOpMatches(function, pattern, binary_op_matches, dxil_module, global_captures, constant_context);
   matches.insert(matches.end(), std::make_move_iterator(call_matches.begin()),
                  std::make_move_iterator(call_matches.end()));
   matches.insert(matches.end(), std::make_move_iterator(binary_op_matches.begin()),
@@ -1003,16 +1081,18 @@ std::expected<void, std::string> ApplyDxilRewriteRules(llvm::Function& function,
   unsigned mutation_count = 0;
   const bool rule_mutating = rewrite_mode != RewriteKind::None;
   std::vector<MatchResult> matches;
+  MatchConstantContext constant_context{.execution = ctx, .error = {}};
   if (rule.match_patterns.size() > 1) {
     // Multiple match patterns form a consecutive (block-local) sequence, mirroring sm5.
     CollectSequenceMatches(function, rule.match_patterns, matches, &dxil_module,
-                           (ctx != nullptr) ? &ctx->captures.values : nullptr);
+                           (ctx != nullptr) ? &ctx->captures.values : nullptr, constant_context);
   } else {
     for (const auto& pattern : rule.match_patterns) {
       CollectAllMatches(function, pattern, matches, &dxil_module,
-                        (ctx != nullptr) ? &ctx->captures.values : nullptr);
+                        (ctx != nullptr) ? &ctx->captures.values : nullptr, constant_context);
     }
   }
+  if (!constant_context.error.empty()) return std::unexpected(constant_context.error);
   if (matches.empty()) {
     if (applied_rule_count != nullptr) *applied_rule_count = 0;
     if (mutated_rule_count != nullptr) *mutated_rule_count = 0;
@@ -1033,38 +1113,10 @@ std::expected<void, std::string> ApplyDxilRewriteRules(llvm::Function& function,
           usage.handle = op_pattern.resource_kind.has_value() ? "texture" : "resource";
           usage.register_index = op_pattern.resource_register_index.value_or(0);
           ctx->resource_exports[export_key] = std::move(usage);
-        } else if (effective_kind == OperandKind::Constant && !op_pattern.constant_int_values.empty()) {
-          // Recipe-specified integer constant shorthand — conventionally i32 (matches the emit default).
-          dxp::ImmediateValue imm;
-          imm.type = dxp::ComponentType::I32;
-          for (auto v : op_pattern.constant_int_values) {
-            imm.raw_values.push_back(static_cast<uint64_t>(v));
-          }
-          ctx->immediate_exports[export_key] = std::move(imm);
-        } else if (effective_kind == OperandKind::Call) {
-          llvm::Value* val = ResolveCapture(match, ctx, op_pattern.capture_name);
-          if (val == nullptr) continue;
-          if (auto* ci = llvm::dyn_cast<llvm::ConstantInt>(val)) {
-            dxp::ImmediateValue imm;
-            imm.type = ComponentTypeOf(ci->getType());
-            imm.raw_values.push_back(ci->getZExtValue());
-            ctx->immediate_exports[export_key] = std::move(imm);
-          } else if (auto* cf = llvm::dyn_cast<llvm::ConstantFP>(val)) {
-            dxp::ImmediateValue imm;
-            imm.type = ComponentTypeOf(cf->getType());
-            imm.raw_values.push_back(cf->getValueAPF().bitcastToAPInt().getZExtValue());
-            ctx->immediate_exports[export_key] = std::move(imm);
-          } else if (auto* cv = llvm::dyn_cast<llvm::ConstantVector>(val)) {
-            dxp::ImmediateValue imm;
-            imm.type = ComponentTypeOf(cv->getType()->getScalarType());
-            for (unsigned i = 0; i < cv->getNumOperands(); ++i) {
-              if (auto* ce = llvm::dyn_cast<llvm::ConstantFP>(cv->getOperand(i))) {
-                imm.raw_values.push_back(ce->getValueAPF().bitcastToAPInt().getZExtValue());
-              }
-            }
-            if (!imm.raw_values.empty()) {
-              ctx->immediate_exports[export_key] = std::move(imm);
-            }
+        } else if (effective_kind == OperandKind::Constant || effective_kind == OperandKind::Call) {
+          dxp::ImmediateValue immediate;
+          if (TryGetImmediateValue(ResolveCapture(match, ctx, op_pattern.capture_name), op_pattern.component_type, immediate)) {
+            ctx->immediate_exports[export_key] = std::move(immediate);
           }
         }
       }
@@ -1115,7 +1167,7 @@ std::expected<void, std::string> ApplyDxilRewriteRules(llvm::Function& function,
 
 unsigned CollectDxilCallMatches(llvm::Function& function, const InstructionPattern& pattern,
                                 std::vector<MatchResult>& results, hlsl::DxilModule* dxil_module,
-                                const std::unordered_map<std::string, llvm::Value*>* global_captures) {
+                                const std::unordered_map<std::string, llvm::Value*>* global_captures, MatchConstantContext& constant_context) {
   results.clear();
   // Debug: log the pattern
   if (pattern.opcode.has_value() && !pattern.opcode->empty()) {
@@ -1125,7 +1177,9 @@ unsigned CollectDxilCallMatches(llvm::Function& function, const InstructionPatte
       auto* const call = llvm::dyn_cast<llvm::CallInst>(&instruction);
       if (call == nullptr) continue;
       std::unordered_map<std::string, llvm::Value*> captures;
-      if (!MatchInstructionPattern(call, pattern, captures, dxil_module, global_captures)) continue;
+      const bool matched = MatchInstructionPattern(call, pattern, captures, dxil_module, global_captures, constant_context);
+      if (!constant_context.error.empty()) return 0;
+      if (!matched) continue;
       MatchResult result;
       result.rootCall = call;
       result.instructions.push_back(call);
@@ -1138,13 +1192,15 @@ unsigned CollectDxilCallMatches(llvm::Function& function, const InstructionPatte
 
 unsigned CollectBinaryOpMatches(llvm::Function& function, const InstructionPattern& pattern,
                                 std::vector<MatchResult>& results, hlsl::DxilModule* dxil_module,
-                                const std::unordered_map<std::string, llvm::Value*>* global_captures) {
+                                const std::unordered_map<std::string, llvm::Value*>* global_captures, MatchConstantContext& constant_context) {
   results.clear();
   for (llvm::BasicBlock& basic_block : function) {
     for (llvm::Instruction& instruction : basic_block) {
       if (llvm::isa<llvm::CallInst>(&instruction)) continue;
       std::unordered_map<std::string, llvm::Value*> captures;
-      if (!MatchInstructionPattern(&instruction, pattern, captures, dxil_module, global_captures)) continue;
+      const bool matched = MatchInstructionPattern(&instruction, pattern, captures, dxil_module, global_captures, constant_context);
+      if (!constant_context.error.empty()) return 0;
+      if (!matched) continue;
       MatchResult result;
       result.rootCall = nullptr;
       result.instructions.push_back(&instruction);
@@ -1171,10 +1227,6 @@ std::expected<void, std::string> ValidateEmitDominance(
   }
   return {};
 }
-}  // anonymous namespace
-
-namespace detail {
-
 std::expected<uint32_t, std::string> ConstantIntToExtractIndex(const std::string& capture_name, size_t depth, llvm::ConstantInt* ci) {
   if (ci == nullptr) {
     return std::unexpected("extract index " + std::to_string(depth) + ": capture '" + capture_name + "' must resolve to an integer ConstantInt");
@@ -1287,8 +1339,6 @@ bool MatchesExtractValue(llvm::Value* value, const ExtractValuePattern& pattern)
   return true;
 }
 
-}  // namespace detail
-
 /// @brief Matches a consecutive sequence of instruction patterns within a single
 /// basic block (block-local: a sequence cannot span a terminator/block boundary).
 /// Overlapping sequences are reported (mirrors sm5); match_mode selects among them.
@@ -1298,7 +1348,7 @@ unsigned CollectSequenceMatches(llvm::Function& function,
                                 const std::vector<InstructionPattern>& patterns,
                                 std::vector<MatchResult>& results,
                                 hlsl::DxilModule* dxil_module,
-                                const std::unordered_map<std::string, llvm::Value*>* global_captures) {
+                                const std::unordered_map<std::string, llvm::Value*>* global_captures, MatchConstantContext& constant_context) {
   results.clear();
   const size_t sequence_length = patterns.size();
   if (sequence_length == 0) return 0;
@@ -1318,8 +1368,9 @@ unsigned CollectSequenceMatches(llvm::Function& function,
         llvm::Instruction* const instruction = block_instructions[start + i];
         const bool matched_this =
             llvm::isa<llvm::CallInst>(instruction)
-                ? MatchInstructionPattern(llvm::cast<llvm::CallInst>(instruction), patterns[i], captures, dxil_module, global_captures)
-                : MatchInstructionPattern(instruction, patterns[i], captures, dxil_module, global_captures);
+                ? MatchInstructionPattern(llvm::cast<llvm::CallInst>(instruction), patterns[i], captures, dxil_module, global_captures, constant_context)
+                : MatchInstructionPattern(instruction, patterns[i], captures, dxil_module, global_captures, constant_context);
+        if (!constant_context.error.empty()) return 0;
         if (!matched_this) {
           ok = false;
           break;
@@ -1512,6 +1563,8 @@ std::expected<void, std::string> MatchResult::ApplyRule(RewriteKind rewrite_mode
   }
   return {};
 }
+
+}  // namespace
 
 auto OperandPatternData::Compile() const -> std::expected<OperandPattern, std::string> {
   OperandPattern result;
