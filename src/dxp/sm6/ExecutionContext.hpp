@@ -52,8 +52,7 @@ struct ExecutionContext : VariableStore {
   std::unordered_map<std::string, std::any> results;
   /// Global capture store — persists captures across steps.
   CaptureStore captures;
-  /// Registered templates — name → emit patterns.
-  std::unordered_map<std::string, std::vector<step::EmitPattern>> templates;
+  std::unordered_map<std::string, llvm::Function*> functions;
   std::unordered_map<std::string, const hlsl::DxilResourceBase*> resource_handles;  ///< Resource handles from add_resource step.
   std::unordered_map<std::string, llvm::Value*> resource_handle_values;             ///< LLVM IR values for resource handles from add_resource step.
   std::unordered_map<std::string, dxp::ResourceUsage> resource_exports;             ///< Resource usage and immediate values from pattern matching.

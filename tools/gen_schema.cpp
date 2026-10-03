@@ -27,7 +27,7 @@ constexpr SchemaDoc kSchemas[] = {
      "docs/sm5_recipe_schema.json"},
     {"https://github.com/DirectXShaderPatcher/docs/sm6_recipe_schema.json",
      "SM6 YAML Recipe Schema",
-     "JSON Schema for dxp::sm6 YAML recipes: add_resource, apply_rule, check_shader_version, "
+     "JSON Schema for dxp::sm6 YAML recipes: add_resource, declare_function, apply_rule, check_shader_version, "
      "check_opcode_count, and check_resource_count steps.",
      "docs/sm6_recipe_schema.json"},
 };

@@ -21,7 +21,7 @@
 #include "dxp/sm6/step/CheckOpcodeCountStep.hpp"
 #include "dxp/sm6/step/CheckResourceCountStep.hpp"
 #include "dxp/sm6/step/CheckShaderVersionStep.hpp"
-#include "dxp/sm6/step/DeclareTemplateStep.hpp"
+#include "dxp/sm6/step/DeclareFunctionStep.hpp"
 
 namespace dxp::sm6 {
 
@@ -33,7 +33,7 @@ struct Recipe {
   using StepVariant = std::variant<
       step::AddResourceStep, step::ApplyRuleStep,
       step::CheckOpcodeCountStep, step::CheckResourceCountStep, step::CheckShaderVersionStep,
-      step::DeclareTemplateStep>;
+      step::DeclareFunctionStep>;
 
  public:
   Recipe() = default;

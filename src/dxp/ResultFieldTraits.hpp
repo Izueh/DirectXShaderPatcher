@@ -151,4 +151,13 @@ struct ExtractFieldTrait<DeclareTemplateResults> {
   }
 };
 
+template <>
+struct ExtractFieldTrait<DeclareFunctionResults> {
+  static std::optional<PrimitiveValue> GetValue(const DeclareFunctionResults& result, std::string_view field) {
+    if (field == "functions_added") return static_cast<int64_t>(result.functions_added);
+    if (field == "instruction_count") return static_cast<int64_t>(result.instruction_count);
+    return std::nullopt;
+  }
+};
+
 }  // namespace dxp

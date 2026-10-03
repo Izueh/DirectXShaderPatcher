@@ -3,11 +3,14 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include "dxp/sm6/step/common/Function.hpp"
 
 namespace dxp {
 
 /// @brief Shared validation context for recipe validation.
 struct ValidationContext {
+  std::unordered_map<std::string, sm6::step::FunctionSignature> function_signatures;
+  std::unordered_set<std::string> output_writing_functions;
   std::unordered_set<std::string> names;
   std::unordered_set<std::string> handles;
   std::unordered_set<std::string> instruction_captures;

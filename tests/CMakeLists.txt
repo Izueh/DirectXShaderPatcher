@@ -205,6 +205,9 @@ dxp_add_test(sm6_extract_value_execute_test "sm6_extract_value_execute_test.cpp"
 dxp_add_test(sm6_recipe_match_captured_test "sm6_recipe_match_captured_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x56C468C3.cs_6_6.cso")
 dxp_add_test(sm6_recipe_env_constants_test "sm6_recipe_env_constants_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/sm6_rule_patterns.cs_6_6.cso")
 dxp_add_test(sm6_constant_array_test "sm6_constant_array_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/sm6_rule_edge_cases.cso")
+dxp_add_test(sm6_function_test "sm6_function_test.cpp")
+dxp_add_test(sm5_emit_test "sm5_emit_test.cpp")
+dxp_add_test(sm5_sm6_match_test "sm5_sm6_match_test.cpp")
 
 # Benchmarks (conditional)
 if(DXP_BUILD_BENCHMARKS)

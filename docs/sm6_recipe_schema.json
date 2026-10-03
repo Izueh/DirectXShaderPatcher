@@ -190,205 +190,7 @@
                         "type": "object",
                         "properties": {
                            "emit": {
-                              "type": "array",
-                              "items": {
-                                 "type": "object",
-                                 "properties": {
-                                    "aggregate": {
-                                       "type": "string"
-                                    },
-                                    "capture": {
-                                       "type": "string"
-                                    },
-                                    "cast_opcode": {
-                                       "type": [
-                                          "string",
-                                          "null"
-                                       ]
-                                    },
-                                    "extract": {
-                                       "anyOf": [
-                                          {
-                                             "type": "object",
-                                             "properties": {
-                                                "aggregate": {
-                                                   "type": "string"
-                                                },
-                                                "aggregate_type": {
-                                                   "anyOf": [
-                                                      {
-                                                         "$ref": "#/$defs/dxp::sm6::step::ValueTypePatternData"
-                                                      },
-                                                      {
-                                                         "type": "null"
-                                                      }
-                                                   ]
-                                                },
-                                                "indices": {
-                                                   "type": "array",
-                                                   "items": {
-                                                      "$ref": "#/$defs/std::variant<uint32_t,dxp::sm6::step::CaptureExtractIndexData>"
-                                                   }
-                                                },
-                                                "result_type": {
-                                                   "anyOf": [
-                                                      {
-                                                         "$ref": "#/$defs/dxp::sm6::step::ValueTypePatternData"
-                                                      },
-                                                      {
-                                                         "type": "null"
-                                                      }
-                                                   ]
-                                                }
-                                             },
-                                             "additionalProperties": false
-                                          },
-                                          {
-                                             "type": "null"
-                                          }
-                                       ]
-                                    },
-                                    "extract_index": {
-                                       "anyOf": [
-                                          {
-                                             "$ref": "#/$defs/uint32_t"
-                                          },
-                                          {
-                                             "type": "null"
-                                          }
-                                       ]
-                                    },
-                                    "name": {
-                                       "type": "string"
-                                    },
-                                    "opcode": {
-                                       "type": "string"
-                                    },
-                                    "operands": {
-                                       "type": "array",
-                                       "items": {
-                                          "type": "object",
-                                          "properties": {
-                                             "capture": {
-                                                "type": "string"
-                                             },
-                                             "component_type": {
-                                                "anyOf": [
-                                                   {
-                                                      "$ref": "#/$defs/dxp::ComponentType"
-                                                   },
-                                                   {
-                                                      "type": "null"
-                                                   }
-                                                ]
-                                             },
-                                             "constant_float_values": {
-                                                "$ref": "#/$defs/std::vector<std::variant<std::string,double>>"
-                                             },
-                                             "constant_int_values": {
-                                                "$ref": "#/$defs/std::vector<std::variant<std::string,int64_t>>"
-                                             },
-                                             "handle": {
-                                                "type": "string"
-                                             },
-                                             "index": {
-                                                "$ref": "#/$defs/uint32_t"
-                                             },
-                                             "instruction": {
-                                                "anyOf": [
-                                                   {
-                                                      "$ref": "#/$defs/dxp::sm6::step::MatchInstructionPatternData"
-                                                   },
-                                                   {
-                                                      "type": "null"
-                                                   }
-                                                ]
-                                             },
-                                             "kind": {
-                                                "anyOf": [
-                                                   {
-                                                      "$ref": "#/$defs/dxp::sm6::step::OperandKind"
-                                                   },
-                                                   {
-                                                      "type": "null"
-                                                   }
-                                                ]
-                                             }
-                                          },
-                                          "additionalProperties": false
-                                       }
-                                    },
-                                    "repeat": {
-                                       "anyOf": [
-                                          {
-                                             "type": "object",
-                                             "properties": {
-                                                "params": {
-                                                   "type": "object",
-                                                   "additionalProperties": {
-                                                      "type": "object",
-                                                      "properties": {
-                                                         "f32": {
-                                                            "type": "array",
-                                                            "items": {
-                                                               "$ref": "#/$defs/float"
-                                                            }
-                                                         },
-                                                         "f64": {
-                                                            "$ref": "#/$defs/std::vector<double>"
-                                                         },
-                                                         "i32": {
-                                                            "type": "array",
-                                                            "items": {
-                                                               "$ref": "#/$defs/int32_t"
-                                                            }
-                                                         },
-                                                         "i64": {
-                                                            "$ref": "#/$defs/std::vector<int64_t>"
-                                                         },
-                                                         "u32": {
-                                                            "$ref": "#/$defs/std::vector<uint32_t>"
-                                                         },
-                                                         "u64": {
-                                                            "type": "array",
-                                                            "items": {
-                                                               "$ref": "#/$defs/uint64_t"
-                                                            }
-                                                         }
-                                                      },
-                                                      "additionalProperties": false
-                                                   }
-                                                },
-                                                "times": {
-                                                   "$ref": "#/$defs/uint32_t"
-                                                }
-                                             },
-                                             "additionalProperties": false
-                                          },
-                                          {
-                                             "type": "null"
-                                          }
-                                       ]
-                                    },
-                                    "replace_captured": {
-                                       "type": "string"
-                                    },
-                                    "result_component_type": {
-                                       "anyOf": [
-                                          {
-                                             "$ref": "#/$defs/dxp::ComponentType"
-                                          },
-                                          {
-                                             "type": "null"
-                                          }
-                                       ]
-                                    },
-                                    "template": {
-                                       "type": "string"
-                                    }
-                                 },
-                                 "additionalProperties": false
-                              }
+                              "$ref": "#/$defs/std::vector<dxp::sm6::step::EmitPatternData>"
                            },
                            "match": {
                               "type": "array",
@@ -500,157 +302,51 @@
                         "$ref": "#/$defs/dxp::ConditionData"
                      },
                      "emit": {
+                        "$ref": "#/$defs/std::vector<dxp::sm6::step::EmitPatternData>"
+                     },
+                     "kind": {
+                        "const": "declare_function"
+                     },
+                     "name": {
+                        "type": "string"
+                     },
+                     "params": {
                         "type": "array",
                         "items": {
                            "type": "object",
                            "properties": {
-                              "blob": {
-                                 "type": "string"
-                              },
-                              "capture": {
-                                 "type": "string"
-                              },
-                              "interpolation": {
-                                 "type": [
-                                    "string",
-                                    "null"
-                                 ]
-                              },
                               "name": {
                                  "type": "string"
                               },
-                              "opcode": {
-                                 "type": [
-                                    "string",
-                                    "null"
-                                 ]
-                              },
-                              "operands": {
-                                 "type": "array",
-                                 "items": {
-                                    "type": "object",
-                                    "properties": {
-                                       "capture": {
-                                          "type": "string"
-                                       },
-                                       "constant_float_values": {
-                                          "$ref": "#/$defs/std::vector<double>"
-                                       },
-                                       "constant_int_values": {
-                                          "$ref": "#/$defs/std::vector<int64_t>"
-                                       },
-                                       "export_as": {
-                                          "type": [
-                                             "string",
-                                             "null"
-                                          ]
-                                       },
-                                       "handle": {
-                                          "anyOf": [
-                                             {
-                                                "type": "object",
-                                                "properties": {
-                                                   "element_index": {
-                                                      "anyOf": [
-                                                         {
-                                                            "$ref": "#/$defs/std::variant<std::string,uint32_t>"
-                                                         },
-                                                         {
-                                                            "type": "null"
-                                                         }
-                                                      ]
-                                                   },
-                                                   "name": {
-                                                      "type": "string"
-                                                   }
-                                                },
-                                                "additionalProperties": false
-                                             },
-                                             {
-                                                "type": "null"
-                                             }
-                                          ]
-                                       },
-                                       "immediates_f32": {
-                                          "type": "array",
-                                          "items": {
-                                             "$ref": "#/$defs/std::variant<std::string,float>"
-                                          }
-                                       },
-                                       "immediates_u32": {
-                                          "type": "array",
-                                          "items": {
-                                             "$ref": "#/$defs/std::variant<std::string,uint32_t>"
-                                          }
-                                       },
-                                       "kind": {
-                                          "type": [
-                                             "string",
-                                             "null"
-                                          ]
-                                       },
-                                       "mask": {
-                                          "type": "string"
-                                       },
-                                       "match_capture": {
-                                          "type": "string"
-                                       },
-                                       "operand_index": {
-                                          "$ref": "#/$defs/uint32_t"
-                                       },
-                                       "select": {
-                                          "type": "string"
-                                       },
-                                       "swizzle": {
-                                          "type": "string"
-                                       },
-                                       "type": {
-                                          "type": [
-                                             "string",
-                                             "null"
-                                          ]
-                                       }
-                                    },
-                                    "additionalProperties": false
-                                 }
-                              },
-                              "replace_captured": {
-                                 "type": [
-                                    "string",
-                                    "null"
-                                 ]
-                              },
-                              "saturate": {
-                                 "type": [
-                                    "boolean",
-                                    "null"
-                                 ]
-                              },
-                              "test_boolean": {
-                                 "$ref": "#/$defs/int32_t"
+                              "type": {
+                                 "$ref": "#/$defs/dxp::ComponentType"
                               }
                            },
                            "additionalProperties": false
                         }
                      },
-                     "kind": {
-                        "const": "declare_template"
-                     },
-                     "name": {
-                        "type": "string"
-                     },
                      "required": {
                         "type": "boolean"
                      },
-                     "temps": {
-                        "$ref": "#/$defs/std::vector<std::string>"
+                     "return": {
+                        "anyOf": [
+                           {
+                              "$ref": "#/$defs/dxp::sm6::step::EmitOperandPatternData"
+                           },
+                           {
+                              "type": "null"
+                           }
+                        ]
+                     },
+                     "return_type": {
+                        "type": "string"
                      }
                   },
                   "additionalProperties": false,
                   "required": [
                      "kind"
                   ],
-                  "title": "declare_template"
+                  "title": "declare_function"
                }
             ]
          }
@@ -661,11 +357,6 @@
    },
    "additionalProperties": false,
    "$defs": {
-      "double": {
-         "type": "number",
-         "minimum": -1.7976931348623157E308,
-         "maximum": 1.7976931348623157E308
-      },
       "dxp::ComponentType": {
          "type": [
             "number",
@@ -754,6 +445,57 @@
             "null"
          ]
       },
+      "dxp::sm6::step::EmitOperandPatternData": {
+         "type": "object",
+         "properties": {
+            "capture": {
+               "type": "string"
+            },
+            "component_type": {
+               "anyOf": [
+                  {
+                     "$ref": "#/$defs/dxp::ComponentType"
+                  },
+                  {
+                     "type": "null"
+                  }
+               ]
+            },
+            "constant_float_values": {
+               "$ref": "#/$defs/std::vector<std::variant<std::string,double>>"
+            },
+            "constant_int_values": {
+               "$ref": "#/$defs/std::vector<std::variant<std::string,int64_t>>"
+            },
+            "handle": {
+               "type": "string"
+            },
+            "index": {
+               "$ref": "#/$defs/uint32_t"
+            },
+            "instruction": {
+               "anyOf": [
+                  {
+                     "$ref": "#/$defs/dxp::sm6::step::MatchInstructionPatternData"
+                  },
+                  {
+                     "type": "null"
+                  }
+               ]
+            },
+            "kind": {
+               "anyOf": [
+                  {
+                     "$ref": "#/$defs/dxp::sm6::step::OperandKind"
+                  },
+                  {
+                     "type": "null"
+                  }
+               ]
+            }
+         },
+         "additionalProperties": false
+      },
       "dxp::sm6::step::MatchInstructionPatternData": {
          "type": "object",
          "properties": {
@@ -776,7 +518,10 @@
                            ]
                         },
                         "indices": {
-                           "$ref": "#/$defs/std::vector<uint32_t>"
+                           "type": "array",
+                           "items": {
+                              "$ref": "#/$defs/uint32_t"
+                           }
                         },
                         "result_type": {
                            "anyOf": [
@@ -992,20 +737,10 @@
          },
          "additionalProperties": false
       },
-      "float": {
-         "type": "number",
-         "minimum": -3.4028234663852886E38,
-         "maximum": 3.4028234663852886E38
-      },
       "int32_t": {
          "type": "integer",
          "minimum": -2147483648,
          "maximum": 2147483647
-      },
-      "int64_t": {
-         "type": "integer",
-         "minimum": -9.223372036854776E18,
-         "maximum": 9.223372036854776E18
       },
       "std::variant<bool,int32_t,uint32_t,int64_t,uint64_t,double>": {
          "type": [
@@ -1114,24 +849,6 @@
             }
          ]
       },
-      "std::variant<std::string,float>": {
-         "type": [
-            "number",
-            "string"
-         ],
-         "oneOf": [
-            {
-               "type": "string",
-               "title": "std::string"
-            },
-            {
-               "type": "number",
-               "title": "float",
-               "minimum": -3.4028234663852886E38,
-               "maximum": 3.4028234663852886E38
-            }
-         ]
-      },
       "std::variant<std::string,int64_t>": {
          "type": [
             "number",
@@ -1147,24 +864,6 @@
                "title": "int64_t",
                "minimum": -9.223372036854776E18,
                "maximum": 9.223372036854776E18
-            }
-         ]
-      },
-      "std::variant<std::string,uint32_t>": {
-         "type": [
-            "number",
-            "string"
-         ],
-         "oneOf": [
-            {
-               "type": "string",
-               "title": "std::string"
-            },
-            {
-               "type": "integer",
-               "title": "uint32_t",
-               "minimum": 0,
-               "maximum": 4294967295
             }
          ]
       },
@@ -1191,12 +890,6 @@
                "title": "dxp::sm6::step::CaptureExtractIndexData"
             }
          ]
-      },
-      "std::vector<double>": {
-         "type": "array",
-         "items": {
-            "$ref": "#/$defs/double"
-         }
       },
       "std::vector<dxp::ConditionData>": {
          "type": "array",
@@ -1275,10 +968,105 @@
             "additionalProperties": false
          }
       },
-      "std::vector<int64_t>": {
+      "std::vector<dxp::sm6::step::EmitPatternData>": {
          "type": "array",
          "items": {
-            "$ref": "#/$defs/int64_t"
+            "type": "object",
+            "properties": {
+               "aggregate": {
+                  "type": "string"
+               },
+               "capture": {
+                  "type": "string"
+               },
+               "cast_opcode": {
+                  "type": [
+                     "string",
+                     "null"
+                  ]
+               },
+               "extract": {
+                  "anyOf": [
+                     {
+                        "type": "object",
+                        "properties": {
+                           "aggregate": {
+                              "type": "string"
+                           },
+                           "aggregate_type": {
+                              "anyOf": [
+                                 {
+                                    "$ref": "#/$defs/dxp::sm6::step::ValueTypePatternData"
+                                 },
+                                 {
+                                    "type": "null"
+                                 }
+                              ]
+                           },
+                           "indices": {
+                              "type": "array",
+                              "items": {
+                                 "$ref": "#/$defs/std::variant<uint32_t,dxp::sm6::step::CaptureExtractIndexData>"
+                              }
+                           },
+                           "result_type": {
+                              "anyOf": [
+                                 {
+                                    "$ref": "#/$defs/dxp::sm6::step::ValueTypePatternData"
+                                 },
+                                 {
+                                    "type": "null"
+                                 }
+                              ]
+                           }
+                        },
+                        "additionalProperties": false
+                     },
+                     {
+                        "type": "null"
+                     }
+                  ]
+               },
+               "extract_index": {
+                  "anyOf": [
+                     {
+                        "$ref": "#/$defs/uint32_t"
+                     },
+                     {
+                        "type": "null"
+                     }
+                  ]
+               },
+               "function": {
+                  "type": "string"
+               },
+               "name": {
+                  "type": "string"
+               },
+               "opcode": {
+                  "type": "string"
+               },
+               "operands": {
+                  "type": "array",
+                  "items": {
+                     "$ref": "#/$defs/dxp::sm6::step::EmitOperandPatternData"
+                  }
+               },
+               "replace_captured": {
+                  "type": "string"
+               },
+               "result_component_type": {
+                  "anyOf": [
+                     {
+                        "$ref": "#/$defs/dxp::ComponentType"
+                     },
+                     {
+                        "type": "null"
+                     }
+                  ]
+               }
+            },
+            "additionalProperties": false
          }
       },
       "std::vector<std::string>": {
@@ -1299,25 +1087,14 @@
             "$ref": "#/$defs/std::variant<std::string,int64_t>"
          }
       },
-      "std::vector<uint32_t>": {
-         "type": "array",
-         "items": {
-            "$ref": "#/$defs/uint32_t"
-         }
-      },
       "uint32_t": {
          "type": "integer",
          "minimum": 0,
          "maximum": 4294967295
-      },
-      "uint64_t": {
-         "type": "integer",
-         "minimum": 0,
-         "maximum": 1.8446744073709552E19
       }
    },
    "title": "SM6 YAML Recipe Schema",
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "$id": "https://github.com/DirectXShaderPatcher/docs/sm6_recipe_schema.json",
-   "description": "JSON Schema for dxp::sm6 YAML recipes: add_resource, apply_rule, check_shader_version, check_opcode_count, and check_resource_count steps."
+   "description": "JSON Schema for dxp::sm6 YAML recipes: add_resource, declare_function, apply_rule, check_shader_version, check_opcode_count, and check_resource_count steps."
 }

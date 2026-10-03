@@ -19,6 +19,7 @@
 #include <dxc/Support/WinIncludes.h>
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/MSFileSystem.h"
@@ -85,6 +86,9 @@ struct ShaderProgram {
   /// @brief Create an LLVM handle value for a DXIL resource.
   llvm::Value* CreateResourceHandle(const hlsl::DxilResourceBase& resource,
                                     const hlsl::DxilResourceBinding& binding);
+  llvm::Value* CreateResourceHandle(const hlsl::DxilResourceBase& resource,
+                                    const hlsl::DxilResourceBinding& binding, llvm::IRBuilder<>& builder);
+  void TrackInjectedFunction(llvm::Function* function) { injected_functions.push_back(function); }
   bool AddInputSignature(const std::string& semantic_name, hlsl::CompType::Kind comp_type,
                          unsigned vector_size, unsigned register_index,
                          hlsl::InterpolationMode interp_mode);
@@ -117,6 +121,7 @@ struct ShaderProgram {
 
  private:
   std::vector<uint8_t> input_bytes;
+  mutable std::vector<llvm::Function*> injected_functions;
   std::unique_ptr<llvm::Module> module;
   hlsl::DxilModule* dxil_module = nullptr;
 

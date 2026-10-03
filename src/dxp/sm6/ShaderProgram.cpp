@@ -685,6 +685,7 @@ ShaderProgram::~ShaderProgram() {
 
 ShaderProgram::ShaderProgram(ShaderProgram&& other) noexcept
     : input_bytes(std::move(other.input_bytes)),
+      injected_functions(std::move(other.injected_functions)),
       module(std::move(other.module)),
       dxil_module(other.dxil_module) {
   other.dxil_module = nullptr;
@@ -693,6 +694,7 @@ ShaderProgram::ShaderProgram(ShaderProgram&& other) noexcept
 auto ShaderProgram::operator=(ShaderProgram&& other) noexcept -> ShaderProgram& {
   if (this != &other) {
     input_bytes = std::move(other.input_bytes);
+    injected_functions = std::move(other.injected_functions);
     module = std::move(other.module);
     dxil_module = other.dxil_module;
     other.dxil_module = nullptr;
@@ -744,6 +746,7 @@ auto ShaderProgram::ParseBitcode(const DxilProgramBitcode& bitcode, llvm::LLVMCo
   if (!mod_or_err) {
     return std::unexpected("failed to parse DXIL bitcode: " + mod_or_err.getError().message());
   }
+  injected_functions.clear();
   module = std::move(mod_or_err.get());
   return {};
 }
@@ -1022,6 +1025,32 @@ auto ShaderProgram::AddSampler(const SamplerDesc& desc) -> std::expected<void, s
 void ShaderProgram::PruneDeadCode() const {
   if (module == nullptr) return;
 
+  std::unordered_set<llvm::Function*> reachable;
+  std::vector<llvm::Function*> pending;
+  if (dxil_module != nullptr) {
+    if (auto* entry = dxil_module->GetEntryFunction()) pending.push_back(entry);
+    if (auto* patch = dxil_module->GetPatchConstantFunction()) pending.push_back(patch);
+  }
+  while (!pending.empty()) {
+    auto* function = pending.back();
+    pending.pop_back();
+    if (!reachable.insert(function).second) continue;
+    for (auto& block : *function) {
+      for (auto& instruction : block) {
+        auto* call = llvm::dyn_cast<llvm::CallInst>(&instruction);
+        if (call != nullptr && call->getCalledFunction() != nullptr) pending.push_back(call->getCalledFunction());
+      }
+    }
+  }
+  for (auto* function : injected_functions) {
+    if (!reachable.contains(function)) function->dropAllReferences();
+  }
+  std::erase_if(injected_functions, [&](auto* function) {
+    if (reachable.contains(function)) return false;
+    function->eraseFromParent();
+    return true;
+  });
+
   // Run LLVM's worklist-driven DCE once at finalization instead of recursively
   // pruning dependency trees after each recipe rule.
   llvm::legacy::PassManager pass_manager;
@@ -1279,16 +1308,19 @@ hlsl::DxilResourceBinding ShaderProgram::ToDxilBinding(const ResourceBindingDesc
 }
 
 auto ShaderProgram::CreateResourceHandle(const hlsl::DxilResourceBase& resource,
-                                         const hlsl::DxilResourceBinding& binding) -> llvm::Value* {
+                                        const hlsl::DxilResourceBinding& binding) -> llvm::Value* {
+  auto* entry = GetEntryFunction();
+  if (entry == nullptr) return nullptr;
+  llvm::IRBuilder<> builder(&*entry->getEntryBlock().getFirstInsertionPt());
+  return CreateResourceHandle(resource, binding, builder);
+}
+
+auto ShaderProgram::CreateResourceHandle(const hlsl::DxilResourceBase& resource,
+                                         const hlsl::DxilResourceBinding& binding, llvm::IRBuilder<>& builder) -> llvm::Value* {
   if (!module || (dxil_module == nullptr)) return nullptr;
 
   auto* mod = module.get();
   auto* dxil = dxil_module;
-  auto* entry = dxil->GetEntryFunction();
-  if (entry == nullptr) {
-    return nullptr;
-  }
-
   hlsl::OP dxil_op(mod->getContext(), mod);
   dxil_op.InitWithMinPrecision(dxil->GetUseMinPrecision());
 
@@ -1330,9 +1362,6 @@ auto ShaderProgram::CreateResourceHandle(const hlsl::DxilResourceBase& resource,
     return nullptr;
   }
 
-  // Insert at the entry block's first insertion point (after allocas), never at
-  // the end — appending after the block terminator produces invalid IR.
-  llvm::IRBuilder<> builder(&*entry->getEntryBlock().getFirstInsertionPt());
   llvm::Value* create_handle = builder.CreateCall(
       create_handle_function,
       {llvm::ConstantInt::get(opcode_argument->getType(),

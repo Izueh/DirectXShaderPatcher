@@ -31,10 +31,105 @@ Each step has a unique `name` and a `kind` that determines its behaviour.
 | kind | Purpose |
 |---|---|
 | `add_resource` | Declares textures, UAVs, cbuffers, samplers, and input/output signatures |
+| `declare_function` | Defines a real internal DXIL function callable by subsequent emit entries |
 | `apply_rule` | Matches DXIL instructions and rewrites them (or probes without mutating) |
 | `check_shader_version` | Filters unless the program shader model matches `major`/`minor` (mismatch is a non-error no-match) |
 | `check_opcode_count` | Counts DXIL/LLVM opcodes in the entry function and publishes results |
 | `check_resource_count` | Counts resource declarations and publishes results |
+
+## `declare_function`
+
+This replaces the unfinished SM6 `declare_template` step. SM5 templates remain
+available. The recipe version stays `1`.
+
+Declarations build one internal LLVM/DXIL function with a single block. Ordered
+`params` have unique names and scalar `type` values. `return_type` defaults to
+`void`; scalar functions require a `return` operand of that type. An empty body
+can return a parameter or a constant. Types use the existing component names
+(`I1`, signed/unsigned integers, `F16`, `F32`, `F64`), subject to the shader's DXIL
+profile restrictions. No shader-model upgrade is performed.
+
+```yaml
+version: 1
+steps:
+  - kind: declare_function
+    name: scale_value
+    params: [{name: value, type: F32}]
+    return_type: F32
+    emit:
+      - opcode: fmul
+        name: scaled
+        result_component_type: F32
+        operands:
+          - {index: 0, capture: value}
+          - {index: 1, kind: constant, constant_float_values: [2.0]}
+    return: {capture: scaled}
+  - kind: apply_rule
+    name: replace_fraction
+    rule:
+      match:
+        - opcode: Frc
+          capture: old
+          operands: [{index: 1, capture: input}]
+      emit:
+        - function: scale_value
+          replace_captured: old
+          operands: [{index: 0, capture: input}]
+```
+
+Both steps use the same emit language, including casts, aggregate extraction,
+constants and environment variables. Function bodies see only parameters and
+earlier named body results. Shader captures must be passed as arguments;
+`replace_captured` is valid only in rewrite emits. Previously declared resources
+are available through `kind: resource`, with handles created and cached inside
+each helper.
+
+`function:` names an earlier declaration and is mutually exclusive with other
+emit modes and `result_component_type`. Argument indices start at zero, with no
+DXIL intrinsic opcode argument. The declaration determines argument and return
+types. Scalar results support `name` and `replace_captured`; void calls support
+neither. Calls inside helpers may call earlier helpers. Forward references,
+recursion, overloads, indirect calls, aggregate signatures, branches, loops, and
+`out`/`inout` parameters are not supported.
+
+Conditions can skip declarations; gate their callers on the declaration's step
+state, for example `condition: {is: scale_value}`. Calling a skipped declaration
+is an execution error. Successful declarations publish `functions_added` and
+`instruction_count` (including resource-handle instructions and the final return).
+
+The public C++ API uses the same recipe steps and emit objects:
+
+```cpp
+#include <dxp/sm6/Recipe.hpp>
+
+using namespace dxp::sm6::step;
+DeclareFunctionStep identity;
+identity.name = "identity";
+identity.signature.params = {{"value", FunctionType{dxp::ComponentType::F32}}};
+identity.signature.return_type = FunctionType{dxp::ComponentType::F32};
+identity.return_value = EmitOperand{.capture = "value"};
+
+EmitPattern call;
+call.function_name = "identity";
+call.operands = {EmitOperand{.operand_index = 0, .capture = "input"}};
+call.replace_captured = "old";
+// Add identity before the ApplyRuleStep containing this call.
+dxp::sm6::Recipe recipe;
+recipe.AddStep(identity);
+```
+
+`FunctionType{}` represents void. `FunctionSignature`, `FunctionParameter`,
+`DeclareFunctionStep`, and `DeclareFunctionResults` contain no LLVM types.
+Rule and emit types are defined in `step/common/Rule.hpp` and remain available
+through `ApplyRuleStep.hpp` for existing callers.
+
+Declaration-only and no-match recipes return byte-identical input. When a rewrite
+applies, serialization removes injected helpers unreachable from shader entry
+roots (including hull patch-constant functions), and preserves reachable helpers
+and their direct calls. LLVM, DXIL-container and hash validation still run. No
+inlining pass or speculative purity attributes are added; driver compilers can
+subsequently inline the functions, as allowed by the
+[DXIL function specification](https://github.com/microsoft/DirectXShaderCompiler/blob/main/docs/DXIL.rst#functions).
 
 ## Common Step Fields
 

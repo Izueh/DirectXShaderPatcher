@@ -54,6 +54,12 @@ struct DeclareTemplateResults {
   uint32_t emit_count = 0;  ///< Number of registered emit patterns.
 };
 
+/// @brief Results from the SM6 DeclareFunctionStep.
+struct DeclareFunctionResults {
+  uint32_t functions_added = 0;
+  uint32_t instruction_count = 0;
+};
+
 /// @brief Variant of all per-step Results types.
 using ResultsVariant = std::variant<
     ApplyRuleResults,
@@ -61,7 +67,8 @@ using ResultsVariant = std::variant<
     CheckShaderVersionResults,
     CheckOpcodeCountResults,
     CheckResourceCountResults,
-    DeclareTemplateResults>;
+    DeclareTemplateResults,
+    DeclareFunctionResults>;
 
 /// @brief Summarizes one executed recipe step.
 struct StepReport {
