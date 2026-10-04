@@ -2,18 +2,8 @@ cmake_minimum_required(VERSION 3.27)
 project(DirectXShaderPatcher VERSION 0.8.0 LANGUAGES CXX)
 
 # ─── Versioning ──────────────────────────────────────────────────────────────
-# Single source of truth: project(VERSION) above. DXP_VERSION_STRING follows
-# SemVer — plain "<ver>" for releases, "<ver>+snapshot.<sha>" for snapshot
-# builds. Build metadata has equal precedence, so a snapshot compares equal to
-# the release it derives from. Therefore the base version must be the NEXT
-# release under development (e.g. bump to 0.1.1 right after tagging v0.1.0) so
-# snapshots order above the shipped release.
-set(DXP_SNAPSHOT_SHA "" CACHE STRING "Git commit SHA for snapshot builds; renders the version as <ver>+snapshot.<sha>")
-if(DXP_SNAPSHOT_SHA)
-    set(DXP_VERSION_STRING "${PROJECT_VERSION}+snapshot.${DXP_SNAPSHOT_SHA}")
-else()
-    set(DXP_VERSION_STRING "${PROJECT_VERSION}")
-endif()
+# Single source of truth: project(VERSION) above.
+set(DXP_VERSION_STRING "${PROJECT_VERSION}")
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Version.hpp.in"
     "${CMAKE_CURRENT_BINARY_DIR}/include/dxp/Version.hpp"

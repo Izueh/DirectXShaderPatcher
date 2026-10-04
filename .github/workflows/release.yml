@@ -1,0 +1,172 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to publish (e.g. v0.8.0)
+        required: true
+        type: string
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: windows-latest
+    outputs:
+      tag: ${{ steps.identity.outputs.tag }}
+      version: ${{ steps.identity.outputs.version }}
+      sha: ${{ steps.identity.outputs.sha }}
+      x64RunId: ${{ steps.find-artifacts.outputs.x64RunId }}
+      x86RunId: ${{ steps.find-artifacts.outputs.x86RunId }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
+
+      - name: Resolve release tag
+        id: identity
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          $tag = $env:RELEASE_TAG
+          if ($tag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') {
+            throw "Expected a version tag such as v0.8.0, got '$tag'"
+          }
+          $sha = git rev-parse --verify "refs/tags/${tag}^{commit}"
+          if ($LASTEXITCODE -ne 0) { throw "Release tag does not exist: $tag" }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$($tag.Substring(1))" >> $env:GITHUB_OUTPUT
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+
+      - name: Find matching CI artifacts
+        id: find-artifacts
+        env:
+          RELEASE_SHA: ${{ steps.identity.outputs.sha }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const releaseSha = process.env.RELEASE_SHA;
+            for (const wf of ['ninja-x64.yml', 'ninja-x86.yml']) {
+              const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: wf,
+                head_sha: releaseSha,
+                status: 'success',
+                per_page: 100
+              });
+              const preset = wf === 'ninja-x64.yml' ? 'ninja-x64' : 'ninja-x86';
+              const requiredNames = [preset, `${preset}-static`];
+              let selectedRun;
+              for (const run of runs) {
+                if (run.head_sha !== releaseSha || run.conclusion !== 'success'
+                    || !['push', 'workflow_dispatch'].includes(run.event)) continue;
+                const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  run_id: run.id,
+                  per_page: 100
+                });
+                if (requiredNames.every(name => artifacts.some(artifact => artifact.name === name && !artifact.expired))) {
+                  selectedRun = run;
+                  break;
+                }
+              }
+              core.setOutput(wf === 'ninja-x64.yml' ? 'x64RunId' : 'x86RunId', selectedRun ? selectedRun.id : '');
+              core.info(selectedRun
+                ? `${wf}: reusing run ${selectedRun.id}, commit ${releaseSha}`
+                : `${wf}: building ${releaseSha} because matching artifacts are unavailable`);
+            }
+
+  build-x64:
+    needs: prepare
+    if: needs.prepare.outputs.x64RunId == ''
+    uses: ./.github/workflows/ninja-x64.yml
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+
+  build-x86:
+    needs: prepare
+    if: needs.prepare.outputs.x86RunId == ''
+    uses: ./.github/workflows/ninja-x86.yml
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+
+  publish:
+    needs: [prepare, build-x64, build-x86]
+    if: >-
+      always() && needs.prepare.result == 'success'
+      && (needs.build-x64.result == 'success' || needs.build-x64.result == 'skipped')
+      && (needs.build-x86.result == 'success' || needs.build-x86.result == 'skipped')
+    runs-on: windows-latest
+    steps:
+      - name: Download x64 CI artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ninja-x64*
+          merge-multiple: false
+          path: out/install/
+          run-id: ${{ needs.prepare.outputs.x64RunId || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download x86 CI artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ninja-x86*
+          merge-multiple: false
+          path: out/install/
+          run-id: ${{ needs.prepare.outputs.x86RunId || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare release folders
+        run: |
+          New-Item -ItemType Directory -Path githubrelease -Force | Out-Null
+          foreach ($arch in @('x64', 'x64-static', 'x86', 'x86-static')) {
+            $source = "out/install/ninja-$arch"
+            if (!(Test-Path -LiteralPath $source -PathType Container)) {
+              throw "Required CI artifact folder is missing: $source"
+            }
+            Copy-Item -LiteralPath $source -Destination "githubrelease/$arch" -Recurse -ErrorAction Stop
+          }
+
+      - name: Package artifacts
+        shell: powershell
+        run: |
+          $archToLabel = @{
+            'x64' = 'ninja-x64'
+            'x64-static' = 'ninja-x64-static'
+            'x86' = 'ninja-x86'
+            'x86-static' = 'ninja-x86-static'
+          }
+          foreach ($entry in $archToLabel.GetEnumerator()) {
+            $arch = $entry.Key
+            $label = $entry.Value
+            if (!(Test-Path -LiteralPath "githubrelease/$arch" -PathType Container)) {
+              throw "Required release folder is missing: $arch"
+            }
+            Compress-Archive -Path "githubrelease/$arch/*" -DestinationPath "githubrelease/DirectXShaderPatcher-$label.zip" -Force
+          }
+          foreach ($algorithm in @('SHA256', 'SHA512')) {
+            Get-ChildItem githubrelease -Filter *.zip | Sort-Object Name | Get-FileHash -Algorithm $algorithm | ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path -Path $_.Path -Leaf)" } | Set-Content "githubrelease/${algorithm}SUMS" -Encoding ascii
+          }
+
+      - name: Create a Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          target_commitish: ${{ needs.prepare.outputs.sha }}
+          name: DirectXShaderPatcher ${{ needs.prepare.outputs.version }}
+          prerelease: false
+          files: |
+            githubrelease/*.zip
+            githubrelease/SHA256SUMS
+            githubrelease/SHA512SUMS

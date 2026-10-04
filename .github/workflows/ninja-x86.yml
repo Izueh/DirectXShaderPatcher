@@ -1,19 +1,23 @@
 name: Ninja x86
 
 on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit to build
+        required: true
+        type: string
   workflow_dispatch:
   push:
     branches: [main]
     paths-ignore:
       - "**/*.md"
       - "docs/**"
-      - ".github/**"
   pull_request:
     branches: [main]
     paths-ignore:
       - "**/*.md"
       - "docs/**"
-      - ".github/**"
 
 jobs:
   build:
@@ -27,15 +31,18 @@ jobs:
     env:
       SCCACHE_GHA_ENABLED: "true"
       SCCACHE_CACHE_SIZE: "2G"
-      SCCACHE_C_CUSTOM_CACHE_BUSTER: "${{ github.workflow }}"
+      SCCACHE_C_CUSTOM_CACHE_BUSTER: "Ninja x86"
 
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          ref: ${{ inputs.ref || github.sha }}
 
       - name: Set up sccache
         uses: mozilla-actions/sccache-action@v0.0.10
+        with:
+          version: "v0.18.0"
 
       - name: Install ninja-build tool
         uses: seanmiddleditch/gha-setup-ninja@v5
@@ -48,14 +55,42 @@ jobs:
       - name: Configure CMake (${{ matrix.preset }})
         run: cmake --preset ${{ matrix.preset }} -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
+      - name: Show toolchain versions
+        run: |
+          $compilerPath = (Get-Command cl.exe).Source
+          Write-Output "MSVC compiler: $compilerPath"
+          Write-Output "MSVC version: $((Get-Item -LiteralPath $compilerPath).VersionInfo.FileVersion)"
+          Write-Output "VC toolset: $env:VCToolsVersion"
+          Write-Output "Windows SDK: $env:WindowsSDKVersion"
+          Write-Output "Runner image: $env:ImageVersion"
+          sccache --version
+          cmake --version
+          ninja --version
+
+      - name: Reset sccache stats (Release)
+        run: sccache --zero-stats
+
       - name: Build (${{ matrix.preset }} Release)
+        id: build-release
         run: cmake --build --parallel --preset ${{ matrix.preset }}-release
+
+      - name: Show sccache stats (Release)
+        if: always() && steps.build-release.outcome != 'skipped'
+        run: sccache --show-stats
 
       - name: Test (${{ matrix.preset }} Release)
         run: ctest --preset ${{ matrix.preset }}-release --output-on-failure
 
+      - name: Reset sccache stats (Debug)
+        run: sccache --zero-stats
+
       - name: Build (${{ matrix.preset }} Debug)
+        id: build-debug
         run: cmake --build --parallel --preset ${{ matrix.preset }}-debug
+
+      - name: Show sccache stats (Debug)
+        if: always() && steps.build-debug.outcome != 'skipped'
+        run: sccache --show-stats
 
       - name: Install SDK (${{ matrix.preset }} Release)
         run: cmake --install out/build32/${{ matrix.preset }} --config Release --component DirectXShaderPatcherSDK --prefix out/install/${{ matrix.preset }}
@@ -76,7 +111,3 @@ jobs:
           name: ${{ matrix.preset }}
           path: out/install/${{ matrix.preset }}/
           retention-days: 7
-
-      - name: Show sccache stats
-        if: always()
-        run: sccache --show-stats
