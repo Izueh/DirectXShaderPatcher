@@ -1324,6 +1324,20 @@ auto ShaderProgram::CreateResourceHandle(const hlsl::DxilResourceBase& resource,
   hlsl::OP dxil_op(mod->getContext(), mod);
   dxil_op.InitWithMinPrecision(dxil->GetUseMinPrecision());
 
+  // Before SM6.6 handles identify a resource metadata range, rather than an
+  // inline binding and property annotation. Preserve the input shader model.
+  if (!dxil->GetShaderModel()->IsSM66Plus()) {
+    auto* create_handle = dxil_op.GetOpFunc(hlsl::OP::OpCode::CreateHandle,
+                                            llvm::Type::getVoidTy(dxil_op.GetCtx()));
+    if (create_handle == nullptr) return nullptr;
+    return builder.CreateCall(
+        create_handle,
+        {builder.getInt32(static_cast<uint32_t>(hlsl::OP::OpCode::CreateHandle)),
+         builder.getInt8(static_cast<uint8_t>(resource.GetClass())),
+         builder.getInt32(resource.GetID()), builder.getInt32(binding.rangeLowerBound),
+         builder.getFalse()});
+  }
+
   llvm::Constant* resource_binding_constant =
       hlsl::resource_helper::getAsConstant(binding, dxil_op.GetResourceBindingType(),
                                            *dxil->GetShaderModel());

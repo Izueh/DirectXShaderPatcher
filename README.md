@@ -21,10 +21,6 @@ Main steps for building recipes are:
 
 Recipes can be declare trough YAML or directly trough C++ API.
 
-Both SM5 and SM6 recipes expose their YAML `version` through `Recipe::GetVersion()`
-(an unsigned 32-bit revision, defaulting to `1`). Include it in shader cache keys
-and increment it when a recipe changes to invalidate older cached shaders.
-
 Steps support conditional execution trough a condition engine.
 
 ## Building

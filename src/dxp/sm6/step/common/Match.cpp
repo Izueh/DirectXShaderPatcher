@@ -113,6 +113,16 @@ auto TryResolveResourceFromHandle(llvm::Value* value, hlsl::DxilModule& dxil_mod
   const llvm::CallInst* const call_init = llvm::dyn_cast<llvm::CallInst>(value);
   const llvm::CallInst* call = call_init;
   if (call == nullptr) return false;
+  if (IsDxOpCall(*call, hlsl::OP::OpCode::CreateHandle)) {
+    if (call->getNumArgOperands() < 5) return false;
+    const auto* resource_class = llvm::dyn_cast<llvm::ConstantInt>(call->getArgOperand(1));
+    const auto* range_id = llvm::dyn_cast<llvm::ConstantInt>(call->getArgOperand(2));
+    if (resource_class == nullptr || range_id == nullptr) return false;
+    resource = FindResourceByOrdinal(dxil_module,
+        static_cast<hlsl::DXIL::ResourceClass>(resource_class->getZExtValue()),
+        static_cast<unsigned>(range_id->getZExtValue()));
+    return resource != nullptr;
+  }
   if (IsDxOpCall(*call, hlsl::OP::OpCode::AnnotateHandle)) {
     if (call->getNumArgOperands() < 2) return false;
     call = llvm::dyn_cast<llvm::CallInst>(call->getArgOperand(1));

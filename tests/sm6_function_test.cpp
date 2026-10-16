@@ -143,7 +143,7 @@ void TestNestedAndCleanup(const std::vector<uint8_t>& shader) {
   }
 }
 
-void TestResourceHelpers(const std::vector<uint8_t>& shader) {
+void TestResourceHelpers(const std::vector<uint8_t>& shader, bool modern_handles = true) {
   const std::string yaml = R"(
 steps:
   - kind: add_resource
@@ -192,7 +192,11 @@ steps:
   if (!Load(result->output_bytes, output)) return;
   auto* helper = output.program.GetModule()->getFunction("__dxp_fn.read_frame");
   if (!Check(helper != nullptr, "Resource helper must survive serialization")) return;
-  Check(CountCalls(*helper, "dx.op.createHandleFromBinding") == 1 && CountCalls(*helper, "dx.op.annotateHandle") == 1, "Resource handles must be created and cached inside the helper");
+  if (modern_handles) {
+    Check(CountCalls(*helper, "dx.op.createHandleFromBinding") == 1 && CountCalls(*helper, "dx.op.annotateHandle") == 1, "Resource handles must be created and cached inside the helper");
+  } else {
+    Check(CountCalls(*helper, "dx.op.createHandle") == 1 && CountCalls(*helper, "dx.op.createHandleFromBinding") == 0 && CountCalls(*helper, "dx.op.annotateHandle") == 0, "SM6.0-6.5 must use and cache legacy resource handles inside the helper");
+  }
   for (auto& block : *helper) {
     for (auto& instruction : block) {
       for (auto& operand : instruction.operands()) {
@@ -262,6 +266,47 @@ void TestVoidHelpers(const std::vector<uint8_t>& shader) {
   replace.replace(replace.find("opcode: ret"), std::string("opcode: ret").size(), "opcode: " + store_opcode);
   auto replaced = Run("steps:\n" + definitions + replace, shader);
   Check(replaced && replaced->modified, "Output-writing nested helper must satisfy replacement validation: " + (replaced ? "" : replaced.error()));
+}
+
+void TestTextureHandles(const std::vector<uint8_t>& shader) {
+  const std::string yaml = R"(
+steps:
+  - kind: add_resource
+    name: texture
+    textures: [{handle: added_texture, kind: Texture2D, space: 7, register_index: 13}]
+  - kind: apply_rule
+    name: replace_load
+    rule:
+      match: [{opcode: TextureLoad, capture: original}]
+      emit:
+        - opcode: TextureLoad
+          replace_captured: original
+          result_component_type: F32
+          operands:
+            - {index: 1, kind: resource, handle: added_texture}
+            - {index: 2, kind: constant, constant_int_values: [0]}
+            - {index: 3, kind: constant, constant_int_values: [0]}
+            - {index: 4, kind: constant, constant_int_values: [0]}
+            - {index: 5, kind: undefined}
+            - {index: 6, kind: undefined}
+            - {index: 7, kind: undefined}
+            - {index: 8, kind: undefined}
+  - kind: apply_rule
+    name: capture_binding
+    rewrite_mode: none
+    rule:
+      match:
+        - opcode: TextureLoad
+          operands: [{index: 1, kind: resource, register_index: 13, space: 7}]
+)";
+  auto result = Run(yaml, shader);
+  if (!Check(result.has_value(), result ? "" : result.error())) return;
+  const auto& capture = std::get<dxp::ApplyRuleResults>(result->steps.back().results);
+  Check(capture.match_count == 1,
+        "Texture handles must resolve metadata range IDs to the correct sparse register and space");
+  dxp::sm6::ExecutionContext output;
+  if (!Load(result->output_bytes, output)) return;
+  Check(output.program.Verify().has_value(), "Patched texture shader must validate after serialization");
 }
 
 void TestScalarCpp(const std::vector<uint8_t>& shader) {
@@ -431,10 +476,17 @@ int main() {
   if (!ReadFile((RepoRootPath() / "tests/shaders/sm6_rule_patterns.cs_6_6.cso").string(), shader)) return 1;
   TestNestedAndCleanup(shader);
   TestResourceHelpers(shader);
+  TestTextureHandles(shader);
   TestVoidHelpers(shader);
   TestScalarCpp(shader);
   TestLocalStorageAndPatchRoot(shader);
   TestErrors(shader);
   TestConcurrent(shader);
+  for (const auto* profile : {"cs_6_0", "cs_6_5"}) {
+    std::vector<uint8_t> legacy_shader;
+    if (!ReadFile((RepoRootPath() / (std::string("tests/shaders/sm6_rule_patterns.") + profile + ".cso")).string(), legacy_shader)) return 1;
+    TestResourceHelpers(legacy_shader, false);
+    TestTextureHandles(legacy_shader);
+  }
   return failures == 0 ? 0 : 1;
 }
