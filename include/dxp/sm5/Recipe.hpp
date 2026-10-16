@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <concepts>
+#include <cstdint>
 #include <memory>
 #include <span>
 #include <string>
@@ -35,15 +36,20 @@ struct Recipe {
  public:
   Recipe() = default;
 
-  /// @brief Copy constructor — copies steps and env; the validation flag follows the source.
+  /// @brief Create a recipe with an application-defined revision for cache invalidation.
+  explicit Recipe(uint32_t version) : version_(version) {}
+
+  /// @brief Copy constructor — copies version, steps and env; the validation flag follows the source.
   Recipe(const Recipe& other)
-      : steps_(other.steps_),
+      : version_(other.version_),
+        steps_(other.steps_),
         env_(other.env_),
         validated_(other.validated_.load(std::memory_order_relaxed)) {}
 
   /// @brief Copy assignment — see copy constructor.
   Recipe& operator=(const Recipe& other) {
     if (this != &other) {
+      version_ = other.version_;
       steps_ = other.steps_;
       env_ = other.env_;
       validated_.store(other.validated_.load(std::memory_order_relaxed), std::memory_order_relaxed);
@@ -51,15 +57,17 @@ struct Recipe {
     return *this;
   }
 
-  /// @brief Move constructor — moves steps and env; the validation flag follows the source.
+  /// @brief Move constructor — preserves version, moves steps and env; the validation flag follows the source.
   Recipe(Recipe&& other) noexcept
-      : steps_(std::move(other.steps_)),
+      : version_(other.version_),
+        steps_(std::move(other.steps_)),
         env_(std::move(other.env_)),
         validated_(other.validated_.load(std::memory_order_relaxed)) {}
 
   /// @brief Move assignment — see move constructor.
   Recipe& operator=(Recipe&& other) noexcept {
     if (this != &other) {
+      version_ = other.version_;
       steps_ = std::move(other.steps_);
       env_ = std::move(other.env_);
       validated_.store(other.validated_.load(std::memory_order_relaxed), std::memory_order_relaxed);
@@ -126,6 +134,10 @@ struct Recipe {
    */
   static std::expected<Recipe, std::string> ParseFromText(const std::string& text, const std::string& source_name = {});
 
+  /// @brief Get the application-defined YAML recipe version (defaults to 1).
+  /// Include this revision in shader cache keys and bump it when the recipe changes.
+  [[nodiscard]] uint32_t GetVersion() const noexcept;
+
   /**
    * @brief Get the number of steps in the recipe.
    * @return Number of steps.
@@ -149,6 +161,7 @@ struct Recipe {
                                                    const PatchOptions& options = {}) const;
 
  private:
+  uint32_t version_ = 1;
   std::vector<StepVariant> steps_;
   std::unordered_map<std::string, PrimitiveValue> env_;
 

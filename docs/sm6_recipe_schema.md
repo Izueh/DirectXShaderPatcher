@@ -11,7 +11,7 @@ JSON Schema companion: [sm6_recipe_schema.json](sm6_recipe_schema.json)
 > When the YAML surface changes, regenerate with `gen_schema` and update this
 > page to match.
 
-SM6 recipes use schema version `1` and are specific to `dxp::sm6` / DXIL (LLVM
+SM6 recipes are specific to `dxp::sm6` / DXIL (LLVM
 IR) patching.
 
 ## Recipe Structure
@@ -20,11 +20,17 @@ Every SM6 recipe is a YAML document with three top-level keys:
 
 | key | required | meaning |
 |---|---|---|
-| `version` | optional, defaults to `1` | schema version (currently only `1` is supported) |
+| `version` | optional, defaults to `1` | application-defined recipe revision, an unsigned 32-bit integer |
 | `env` | optional | variable definitions accessible via conditions |
 | `steps` | required | non-empty array of step objects, executed in order |
 
 Each step has a unique `name` and a `kind` that determines its behaviour.
+
+`Recipe::GetVersion()` returns the parsed `version` from either `ParseFromText`
+or `ParseFromFile`. Include it in shader cache keys and bump it when a recipe
+changes to invalidate cached shaders from previous revisions. It does not select
+a schema or shader model. Recipes built in C++ also default to `1`; pass a
+revision to the constructor, such as `dxp::sm6::Recipe recipe(2)`, to set it.
 
 ## Step Kinds
 
@@ -40,7 +46,7 @@ Each step has a unique `name` and a `kind` that determines its behaviour.
 ## `declare_function`
 
 This replaces the unfinished SM6 `declare_template` step. SM5 templates remain
-available. The recipe version stays `1`.
+available.
 
 Declarations build one internal LLVM/DXIL function with a single block. Ordered
 `params` have unique names and scalar `type` values. `return_type` defaults to

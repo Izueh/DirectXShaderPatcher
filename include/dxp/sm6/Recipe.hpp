@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <concepts>
+#include <cstdint>
 #include <memory>
 #include <span>
 #include <string>
@@ -38,9 +39,13 @@ struct Recipe {
  public:
   Recipe() = default;
 
-  /// @brief Copy constructor — copies steps and env; the validation flag follows the source.
+  /// @brief Create a recipe with an application-defined revision for cache invalidation.
+  explicit Recipe(uint32_t version) : version_(version) {}
+
+  /// @brief Copy constructor — copies version, steps and env; the validation flag follows the source.
   Recipe(const Recipe& other)
-      : steps_(other.steps_),
+      : version_(other.version_),
+        steps_(other.steps_),
         env_(other.env_),
         validated_(other.validated_.load(std::memory_order_relaxed)),
         serialization_options_(other.serialization_options_) {}
@@ -48,6 +53,7 @@ struct Recipe {
   /// @brief Copy assignment — see copy constructor.
   Recipe& operator=(const Recipe& other) {
     if (this != &other) {
+      version_ = other.version_;
       steps_ = other.steps_;
       env_ = other.env_;
       validated_.store(other.validated_.load(std::memory_order_relaxed), std::memory_order_relaxed);
@@ -56,9 +62,10 @@ struct Recipe {
     return *this;
   }
 
-  /// @brief Move constructor — moves steps and env; the validation flag follows the source.
+  /// @brief Move constructor — preserves version, moves steps and env; the validation flag follows the source.
   Recipe(Recipe&& other) noexcept
-      : steps_(std::move(other.steps_)),
+      : version_(other.version_),
+        steps_(std::move(other.steps_)),
         env_(std::move(other.env_)),
         validated_(other.validated_.load(std::memory_order_relaxed)),
         serialization_options_(other.serialization_options_) {}
@@ -66,6 +73,7 @@ struct Recipe {
   /// @brief Move assignment — see move constructor.
   Recipe& operator=(Recipe&& other) noexcept {
     if (this != &other) {
+      version_ = other.version_;
       steps_ = std::move(other.steps_);
       env_ = std::move(other.env_);
       validated_.store(other.validated_.load(std::memory_order_relaxed), std::memory_order_relaxed);
@@ -88,6 +96,10 @@ struct Recipe {
     validated_.store(false, std::memory_order_relaxed);
     return *this;
   }
+
+  /// @brief Get the application-defined YAML recipe version (defaults to 1).
+  /// Include this revision in shader cache keys and bump it when the recipe changes.
+  [[nodiscard]] uint32_t GetVersion() const noexcept;
 
   /**
    * @brief Get the number of steps in the recipe.
@@ -151,6 +163,7 @@ struct Recipe {
   }
 
  private:
+  uint32_t version_ = 1;
   std::vector<StepVariant> steps_;
 
   /// @brief Lazy validation cache. Written by ValidateRecipe (via the first

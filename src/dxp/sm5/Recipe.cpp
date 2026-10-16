@@ -55,6 +55,10 @@ std::expected<void, std::string> ValidateRecipe(const Recipe& recipe) {
   return {};
 }
 
+uint32_t Recipe::GetVersion() const noexcept {
+  return version_;
+}
+
 size_t Recipe::GetStepCount() const {
   return steps_.size();
 }

@@ -208,6 +208,7 @@ dxp_add_test(sm6_constant_array_test "sm6_constant_array_test.cpp" "${CMAKE_CURR
 dxp_add_test(sm6_function_test "sm6_function_test.cpp")
 dxp_add_test(sm5_emit_test "sm5_emit_test.cpp")
 dxp_add_test(sm5_sm6_match_test "sm5_sm6_match_test.cpp")
+dxp_add_test(recipe_version_test "recipe_version_test.cpp")
 
 # Benchmarks (conditional)
 if(DXP_BUILD_BENCHMARKS)

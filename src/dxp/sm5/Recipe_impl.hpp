@@ -47,10 +47,6 @@ struct meta<dxp::sm5::RecipeData> {
   using T = dxp::sm5::RecipeData;
   static constexpr auto value = object("version", &T::version, "env", &T::env, "steps", &T::steps);
   static constexpr auto validate = [](const dxp::sm5::RecipeData& self, std::string& error) {
-    if (self.version != 1) {
-      error = "unsupported recipe schema version";
-      return;
-    }
     if (self.steps.empty()) {
       error = "recipe requires at least one step";
       return;

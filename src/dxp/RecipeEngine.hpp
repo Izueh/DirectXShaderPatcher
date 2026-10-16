@@ -58,8 +58,8 @@ std::expected<void, std::string> ValidateStepList(const std::vector<StepVariant>
 /// `Compile()` fully populates the runtime step (name, condition, match mode),
 /// so no per-backend dispatch is needed.
 template <typename Recipe, typename StepDataVariant>
-std::pair<Recipe, std::string> ConvertRecipeData(const std::vector<StepDataVariant>& steps) {
-  Recipe recipe;
+std::pair<Recipe, std::string> ConvertRecipeData(const std::vector<StepDataVariant>& steps, uint32_t version) {
+  Recipe recipe(version);
   std::string error;
 
   for (const auto& step_var : steps) {
@@ -80,10 +80,11 @@ std::pair<Recipe, std::string> ConvertRecipeData(const std::vector<StepDataVaria
   return {std::move(recipe), {}};
 }
 
-/// @brief Converts a YAML recipe data document into a recipe, including steps and env.
+/// @brief Converts a YAML recipe data document into a recipe, including version, steps and env.
 template <typename Recipe, typename StepDataVariant, typename EnvMap>
-std::pair<Recipe, std::string> ConvertRecipeData(const std::vector<StepDataVariant>& steps, const EnvMap& env) {
-  auto [recipe, error] = ConvertRecipeData<Recipe>(steps);
+std::pair<Recipe, std::string> ConvertRecipeData(const std::vector<StepDataVariant>& steps, const EnvMap& env,
+                                             uint32_t version) {
+  auto [recipe, error] = ConvertRecipeData<Recipe>(steps, version);
   if (!error.empty()) return {Recipe{}, std::move(error)};
   for (const auto& [key, value] : env) {
     recipe.SetEnv(key, value);
@@ -100,7 +101,7 @@ std::expected<Recipe, std::string> ParseRecipeFromText(const std::string& text,
   if (ec) {
     return std::unexpected(source_name.empty() ? "recipe" : source_name + ": " + glz::format_error(ec, text));
   }
-  auto [recipe, convert_error] = ConvertRecipeData<Recipe>(doc.steps, doc.env);
+  auto [recipe, convert_error] = ConvertRecipeData<Recipe>(doc.steps, doc.env, doc.version);
   if (!convert_error.empty()) {
     return std::unexpected(std::move(convert_error));
   }
@@ -118,7 +119,7 @@ std::expected<Recipe, std::string> ParseRecipeFromFile(const std::string& path) 
   if (ec) {
     return std::unexpected(path + ": " + glz::format_error(ec, std::string{}));
   }
-  auto [recipe, convert_error] = ConvertRecipeData<Recipe>(doc.steps, doc.env);
+  auto [recipe, convert_error] = ConvertRecipeData<Recipe>(doc.steps, doc.env, doc.version);
   if (!convert_error.empty()) {
     return std::unexpected(std::move(convert_error));
   }
