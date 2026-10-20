@@ -119,6 +119,12 @@ struct Recipe {
     return *this;
   }
 
+  /// @brief Get the recipe's environment variables: the YAML `env` defaults plus
+  /// any values seeded via SetEnv. PatchOptions passed to Execute() override these.
+  [[nodiscard]] const std::unordered_map<std::string, PrimitiveValue>& GetEnv() const noexcept {
+    return env_;
+  }
+
   /**
    * @brief Parse a recipe from a YAML file.
    * @param path Path to the YAML file.
@@ -149,6 +155,16 @@ struct Recipe {
    * @return true if at least one add_resource step is present.
    */
   bool HasAddResourceSteps() const;
+
+  /**
+   * @brief Resources declared by the recipe's add_resource steps, in step order.
+   *
+   * Available right after parsing, without running on a shader: handle, class, the
+   * shader-facing type, explicit register/space, cbuffer layouts and `meta:`. A
+   * declaration from a step with a condition or `required: false` is marked
+   * conditional; RecipeReport::new_bindings reports what a run actually added.
+   */
+  [[nodiscard]] std::vector<ResourceDeclaration> GetDeclaredResources() const;
 
   /**
    * @brief Execute the recipe on the given DXBC container bytes.

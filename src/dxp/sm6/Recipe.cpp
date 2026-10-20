@@ -58,6 +58,18 @@ bool Recipe::HasAddResourceSteps() const {
   return false;
 }
 
+std::vector<ResourceDeclaration> Recipe::GetDeclaredResources() const {
+  std::vector<ResourceDeclaration> declarations;
+  for (const auto& entry : steps_) {
+    if (const auto* add = std::get_if<step::AddResourceStep>(&entry)) {
+      auto step_declarations = step::Declarations(*add);
+      declarations.insert(declarations.end(), std::make_move_iterator(step_declarations.begin()),
+                          std::make_move_iterator(step_declarations.end()));
+    }
+  }
+  return declarations;
+}
+
 std::expected<Recipe, std::string> Recipe::ParseFromFile(const std::string& path) {
   return dxp::detail::ParseRecipeFromFile<Recipe, RecipeData>(path);
 }

@@ -133,6 +133,21 @@ auto EmitPatternData::Compile() const -> std::expected<EmitPattern, std::string>
     return std::unexpected("emit '" + emit_name + "': function cannot be combined with other emit modes or result_component_type");
   }
   const bool legacy_extract_mode = !aggregate.empty() || extract_index.has_value();
+  if (cbuffer_field.has_value()) {
+    if (!opcode.empty() || cast_opcode.has_value() || !capture.empty() || !operands.empty() || extract.has_value() || legacy_extract_mode ||
+        !function_name.empty() || result_component_type.has_value()) {
+      return std::unexpected("emit '" + emit_name + "': cbuffer_field cannot be combined with other emit modes, operands or result_component_type");
+    }
+    if (name.empty()) return std::unexpected("emit with cbuffer_field requires a name");
+    if (cbuffer_field->handle.empty() || cbuffer_field->field.empty()) {
+      return std::unexpected("emit '" + emit_name + "': cbuffer_field requires handle and field");
+    }
+    EmitPattern result;
+    result.name = name;
+    result.replace_captured = replace_captured;
+    result.cbuffer_field = cbuffer_field;
+    return result;
+  }
   if (extract.has_value()) {
     if (!opcode.empty() || cast_opcode.has_value() || !capture.empty() || !operands.empty()) {
       return std::unexpected("emit '" + emit_name + "': extract cannot be combined with opcode, cast_opcode, capture, or operands");

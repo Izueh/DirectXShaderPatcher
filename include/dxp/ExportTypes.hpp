@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -98,12 +100,93 @@ enum class BindingClass : std::uint8_t {
   Uav,
 };
 
+/// @brief Opaque recipe metadata: the YAML subtree under a declaration's `meta:` key.
+///
+/// DXP parses it and reports it verbatim but never interprets it, so consumers can
+/// attach their own hints (provisioning, UI, documentation) without DXP depending on
+/// any of them. Numbers are stored as double; object keys keep their YAML order.
+struct MetaValue {
+  using Array = std::vector<MetaValue>;
+  using Object = std::vector<std::pair<std::string, MetaValue>>;
+
+  std::variant<std::monostate, bool, double, std::string, Array, Object> value;
+
+  /// @brief Member lookup on an object value; nullptr when absent or not an object.
+  [[nodiscard]] const MetaValue* Find(std::string_view key) const {
+    if (const auto* object = std::get_if<Object>(&value)) {
+      for (const auto& [k, v] : *object) {
+        if (k == key) return &v;
+      }
+    }
+    return nullptr;
+  }
+  [[nodiscard]] const std::string* AsString() const { return std::get_if<std::string>(&value); }
+  [[nodiscard]] const double* AsNumber() const { return std::get_if<double>(&value); }
+  [[nodiscard]] const bool* AsBool() const { return std::get_if<bool>(&value); }
+  [[nodiscard]] const Array* AsArray() const { return std::get_if<Array>(&value); }
+  [[nodiscard]] const Object* AsObject() const { return std::get_if<Object>(&value); }
+};
+
+/// @brief One field of a recipe-declared constant buffer.
+///
+/// Fields are a recipe-side layout: shader bytecode only addresses 16-byte rows and
+/// components, so the layout exists to resolve `{ name, field }` references at load
+/// time and to tell consumers how to fill the buffer.
+struct CBufferField {
+  std::string name;
+  ComponentType type = ComponentType::F32;  ///< F32, U32 or I32.
+  uint32_t width = 1;                       ///< Components, 1-4.
+  uint32_t offset = 0;                      ///< Byte offset (explicit or auto-packed).
+  std::vector<double> default_value;        ///< Empty = zero; otherwise one entry per component.
+  std::optional<MetaValue> meta;
+};
+
+/// @brief Layout of a recipe-declared constant buffer.
+struct CBufferLayout {
+  std::string type_name;
+  uint32_t size_in_bytes = 0;
+  std::vector<CBufferField> fields;
+
+  [[nodiscard]] const CBufferField* FindField(std::string_view name) const {
+    for (const auto& field : fields) {
+      if (field.name == name) return &field;
+    }
+    return nullptr;
+  }
+};
+
+/// @brief Shader-facing type of a declared or added resource. Fields that a shader
+/// model does not express are left unset (e.g. SM5 textures carry no element type).
+struct ResourceTypeInfo {
+  std::optional<ResourceDimension> dimension;  ///< Textures, UAVs and buffers.
+  std::optional<ComponentType> element_type;   ///< Element component type (SM6 textures/UAVs).
+  std::optional<uint32_t> vector_width;        ///< Element component count (SM6 textures/UAVs).
+  std::optional<uint32_t> structure_stride;    ///< Structured buffers.
+  std::optional<CBufferLayout> cbuffer;        ///< Constant buffers declared with fields.
+};
+
 /// @brief Resource binding produced by patching.
 struct ResourceBinding {
   std::string handle;
   BindingClass binding_class = BindingClass::Unknown;
   uint32_t register_index = 0;
   uint32_t space = 0;
+  ResourceTypeInfo type;          ///< What the patched shader expects to find bound here.
+  std::optional<MetaValue> meta;  ///< The declaration's `meta:` subtree, verbatim.
+};
+
+/// @brief A resource declared by a recipe's add_resource steps, known right after
+/// parsing (see Recipe::GetDeclaredResources). Execution may skip it: see
+/// @c conditional, and RecipeReport::new_bindings for what a run actually added.
+struct ResourceDeclaration {
+  std::string step;  ///< add_resource step name.
+  std::string handle;
+  BindingClass binding_class = BindingClass::Unknown;
+  std::optional<uint32_t> register_index;  ///< Unset: assigned at execution.
+  std::optional<uint32_t> space;           ///< Unset: assigned at execution (SM5 is always space 0).
+  ResourceTypeInfo type;
+  bool conditional = false;  ///< The step has a condition or `required: false`.
+  std::optional<MetaValue> meta;
 };
 
 /// @brief Resources found during pattern matching.

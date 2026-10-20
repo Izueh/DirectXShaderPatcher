@@ -108,6 +108,8 @@ struct EmitPatternData {
   std::string capture;
   std::string replace_captured;
   std::string function_name;
+  /// Reads a cbuffer field by name; resolved to CBufferLoadLegacy + extractvalue at load.
+  std::optional<EmitCBufferField> cbuffer_field;
 
   [[nodiscard]] auto Compile() const -> std::expected<EmitPattern, std::string>;
 };
@@ -162,7 +164,8 @@ struct meta<dxp::sm6::step::EmitPatternData> {
                                        "cast_opcode", &T::cast_opcode, "aggregate", &T::aggregate,
                                        "extract_index", &T::extract_index, "extract", &T::extract,
                                        "capture", &T::capture,
-                                       "replace_captured", &T::replace_captured, "function", &T::function_name);
+                                       "replace_captured", &T::replace_captured, "function", &T::function_name,
+                                       "cbuffer_field", &T::cbuffer_field);
 };
 
 }  // namespace glz

@@ -479,7 +479,7 @@ auto GetOrCreateTextureType(llvm::Module& mod, const dxp::sm6::TextureResourceDe
 }
 
 auto GetOrCreateResolvedCBufferType(llvm::Module& mod, const dxp::sm6::CBufferDesc& cb_desc) -> llvm::StructType* {
-  return (cb_desc.schema != nullptr) ? GetOrCreateCBufferSchemaType(mod, *cb_desc.schema) : GetOrCreateCBufferType(mod, cb_desc);
+  return cb_desc.schema.has_value() ? GetOrCreateCBufferSchemaType(mod, *cb_desc.schema) : GetOrCreateCBufferType(mod, cb_desc);
 }
 
 /// @brief Generate a unique global name by appending numeric suffixes.
@@ -842,11 +842,11 @@ auto ShaderProgram::AddCBuffer(const CBufferDesc& desc) -> std::expected<void, s
   if (!module || (dxil_module == nullptr)) {
     return std::unexpected("add_resource: cbuffer: no loaded shader program");
   }
-  const unsigned kSizeInBytes = (desc.schema != nullptr) ? desc.schema->size_in_bytes : desc.size_in_bytes;
+  const unsigned kSizeInBytes = desc.schema.has_value() ? desc.schema->size_in_bytes : desc.size_in_bytes;
   if (desc.name.empty() || kSizeInBytes == 0) {
     return std::unexpected("add_resource: refusing to add cbuffer with empty name or zero size");
   }
-  if (desc.schema != nullptr) {
+  if (desc.schema.has_value()) {
     std::string schema_error;
     if (!ValidateCBufferSchema(*desc.schema, schema_error)) {
       return std::unexpected("add_resource: cbuffer schema: " + schema_error);
@@ -869,7 +869,7 @@ auto ShaderProgram::AddCBuffer(const CBufferDesc& desc) -> std::expected<void, s
 
   llvm::StructType* cbuffer_type = nullptr;
   auto* sym = CreateCBufferSymbol(*module, resolved, cbuffer_type);
-  if (resolved.schema != nullptr) {
+  if (resolved.schema.has_value()) {
     MaybeAnnotateCBufferType(*dxil_module, cbuffer_type, *resolved.schema);
   } else {
     MaybeAnnotateCBufferType(*dxil_module, cbuffer_type, kSizeInBytes);

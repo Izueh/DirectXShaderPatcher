@@ -61,25 +61,6 @@ struct ExecutionContext : VariableStore {
 
   /// @brief Per-execution logging state (sink + level filter, populated from PatchOptions).
   dxp::LogContext logger;
-
-  /**
-   * @brief Resolve a field offset from a cbuffer schema.
-   * @param cbuffer_name The cbuffer handle name (without field).
-   * @param field_name The field name (after the dot).
-   * @return The byte offset of the field, or 0 if not found.
-   */
-  [[nodiscard]] uint32_t ResolveFieldOffset(const std::string& cbuffer_name, const std::string& field_name) const {
-    auto cbuf_it = cbuffers.find(cbuffer_name);
-    if (cbuf_it == cbuffers.end() || cbuf_it->second.schema == nullptr) {
-      return 0;
-    }
-    for (const auto& field : cbuf_it->second.schema->fields) {
-      if (field.name == field_name) {
-        return field.offset;
-      }
-    }
-    return 0;
-  }
 };
 
 }  // namespace dxp::sm6

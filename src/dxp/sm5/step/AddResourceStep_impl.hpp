@@ -2,6 +2,7 @@
 
 #include <dxp/sm5/step/AddResourceStep.hpp>
 #include <glaze/glaze.hpp>
+#include "dxp/CBufferLayout_impl.hpp"
 #include "dxp/Condition_impl.hpp"
 #include "dxp/sm5/ExecutionContext.hpp"
 #include "dxp/sm5/Model_impl.hpp"
@@ -27,6 +28,18 @@ std::expected<void, std::string> Validate(const AddResourceStep& step, dxp::Vali
 /// @brief Formats the step's result as a Trace log message.
 std::string DescribeOutcome(const AddResourceStep& step, const dxp::AddResourceResults& results, const ExecutionContext& ctx);
 
+/// @brief Shader-facing type of a declaration, as reported in bindings and declarations.
+dxp::ResourceTypeInfo TypeInfoOf(const AddResourceStep::TextureDecl& decl);
+dxp::ResourceTypeInfo TypeInfoOf(const AddResourceStep::RawResourceDecl& decl);
+dxp::ResourceTypeInfo TypeInfoOf(const AddResourceStep::StructuredResourceDecl& decl);
+dxp::ResourceTypeInfo TypeInfoOf(const AddResourceStep::CBufferDecl& decl);
+dxp::ResourceTypeInfo TypeInfoOf(const AddResourceStep::SamplerDecl& decl);
+dxp::ResourceTypeInfo TypeInfoOf(const AddResourceStep::UavDecl& decl);
+/// @brief The step's resource declarations (inputs, outputs and temps excluded).
+std::vector<dxp::ResourceDeclaration> Declarations(const AddResourceStep& step);
+/// @brief Registers this step's cbuffer layouts for field references in later steps.
+std::expected<void, std::string> ResolveCBufferReferences(AddResourceStep& step, dxp::detail::CBufferLayouts& layouts);
+
 /// @brief One resource declaration within a typed array.
 struct AddResourceDeclData {
   std::string handle;
@@ -41,6 +54,8 @@ struct AddResourceDeclData {
   std::optional<ResourceDimension> dimension;
   std::optional<bool> globally_coherent;
   std::optional<bool> has_counter;
+  std::vector<dxp::detail::CBufferFieldData> fields;  ///< cbuffers: field layout; `elements` is derived when omitted.
+  glz::generic meta;  ///< Opaque consumer metadata, reported verbatim (null = absent; see CBufferFieldData).
 };
 
 /// @brief YAML-parseable temp array declaration.

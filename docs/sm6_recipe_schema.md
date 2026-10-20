@@ -211,13 +211,18 @@ Common declaration fields:
 - `vector_width` — element vector width (default 4).
 - `space` — register space (default 0).
 - `register_index` — explicit bind point, or omitted for auto-assign.
+- `meta` — optional opaque metadata for hosts, reported verbatim and never
+  interpreted (see [resource_declarations.md](resource_declarations.md)).
 
 Cbuffer desc fields:
 
 - `name` / `handle` — unique identifier.
 - `size_in_bytes` / `size` — buffer size.
 - `type` — schema type name.
-- `fields` — list of `{ name, type, width, offset }`.
+- `fields` — list of `{ name, type, width, offset, default, meta }`. Types are
+  `F32`, `U32` or `I32`; omitted offsets are auto-packed and an omitted size is
+  derived. See [resource_declarations.md](resource_declarations.md) for packing
+  rules and reading fields by name.
 
 <details>
 <summary>Example</summary>
@@ -354,7 +359,12 @@ in the generated JSON. Key semantics:
 
 Fields: `opcode`, `name`, `operands`, `result_component_type` (result
 `ComponentType`), `cast_opcode`, `aggregate`/`extract_index`,
-`capture`/`replace_captured`.
+`capture`/`replace_captured`, `cbuffer_field`.
+
+`cbuffer_field: { handle, field, component }` reads a field of a cbuffer declared
+with `fields` in an earlier step. It is resolved at load into `CBufferLoadLegacy`
+plus `extractvalue` and needs a `name`
+([resource_declarations.md](resource_declarations.md)).
 
 Numeric `result_component_type` values are `I1`, `I8`/`U8`, `I16`/`U16`,
 `I32`/`U32`, `I64`/`U64`, and `F16`/`F32`/`F64`. Unsupported component types

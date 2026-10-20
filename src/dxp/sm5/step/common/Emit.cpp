@@ -475,6 +475,11 @@ auto ResolveOperand(EmitContext& context, const OperandPattern& op, const std::s
     return {};
   }
   if (op.handle) {
+    if (op.handle->field && !op.handle->element_index) {
+      // Field references are resolved when a recipe is parsed (ResolveCBufferReferences).
+      error = path + ": cbuffer field '" + *op.handle->field + "' was not resolved; steps added through the C++ API must set element_index";
+      return {};
+    }
     const auto lookup = [&](BindingClass kind) -> const uint32_t* {
       auto& m = context.Bindings(kind);
       auto it = m.find(op.handle->name);

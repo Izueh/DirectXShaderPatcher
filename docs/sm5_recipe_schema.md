@@ -88,7 +88,9 @@ shape; only the relevant fields are honored per declaration type:
 | `handle` | all | unique identifier; referenced by `apply_rule` emit operands via `handle` |
 | `register_index` | all | explicit bind point, or omitted for auto-assign |
 | `reverse_bind` | all | auto-assign in reverse order: take the **highest** free slot (scan down from the max) instead of the lowest. Game shaders commonly occupy the low registers, so taking the lowest free slot can collide with the game's own bindings (and those overrides are never restored) — reverse order lands the patched resource far from the game's usage (e.g. t127 for textures). |
-| `elements` | cbuffers | number of 16-byte elements |
+| `elements` | cbuffers | number of 16-byte elements (derived from `fields` when omitted) |
+| `fields` | cbuffers | `{ name, type, width, offset, default, meta }` layout; recipe-side only, see [resource_declarations.md](resource_declarations.md) |
+| `meta` | textures, raw/structured, cbuffers, samplers, uavs | opaque metadata for hosts, reported verbatim and never interpreted |
 | `interpolation` | inputs | `InterpolationMode` key (`linear`, `constant`, …) |
 | `mode` | samplers | `SamplerMode` key (`default`, `comparison`, `mono`) |
 | `kind` | uavs | `typed`, `raw`, or `structured` |
@@ -284,6 +286,10 @@ capture/match_capture/export_as) is in the generated JSON. Key semantics:
 - `handle` resolves a declaration handle from an `add_resource` step (emit only)
   and requires an explicit `type`. Cannot be combined with `indices` or
   `immediates_*` arrays.
+  On a `constant_buffer` operand, `handle: { name, field }` reads a cbuffer field
+  by name. It is resolved at load into `element_index` plus a component selection,
+  and needs the cbuffer to be declared with `fields` in an earlier step
+  ([resource_declarations.md](resource_declarations.md)).
   In emit patterns, a temp/temp-array `handle:` operand requires explicit
   `components:` (rejected at Validate time); `capture:` operands need no
   `components:` — they inherit the captured operand's selection.

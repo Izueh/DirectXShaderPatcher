@@ -647,4 +647,46 @@ std::string DescribeOutcome(const ApplyRuleStep& step, const dxp::ApplyRuleResul
 static_assert(RecipeStep<ApplyRuleStep>);
 static_assert(ExecutableStep<ApplyRuleStep, ExecutionContext>);
 
+std::expected<void, std::string> ResolveCBufferReferences(ApplyRuleStep& step, const dxp::detail::CBufferLayouts& layouts) {
+  std::vector<EmitPattern> resolved;
+  resolved.reserve(step.rule.emit_patterns.size());
+  for (auto& emit : step.rule.emit_patterns) {
+    if (!emit.cbuffer_field) {
+      resolved.push_back(std::move(emit));
+      continue;
+    }
+    const EmitCBufferField& ref = *emit.cbuffer_field;
+    const std::string path = "emit '" + emit.name + "'";
+    const auto layout = layouts.find(ref.handle);
+    if (layout == layouts.end()) {
+      return std::unexpected(std::format("{}: cbuffer '{}' has no fields declared by an earlier add_resource step", path, ref.handle));
+    }
+    const dxp::CBufferField* field = layout->second.FindField(ref.field);
+    if (field == nullptr) return std::unexpected(std::format("{}: cbuffer '{}' has no field '{}'", path, ref.handle, ref.field));
+    if (ref.component >= field->width) {
+      return std::unexpected(std::format("{}: component {} is out of range for field '{}' (width {})", path, ref.component, ref.field, field->width));
+    }
+
+    // Legacy cbuffer loads return one 16-byte row; the field is a component of it.
+    EmitPattern load;
+    load.opcode = "CBufferLoadLegacy";
+    load.name = emit.name + "__cbuffer_row";
+    load.result_component_type = field->type == dxp::ComponentType::F32 ? dxp::ComponentType::F32 : dxp::ComponentType::I32;
+    load.operands.push_back(EmitOperand{.operand_index = 1, .kind = OperandKind::Resource, .handle = ref.handle});
+    EmitOperand row{.operand_index = 2, .kind = OperandKind::Constant};
+    row.constant_int_values = {static_cast<int64_t>(field->offset / 16)};
+    load.operands.push_back(std::move(row));
+
+    EmitPattern extract;
+    extract.name = emit.name;
+    extract.replace_captured = emit.replace_captured;
+    extract.extract = EmitExtractValue{.aggregate = load.name, .indices = {(field->offset % 16) / 4 + ref.component}};
+
+    resolved.push_back(std::move(load));
+    resolved.push_back(std::move(extract));
+  }
+  step.rule.emit_patterns = std::move(resolved);
+  return {};
+}
+
 }  // namespace dxp::sm6::step

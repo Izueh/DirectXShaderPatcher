@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "dxp/Condition.hpp"
+#include "dxp/ExportTypes.hpp"
 #include "dxp/sm5/Model.hpp"
 #include "dxp/StepResults.hpp"
 
@@ -34,6 +35,7 @@ struct AddResourceStep {
     std::optional<bool> reverse_bind;        ///< Auto-bind reverse order: take the HIGHEST free slot (scan down from the max) instead of the lowest.
     model::ResourceDimension dimension = model::ResourceDimension::Texture3D;
     std::string handle;
+    std::optional<dxp::MetaValue> meta;     ///< Opaque `meta:` subtree, reported verbatim.
   };
 
   /// @brief Fixed-size temp array declaration (count-based consecutive r# run).
@@ -71,6 +73,8 @@ struct AddResourceStep {
     uint32_t elements = 1;
     CbufferAccessPattern access_pattern = CbufferAccessPattern::ImmediateIndexed;
     std::string handle;
+    std::optional<dxp::CBufferLayout> layout;  ///< Field layout when declared with `fields`; `elements` is derived from it.
+    std::optional<dxp::MetaValue> meta;     ///< Opaque `meta:` subtree, reported verbatim.
   };
 
   /// @brief Sampler binding declaration.
@@ -79,6 +83,7 @@ struct AddResourceStep {
     std::optional<bool> reverse_bind;        ///< Auto-bind reverse order: take the HIGHEST free slot (scan down from the max) instead of the lowest.
     SamplerMode mode = SamplerMode::Default;
     std::string handle;
+    std::optional<dxp::MetaValue> meta;     ///< Opaque `meta:` subtree, reported verbatim.
   };
 
   /// @brief Raw resource binding declaration.
@@ -86,6 +91,7 @@ struct AddResourceStep {
     std::optional<uint32_t> register_index;  ///< Binding register index. Empty for next available, or a number for explicit.
     std::optional<bool> reverse_bind;        ///< Auto-bind reverse order: take the HIGHEST free slot (scan down from the max) instead of the lowest.
     std::string handle;
+    std::optional<dxp::MetaValue> meta;     ///< Opaque `meta:` subtree, reported verbatim.
   };
 
   /// @brief Structured resource binding declaration.
@@ -94,6 +100,7 @@ struct AddResourceStep {
     std::optional<bool> reverse_bind;        ///< Auto-bind reverse order: take the HIGHEST free slot (scan down from the max) instead of the lowest.
     uint32_t structure_stride;               ///< Required: byte stride of structured buffer elements
     std::string handle;
+    std::optional<dxp::MetaValue> meta;     ///< Opaque `meta:` subtree, reported verbatim.
   };
 
   /// @brief UAV binding declaration.
@@ -106,6 +113,7 @@ struct AddResourceStep {
     bool globally_coherent = false;
     bool has_order_preserving_counter = false;
     std::string handle;
+    std::optional<dxp::MetaValue> meta;     ///< Opaque `meta:` subtree, reported verbatim.
   };
 
   std::string name;

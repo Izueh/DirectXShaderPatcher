@@ -737,6 +737,51 @@
          },
          "additionalProperties": false
       },
+      "glz::generic": {
+         "type": [
+            "number",
+            "string",
+            "boolean",
+            "object",
+            "array",
+            "null"
+         ],
+         "oneOf": [
+            {
+               "type": "null",
+               "title": "std::nullptr_t",
+               "const": null
+            },
+            {
+               "type": "number",
+               "title": "double",
+               "minimum": -1.7976931348623157E308,
+               "maximum": 1.7976931348623157E308
+            },
+            {
+               "type": "string",
+               "title": "std::string"
+            },
+            {
+               "type": "boolean",
+               "title": "bool"
+            },
+            {
+               "type": "array",
+               "items": {
+                  "$ref": "#/$defs/glz::generic"
+               },
+               "title": "std::vector<glz::generic>"
+            },
+            {
+               "type": "object",
+               "additionalProperties": {
+                  "$ref": "#/$defs/glz::generic"
+               },
+               "title": "glz::ordered_small_map<glz::generic_json<glz::num_mode::f64>>"
+            }
+         ]
+      },
       "int32_t": {
          "type": "integer",
          "minimum": -2147483648,
@@ -910,11 +955,24 @@
                   "items": {
                      "type": "object",
                      "properties": {
+                        "default": {
+                           "$ref": "#/$defs/glz::generic"
+                        },
+                        "meta": {
+                           "$ref": "#/$defs/glz::generic"
+                        },
                         "name": {
                            "type": "string"
                         },
                         "offset": {
-                           "$ref": "#/$defs/uint32_t"
+                           "anyOf": [
+                              {
+                                 "$ref": "#/$defs/uint32_t"
+                              },
+                              {
+                                 "type": "null"
+                              }
+                           ]
                         },
                         "type": {
                            "$ref": "#/$defs/dxp::ComponentType"
@@ -934,6 +992,9 @@
                },
                "kind": {
                   "$ref": "#/$defs/dxp::sm6::ResourceKind"
+               },
+               "meta": {
+                  "$ref": "#/$defs/glz::generic"
                },
                "register_index": {
                   "anyOf": [
@@ -983,6 +1044,28 @@
                   "type": [
                      "string",
                      "null"
+                  ]
+               },
+               "cbuffer_field": {
+                  "anyOf": [
+                     {
+                        "type": "object",
+                        "properties": {
+                           "component": {
+                              "$ref": "#/$defs/uint32_t"
+                           },
+                           "field": {
+                              "type": "string"
+                           },
+                           "handle": {
+                              "type": "string"
+                           }
+                        },
+                        "additionalProperties": false
+                     },
+                     {
+                        "type": "null"
+                     }
                   ]
                },
                "extract": {

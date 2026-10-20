@@ -33,6 +33,47 @@ constexpr uint32_t kMaxUavBindPoint = 63;
 constexpr uint32_t kMaxInputBindPoint = 31;
 constexpr uint32_t kMaxOutputBindPoint = 7;
 
+dxp::ResourceTypeInfo TypeInfoOf(const AddResourceStep::TextureDecl& decl) {
+  return {.dimension = decl.dimension};
+}
+dxp::ResourceTypeInfo TypeInfoOf(const AddResourceStep::RawResourceDecl&) {
+  return {.dimension = dxp::ResourceDimension::RawBuffer};
+}
+dxp::ResourceTypeInfo TypeInfoOf(const AddResourceStep::StructuredResourceDecl& decl) {
+  return {.dimension = dxp::ResourceDimension::StructuredBuffer, .structure_stride = decl.structure_stride};
+}
+dxp::ResourceTypeInfo TypeInfoOf(const AddResourceStep::CBufferDecl& decl) {
+  return {.cbuffer = decl.layout};
+}
+dxp::ResourceTypeInfo TypeInfoOf(const AddResourceStep::SamplerDecl&) {
+  return {};
+}
+dxp::ResourceTypeInfo TypeInfoOf(const AddResourceStep::UavDecl& decl) {
+  switch (decl.kind) {
+    case AddResourceStep::UavKind::Raw:        return {.dimension = dxp::ResourceDimension::RawBuffer};
+    case AddResourceStep::UavKind::Structured: return {.dimension = dxp::ResourceDimension::StructuredBuffer, .structure_stride = decl.structure_stride};
+    default:                                   return {.dimension = decl.dimension};
+  }
+}
+
+std::vector<dxp::ResourceDeclaration> Declarations(const AddResourceStep& step) {
+  std::vector<dxp::ResourceDeclaration> out;
+  const bool conditional = step.condition.has_value() || !step.required;
+  const auto add = [&](dxp::BindingClass binding_class, const auto& decls) {
+    for (const auto& decl : decls) {
+      out.push_back({.step = step.name, .handle = decl.handle, .binding_class = binding_class, .register_index = decl.register_index,
+                     .space = 0u, .type = TypeInfoOf(decl), .conditional = conditional, .meta = decl.meta});
+    }
+  };
+  add(dxp::BindingClass::Texture, step.textures);
+  add(dxp::BindingClass::RawResource, step.raw_resources);
+  add(dxp::BindingClass::StructuredResource, step.structured_resources);
+  add(dxp::BindingClass::CBuffer, step.cbuffers);
+  add(dxp::BindingClass::Sampler, step.samplers);
+  add(dxp::BindingClass::Uav, step.uavs);
+  return out;
+}
+
 std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceStep& step, ExecutionContext& ctx) {
   dxp::AddResourceResults result;
   bool changed = false;
@@ -43,12 +84,15 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
     return true;
   };
 
-  auto add_new_binding = [&](dxp::BindingClass kind, const std::string& handle, uint32_t bind_point) {
+  auto add_new_binding = [&](dxp::BindingClass kind, const std::string& handle, uint32_t bind_point,
+                             dxp::ResourceTypeInfo type = {}, const std::optional<dxp::MetaValue>& meta = std::nullopt) {
     dxp::ResourceBinding binding;
     binding.binding_class = kind;
     binding.handle = handle;
     binding.register_index = bind_point;
     binding.space = 0;
+    binding.type = std::move(type);
+    binding.meta = meta;
     ctx.resource_bindings[handle] = std::move(binding);
   };
 
@@ -85,7 +129,7 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
       }
       const auto handle = decl.handle.empty() ? "" : decl.handle;
       bindings[handle] = bind_point;
-      add_new_binding(kind, handle, bind_point);
+      add_new_binding(kind, handle, bind_point, TypeInfoOf(decl), decl.meta);
       ++(*count_ptr);
       changed = true;
     }
@@ -303,6 +347,7 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     decl.register_index = d.register_index;
     decl.reverse_bind = d.reverse_bind;
     if (d.dimension.has_value()) decl.dimension = *d.dimension;
+    decl.meta = dxp::detail::ToOptionalMetaValue(d.meta);
     step.textures.push_back(std::move(decl));
   }
   step.raw_resources.reserve(raw_resources.size());
@@ -311,6 +356,7 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     decl.handle = d.handle;
     decl.register_index = d.register_index;
     decl.reverse_bind = d.reverse_bind;
+    decl.meta = dxp::detail::ToOptionalMetaValue(d.meta);
     step.raw_resources.push_back(std::move(decl));
   }
   step.structured_resources.reserve(structured_resources.size());
@@ -323,6 +369,7 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     decl.register_index = d.register_index;
     decl.reverse_bind = d.reverse_bind;
     decl.structure_stride = d.stride;
+    decl.meta = dxp::detail::ToOptionalMetaValue(d.meta);
     step.structured_resources.push_back(std::move(decl));
   }
   step.cbuffers.reserve(cbuffers.size());
@@ -332,6 +379,15 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     decl.register_index = d.register_index;
     decl.reverse_bind = d.reverse_bind;
     if (d.elements.has_value()) decl.elements = *d.elements;
+    decl.meta = dxp::detail::ToOptionalMetaValue(d.meta);
+    if (!d.fields.empty()) {
+      // Fields are recipe-side layout only: DXBC addresses cb#[row].component, so the
+      // layout sizes the declaration and resolves `{ name, field }` emit operands.
+      auto layout = dxp::detail::BuildCBufferLayout(d.handle, {}, d.elements.value_or(0) * 16, d.fields);
+      if (!layout) return std::unexpected("add_resource '" + name + "': " + layout.error());
+      decl.elements = layout->size_in_bytes / 16;
+      decl.layout = std::move(*layout);
+    }
     step.cbuffers.push_back(std::move(decl));
   }
   step.samplers.reserve(samplers.size());
@@ -341,6 +397,7 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     decl.register_index = d.register_index;
     decl.reverse_bind = d.reverse_bind;
     if (d.mode.has_value()) decl.mode = *d.mode;
+    decl.meta = dxp::detail::ToOptionalMetaValue(d.meta);
     step.samplers.push_back(std::move(decl));
   }
   step.uavs.reserve(uavs.size());
@@ -350,8 +407,11 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     decl.register_index = d.register_index;
     decl.reverse_bind = d.reverse_bind;
     if (d.kind.has_value()) decl.kind = *d.kind;
+    if (d.dimension.has_value()) decl.dimension = *d.dimension;
+    decl.structure_stride = d.stride;
     if (d.globally_coherent.has_value()) decl.globally_coherent = *d.globally_coherent;
     if (d.has_counter.has_value()) decl.has_order_preserving_counter = *d.has_counter;
+    decl.meta = dxp::detail::ToOptionalMetaValue(d.meta);
     step.uavs.push_back(std::move(decl));
   }
   step.inputs.reserve(inputs.size());
@@ -418,5 +478,16 @@ std::string DescribeOutcome(const AddResourceStep&, const dxp::AddResourceResult
 
 static_assert(RecipeStep<AddResourceStep>);
 static_assert(ExecutableStep<AddResourceStep, ExecutionContext>);
+
+std::expected<void, std::string> ResolveCBufferReferences(AddResourceStep& step, dxp::detail::CBufferLayouts& layouts) {
+  for (const auto& cbuffer : step.cbuffers) {
+    if (cbuffer.layout) {
+      layouts[cbuffer.handle] = *cbuffer.layout;
+    } else {
+      layouts.erase(cbuffer.handle);  // a redeclaration without fields hides the earlier layout
+    }
+  }
+  return {};
+}
 
 }  // namespace dxp::sm5::step

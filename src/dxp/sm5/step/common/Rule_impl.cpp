@@ -39,6 +39,7 @@ auto CompileOperandPattern(const OperandData& operand_data, bool /*is_emit_opera
     op_pattern.handle = OperandPattern::Handle{
         .name = operand_data.handle->name,
         .element_index = operand_data.handle->element_index,
+        .field = operand_data.handle->field,
     };
   }
   if (operand_data.decl.has_value()) {
@@ -100,6 +101,7 @@ auto CompileOperandPattern(const OperandData& operand_data, bool /*is_emit_opera
     op_pattern.handle = OperandPattern::Handle{
         .name = operand_data.handle->name,
         .element_index = operand_data.handle->element_index,
+        .field = operand_data.handle->field,
     };
   }
   return op_pattern;

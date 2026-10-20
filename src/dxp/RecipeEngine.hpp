@@ -18,6 +18,8 @@
 
 #include "dxp/utils/Hash.hpp"
 
+#include "dxp/CBufferLayout_impl.hpp"
+
 #include "dxp/Condition_impl.hpp"
 #include "dxp/ExportTypes.hpp"
 #include "dxp/Logging.hpp"
@@ -57,10 +59,16 @@ std::expected<void, std::string> ValidateStepList(const std::vector<StepVariant>
 /// @brief Converts a YAML step-data list into recipe steps. Each `*Data` type's
 /// `Compile()` fully populates the runtime step (name, condition, match mode),
 /// so no per-backend dispatch is needed.
+///
+/// Steps that declare or reference cbuffer fields provide a
+/// `ResolveCBufferReferences(step, layouts)` overload (found via ADL): add_resource
+/// registers its layouts, apply_rule rewrites `field` references into the row and
+/// component form the emitters already understand.
 template <typename Recipe, typename StepDataVariant>
 std::pair<Recipe, std::string> ConvertRecipeData(const std::vector<StepDataVariant>& steps, uint32_t version) {
   Recipe recipe(version);
   std::string error;
+  CBufferLayouts layouts;
 
   for (const auto& step_var : steps) {
     if (!error.empty()) break;
@@ -70,6 +78,12 @@ std::pair<Recipe, std::string> ConvertRecipeData(const std::vector<StepDataVaria
       if (!step_or_err) {
         error = std::move(step_or_err.error());
         return;
+      }
+      if constexpr (requires { ResolveCBufferReferences(*step_or_err, layouts); }) {
+        if (auto resolved = ResolveCBufferReferences(*step_or_err, layouts); !resolved) {
+          error = std::string(step_or_err->kind) + " '" + step_or_err->name + "': " + resolved.error();
+          return;
+        }
       }
       recipe.AddStep(std::move(*step_or_err));
     },
@@ -99,7 +113,7 @@ std::expected<Recipe, std::string> ParseRecipeFromText(const std::string& text,
   RecipeData doc;
   auto ec = glz::read_yaml(doc, text);
   if (ec) {
-    return std::unexpected(source_name.empty() ? "recipe" : source_name + ": " + glz::format_error(ec, text));
+    return std::unexpected((source_name.empty() ? std::string("recipe") : source_name) + ": " + glz::format_error(ec, text));
   }
   auto [recipe, convert_error] = ConvertRecipeData<Recipe>(doc.steps, doc.env, doc.version);
   if (!convert_error.empty()) {
@@ -111,22 +125,15 @@ std::expected<Recipe, std::string> ParseRecipeFromText(const std::string& text,
   return std::move(recipe);
 }
 
-/// @brief Parses a recipe from a YAML file and converts it into a recipe.
+/// @brief Parses a recipe from a YAML file and converts it into a recipe. Errors carry
+/// the file path and, for YAML errors, the line/column context.
 template <typename Recipe, typename RecipeData>
 std::expected<Recipe, std::string> ParseRecipeFromFile(const std::string& path) {
-  RecipeData doc;
-  auto ec = glz::read_file_yaml(doc, path);
-  if (ec) {
-    return std::unexpected(path + ": " + glz::format_error(ec, std::string{}));
+  std::string text;
+  if (auto ec = glz::file_to_buffer(text, path); ec != glz::error_code::none) {
+    return std::unexpected(path + ": cannot read recipe file");
   }
-  auto [recipe, convert_error] = ConvertRecipeData<Recipe>(doc.steps, doc.env, doc.version);
-  if (!convert_error.empty()) {
-    return std::unexpected(std::move(convert_error));
-  }
-  if constexpr (requires { recipe.SetSerializationOptions(doc.serialization); }) {
-    recipe.SetSerializationOptions(doc.serialization);
-  }
-  return std::move(recipe);
+  return ParseRecipeFromText<Recipe, RecipeData>(text, path);
 }
 
 /// @brief Serialized output of a recipe execution: raw bytes + container report.

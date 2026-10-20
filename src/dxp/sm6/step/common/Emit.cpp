@@ -686,6 +686,9 @@ std::expected<void, std::string> ValidateEmitPattern(const EmitPattern& pattern,
     return std::unexpected("emit '" + pattern.name + "': " + message);
   };
   if (pattern.opcode.has_value() && pattern.cast_opcode.has_value()) return fail("opcode and cast_opcode cannot be combined");
+  if (pattern.cbuffer_field.has_value()) {
+    return fail("cbuffer_field is resolved when a recipe is parsed; steps added through the C++ API must emit CBufferLoadLegacy and extractvalue directly");
+  }
   std::unordered_set<uint32_t> indices;
   for (const auto& operand : pattern.operands) {
     if (!indices.insert(operand.operand_index).second) return fail("duplicate operand index " + std::to_string(operand.operand_index));

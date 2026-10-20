@@ -45,7 +45,10 @@ dxp sm5 patch <recipe.recipe.yml> <input.cso> [output.cso] [--log-level <level>]
 dxp sm5 validate <recipe.recipe.yml>
 dxp sm6 patch <recipe.recipe.yml> <input.cso> [output.cso] [--log-level <level>]
 dxp sm6 validate <recipe.recipe.yml>
+dxp sm5|sm6 inspect <recipe.recipe.yml>
 ```
+
+`inspect` prints a recipe's env variables and the resources it declares (types, bindings, cbuffer layouts, `meta`).
 
 Run `dxp --help` for the full usage reference.
 
@@ -53,4 +56,5 @@ Run `dxp --help` for the full usage reference.
 
 - [SM5 recipe schema](docs/sm5_recipe_schema.md)
 - [SM6 recipe schema](docs/sm6_recipe_schema.md)
+- [Resource declarations, cbuffer fields and `meta`](docs/resource_declarations.md)
 

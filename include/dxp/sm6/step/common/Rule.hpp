@@ -126,6 +126,16 @@ enum class RewriteKind : std::uint8_t {
   ReplaceRange,
 };
 
+/// @brief Reads one field of a recipe-declared constant buffer by name.
+///
+/// Resolved when the recipe is loaded into a CBufferLoadLegacy of the field's row
+/// followed by an extractvalue of its component, named after the emit entry.
+struct EmitCBufferField {
+  std::string handle;      ///< add_resource cbuffer handle.
+  std::string field;       ///< Field name from the cbuffer's `fields`.
+  uint32_t component = 0;  ///< Component within a vector field.
+};
+
 /// @brief Describes one operand used by emitted rewrite code.
 struct EmitOperand {
   uint32_t operand_index = 0;
@@ -162,6 +172,8 @@ struct EmitPattern {
   std::string replace_captured;
   /// @brief Calls a function declared by an earlier declare_function step.
   std::string function_name;
+  /// Optional constant-buffer field read (mutually exclusive with opcode/extract); requires `name`.
+  std::optional<EmitCBufferField> cbuffer_field;
 };
 
 /// @brief Describes one DXIL rewrite rule.

@@ -1489,4 +1489,46 @@ std::string DescribeOutcome(const ApplyRuleStep& step, const dxp::ApplyRuleResul
 static_assert(RecipeStep<ApplyRuleStep>);
 static_assert(ExecutableStep<ApplyRuleStep, ExecutionContext>);
 
+std::expected<void, std::string> ResolveCBufferReferences(ApplyRuleStep& step, const dxp::detail::CBufferLayouts& layouts) {
+  constexpr char kComponents[] = "xyzw";
+  for (size_t ei = 0; ei < step.rule.emit_patterns.size(); ++ei) {
+    auto& operands = step.rule.emit_patterns[ei].operands;
+    for (size_t oi = 0; oi < operands.size(); ++oi) {
+      OperandPattern& op = operands[oi];
+      if (!op.handle || !op.handle->field) continue;
+      const std::string path = std::format("emit[{}].operands[{}]", ei, oi);
+      const std::string& handle = op.handle->name;
+      const std::string& field_name = *op.handle->field;
+      if (op.handle->element_index) return std::unexpected(path + ": handle field and element_index cannot be combined");
+      if (op.type && *op.type != OperandType::CBuffer) return std::unexpected(path + ": handle field requires type constant_buffer");
+      const auto layout = layouts.find(handle);
+      if (layout == layouts.end()) {
+        return std::unexpected(std::format("{}: cbuffer '{}' has no fields declared by an earlier add_resource step", path, handle));
+      }
+      const dxp::CBufferField* field = layout->second.FindField(field_name);
+      if (field == nullptr) return std::unexpected(std::format("{}: cbuffer '{}' has no field '{}'", path, handle, field_name));
+
+      // DXBC addresses cb#[row].component: the row becomes the element index and the
+      // field's components are selected, unless the recipe selects them explicitly.
+      const uint32_t first = (field->offset % 16) / 4;
+      op.type = OperandType::CBuffer;
+      op.handle->element_index = field->offset / 16;
+      if (op.mask.empty() && op.swizzle.empty() && op.select.empty() && !op.components) {
+        model::Components components;
+        if (field->width == 1) {
+          components.selection_mode = SelectionMode::Select;
+          components.value = std::string(1, kComponents[first]);
+          op.select = components.value;
+        } else {
+          components.selection_mode = SelectionMode::Swizzle;
+          for (uint32_t i = 0; i < 4; ++i) components.value += kComponents[first + std::min(i, field->width - 1)];
+          op.swizzle = components.value;
+        }
+        op.components = std::move(components);
+      }
+    }
+  }
+  return {};
+}
+
 }  // namespace dxp::sm5::step

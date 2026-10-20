@@ -96,6 +96,7 @@ struct OperandData {
   struct FromHandleData {
     std::string name;
     std::optional<std::variant<std::string, uint32_t>> element_index;  ///< Variable name (string) or literal uint32_t value.
+    std::optional<std::string> field;  ///< cbuffer field name (emit only); resolved to element_index + components at load.
   };
   std::optional<FromHandleData> handle;
   std::optional<DeclData> decl;

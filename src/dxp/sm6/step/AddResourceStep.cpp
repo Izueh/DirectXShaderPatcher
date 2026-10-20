@@ -36,7 +36,54 @@ inline void ResolveBinding(ResourceBindingDesc& desc, unsigned space, std::optio
   desc.register_index = register_index;
 }
 
+dxp::ResourceDimension ToDimension(ResourceKind kind) {
+  switch (kind) {
+    case ResourceKind::Texture1D:        return dxp::ResourceDimension::Texture1D;
+    case ResourceKind::Texture2D:        return dxp::ResourceDimension::Texture2D;
+    case ResourceKind::Texture2DMS:      return dxp::ResourceDimension::Texture2DMS;
+    case ResourceKind::Texture3D:        return dxp::ResourceDimension::Texture3D;
+    case ResourceKind::TextureCube:      return dxp::ResourceDimension::TextureCube;
+    case ResourceKind::Texture1DArray:   return dxp::ResourceDimension::Texture1DArray;
+    case ResourceKind::Texture2DArray:   return dxp::ResourceDimension::Texture2DArray;
+    case ResourceKind::Texture2DMSArray: return dxp::ResourceDimension::Texture2DMSArray;
+    case ResourceKind::TextureCubeArray: return dxp::ResourceDimension::TextureCubeArray;
+    case ResourceKind::TypedBuffer:      return dxp::ResourceDimension::Buffer;
+    case ResourceKind::RawBuffer:        return dxp::ResourceDimension::RawBuffer;
+    case ResourceKind::StructuredBuffer: return dxp::ResourceDimension::StructuredBuffer;
+    default:                             return dxp::ResourceDimension::Unknown;
+  }
+}
+
+dxp::BindingClass TextureBindingClass(const TextureResourceDesc& desc) {
+  if (desc.kind == ResourceKind::RawBuffer) return dxp::BindingClass::RawResource;
+  if (desc.kind == ResourceKind::StructuredBuffer) return dxp::BindingClass::StructuredResource;
+  return desc.is_read_write ? dxp::BindingClass::TextureUav : dxp::BindingClass::Texture;
+}
+
 }  // namespace
+
+dxp::ResourceTypeInfo TypeInfoOf(const TextureResourceDesc& desc) {
+  return {.dimension = ToDimension(desc.kind), .element_type = desc.element_kind, .vector_width = desc.vector_width};
+}
+
+dxp::ResourceTypeInfo TypeInfoOf(const CBufferDesc& desc) {
+  return {.cbuffer = desc.layout};
+}
+
+std::vector<dxp::ResourceDeclaration> Declarations(const AddResourceStep& step) {
+  std::vector<dxp::ResourceDeclaration> out;
+  const bool conditional = step.condition.has_value() || !step.required;
+  const auto add = [&](dxp::BindingClass binding_class, const std::string& handle, const ResourceBindingDesc& binding,
+                       dxp::ResourceTypeInfo type, const std::optional<dxp::MetaValue>& meta) {
+    out.push_back({.step = step.name, .handle = handle, .binding_class = binding_class, .register_index = binding.register_index,
+                   .space = binding.space, .type = std::move(type), .conditional = conditional, .meta = meta});
+  };
+  for (const auto& d : step.textures) add(TextureBindingClass(d), d.name, d.binding, TypeInfoOf(d), d.meta);
+  for (const auto& d : step.uavs) add(TextureBindingClass(d), d.name, d.binding, TypeInfoOf(d), d.meta);
+  for (const auto& d : step.cbuffers) add(dxp::BindingClass::CBuffer, d.name, d.binding, TypeInfoOf(d), d.meta);
+  for (const auto& d : step.samplers) add(dxp::BindingClass::Sampler, d.name, d.binding, {}, d.meta);
+  return out;
+}
 
 std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceStep& step, ExecutionContext& ctx) {
   dxp::AddResourceResults result;
@@ -48,13 +95,15 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
     return true;
   };
 
-  auto addSideEffect = [&](dxp::BindingClass kind, const std::string& handle,
-                           unsigned bind_point, unsigned space) {
+  auto addSideEffect = [&](dxp::BindingClass kind, const std::string& handle, unsigned bind_point, unsigned space,
+                           dxp::ResourceTypeInfo type = {}, const std::optional<dxp::MetaValue>& meta = std::nullopt) {
     dxp::ResourceBinding binding;
     binding.binding_class = kind;
     binding.handle = handle;
     binding.register_index = bind_point;
     binding.space = space;
+    binding.type = std::move(type);
+    binding.meta = meta;
     ctx.resource_bindings[handle] = std::move(binding);
   };
 
@@ -87,7 +136,7 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
       addSideEffect(resolved_desc.kind == ResourceKind::RawBuffer          ? dxp::BindingClass::RawResource
                     : resolved_desc.kind == ResourceKind::StructuredBuffer ? dxp::BindingClass::StructuredResource
                                                                                : dxp::BindingClass::Texture,
-                    handle, *resolved_desc.binding.register_index, srv_space);
+                    handle, *resolved_desc.binding.register_index, srv_space, TypeInfoOf(resolved_desc), resolved_desc.meta);
       if (resolved_desc.kind == ResourceKind::RawBuffer) {
         ++result.raw_resources_added;
       } else if (resolved_desc.kind == ResourceKind::StructuredBuffer) {
@@ -142,7 +191,7 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
       addSideEffect(resolved_desc.kind == ResourceKind::RawBuffer          ? dxp::BindingClass::RawResource
                     : resolved_desc.kind == ResourceKind::StructuredBuffer ? dxp::BindingClass::StructuredResource
                                                                                : dxp::BindingClass::TextureUav,
-                    handle, *resolved_desc.binding.register_index, uav_space);
+                    handle, *resolved_desc.binding.register_index, uav_space, TypeInfoOf(resolved_desc), resolved_desc.meta);
       if (resolved_desc.kind == ResourceKind::RawBuffer) {
         ++result.raw_resources_added;
       } else if (resolved_desc.kind == ResourceKind::StructuredBuffer) {
@@ -193,7 +242,8 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
       }
       const auto& handle = desc.name.empty() ? "" : desc.name;
       ctx.cbuffers[handle] = resolved_desc;
-      addSideEffect(dxp::BindingClass::CBuffer, handle, *resolved_desc.binding.register_index, cbuf_space);
+      addSideEffect(dxp::BindingClass::CBuffer, handle, *resolved_desc.binding.register_index, cbuf_space, TypeInfoOf(resolved_desc),
+                    resolved_desc.meta);
       ++result.cbuffers_added;
       changed = true;
 
@@ -238,7 +288,7 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
       }
       const auto& handle = desc.name.empty() ? "" : desc.name;
       ctx.samplers[handle] = resolved_desc;
-      addSideEffect(dxp::BindingClass::Sampler, handle, *resolved_desc.binding.register_index, sampler_space);
+      addSideEffect(dxp::BindingClass::Sampler, handle, *resolved_desc.binding.register_index, sampler_space, {}, resolved_desc.meta);
       ++result.samplers_added;
       changed = true;
 
@@ -349,6 +399,7 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     desc.element_kind = d.element_type;
     desc.vector_width = d.vector_width > 0 ? d.vector_width : 4;
     desc.binding = ResourceBindingDesc{.resource_class = ResourceClass::SRV, .register_index = d.register_index, .space = d.space};
+    desc.meta = dxp::detail::ToOptionalMetaValue(d.meta);
     step.textures.push_back(std::move(desc));
   }
 
@@ -361,6 +412,7 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     desc.vector_width = d.vector_width > 0 ? d.vector_width : 4;
     desc.binding = ResourceBindingDesc{.resource_class = ResourceClass::UAV, .register_index = d.register_index, .space = d.space};
     desc.is_read_write = true;
+    desc.meta = dxp::detail::ToOptionalMetaValue(d.meta);
     step.uavs.push_back(std::move(desc));
   }
 
@@ -370,32 +422,17 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     desc.name = d.handle.empty() ? "" : d.handle;
     desc.binding = ResourceBindingDesc{.resource_class = ResourceClass::CBuffer, .register_index = d.register_index, .space = d.space};
     desc.size_in_bytes = d.size;
+    desc.meta = dxp::detail::ToOptionalMetaValue(d.meta);
     if (!d.fields.empty()) {
-      auto* schema = new CBufferSchema{};
-      schema->type_name = d.type.empty() ? desc.name : d.type;
-      if (d.size == 0 && !d.fields.empty()) {
-        auto end_offset = [](const auto& f) {
-          return f.offset + ((f.width > 0 ? f.width : 1) * 4);
-        };
-        auto it = std::ranges::max_element(d.fields, {}, end_offset);
-        const unsigned max_end = it != d.fields.end() ? end_offset(*it) : 0U;
-        schema->size_in_bytes = max_end;
-        desc.size_in_bytes = max_end;
-      } else if (d.size == 0) {
-        schema->size_in_bytes = 0;
-        desc.size_in_bytes = 0;
-      } else {
-        schema->size_in_bytes = d.size;
+      auto layout = dxp::detail::BuildCBufferLayout(desc.name, d.type, d.size, d.fields);
+      if (!layout) return std::unexpected("add_resource '" + name + "': " + layout.error());
+      CBufferSchema schema{.type_name = layout->type_name, .size_in_bytes = layout->size_in_bytes};
+      for (const auto& f : layout->fields) {
+        schema.fields.push_back(CBufferFieldDesc{.name = f.name, .comp_type = f.type, .vector_size = f.width, .offset = f.offset});
       }
-      for (const auto& f : d.fields) {
-        CBufferFieldDesc fd{};
-        fd.name = f.name;
-        fd.comp_type = f.type;
-        fd.offset = f.offset;
-        fd.vector_size = f.width > 0 ? f.width : 1;
-        schema->fields.push_back(fd);
-      }
-      desc.schema = schema;
+      desc.size_in_bytes = layout->size_in_bytes;
+      desc.schema = std::move(schema);
+      desc.layout = std::move(*layout);
     }
     step.cbuffers.push_back(std::move(desc));
   }
@@ -405,6 +442,7 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     SamplerDesc desc{};
     desc.name = d.handle.empty() ? "" : d.handle;
     desc.binding = ResourceBindingDesc{.resource_class = ResourceClass::Sampler, .register_index = d.register_index, .space = d.space};
+    desc.meta = dxp::detail::ToOptionalMetaValue(d.meta);
     step.samplers.push_back(std::move(desc));
   }
 
@@ -442,5 +480,16 @@ std::string DescribeOutcome(const AddResourceStep&, const dxp::AddResourceResult
 
 static_assert(RecipeStep<AddResourceStep>);
 static_assert(ExecutableStep<AddResourceStep, ExecutionContext>);
+
+std::expected<void, std::string> ResolveCBufferReferences(AddResourceStep& step, dxp::detail::CBufferLayouts& layouts) {
+  for (const auto& cbuffer : step.cbuffers) {
+    if (cbuffer.layout) {
+      layouts[cbuffer.name] = *cbuffer.layout;
+    } else {
+      layouts.erase(cbuffer.name);  // a redeclaration without fields hides the earlier layout
+    }
+  }
+  return {};
+}
 
 }  // namespace dxp::sm6::step

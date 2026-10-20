@@ -102,6 +102,9 @@ struct OperandPattern {
   struct Handle {
     std::string name;
     std::optional<std::variant<std::string, uint32_t>> element_index;
+    /// Constant-buffer field name (emit only). Resolved when the recipe is loaded into
+    /// element_index plus a component selection derived from the field's layout.
+    std::optional<std::string> field;
   };
   std::optional<Handle> handle;
 

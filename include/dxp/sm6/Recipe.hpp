@@ -113,6 +113,16 @@ struct Recipe {
    */
   bool HasAddResourceSteps() const;
 
+  /**
+   * @brief Resources declared by the recipe's add_resource steps, in step order.
+   *
+   * Available right after parsing, without running on a shader: handle, class, the
+   * shader-facing type, explicit register/space, cbuffer layouts and `meta:`. A
+   * declaration from a step with a condition or `required: false` is marked
+   * conditional; RecipeReport::new_bindings reports what a run actually added.
+   */
+  [[nodiscard]] std::vector<ResourceDeclaration> GetDeclaredResources() const;
+
   /// @brief Execute the recipe on the given DXIL container bytes.
   /// @param input DXIL container bytes to patch (borrowed view; the caller must
   ///        keep the buffer alive for the duration of the call).
@@ -151,6 +161,12 @@ struct Recipe {
   Recipe& SetEnv(std::string key, PrimitiveValue value) {
     this->env_[std::move(key)] = value;
     return *this;
+  }
+
+  /// @brief Get the recipe's environment variables: the YAML `env` defaults plus
+  /// any values seeded via SetEnv. PatchOptions passed to Execute() override these.
+  [[nodiscard]] const std::unordered_map<std::string, PrimitiveValue>& GetEnv() const noexcept {
+    return env_;
   }
 
   Recipe& SetSerializationOptions(SerializationOptions options) {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "dxp/CBufferLayout_impl.hpp"
 #include "dxp/Condition_impl.hpp"
 #include "dxp/sm6/ExecutionContext.hpp"
 #include "dxp/sm6/step/ApplyRuleStep.hpp"
@@ -21,6 +22,9 @@ std::expected<dxp::ApplyRuleResults, std::string> Execute(const ApplyRuleStep& s
 /// @param ctx Validation context.
 /// @return void on success, error message on failure.
 std::expected<void, std::string> Validate(const ApplyRuleStep& step, ValidationContext& ctx);
+/// @brief Rewrites cbuffer field references in this step's emits into row/component
+/// form using the layouts declared by earlier add_resource steps.
+std::expected<void, std::string> ResolveCBufferReferences(ApplyRuleStep& step, const dxp::detail::CBufferLayouts& layouts);
 /// @brief Formats the step's result as a Trace log message.
 std::string DescribeOutcome(const ApplyRuleStep& step, const dxp::ApplyRuleResults& results, const ExecutionContext& ctx);
 

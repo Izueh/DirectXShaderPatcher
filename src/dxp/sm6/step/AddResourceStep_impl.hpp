@@ -3,6 +3,7 @@
 #include <dxp/sm6/ResourceTypes.hpp>
 #include <dxp/sm6/step/AddResourceStep.hpp>
 #include <glaze/glaze.hpp>
+#include "dxp/CBufferLayout_impl.hpp"
 #include "dxp/Condition_impl.hpp"
 #include "dxp/sm6/ExecutionContext.hpp"
 #include "dxp/StepConcept.hpp"
@@ -26,6 +27,14 @@ std::expected<void, std::string> Validate(const AddResourceStep& step, Validatio
 /// @brief Formats the step's result as a Trace log message.
 std::string DescribeOutcome(const AddResourceStep& step, const dxp::AddResourceResults& results, const ExecutionContext& ctx);
 
+/// @brief Shader-facing type of a declaration, as reported in bindings and declarations.
+dxp::ResourceTypeInfo TypeInfoOf(const TextureResourceDesc& desc);
+dxp::ResourceTypeInfo TypeInfoOf(const CBufferDesc& desc);
+/// @brief The step's resource declarations (inputs/outputs excluded).
+std::vector<dxp::ResourceDeclaration> Declarations(const AddResourceStep& step);
+/// @brief Registers this step's cbuffer layouts for field references in later steps.
+std::expected<void, std::string> ResolveCBufferReferences(AddResourceStep& step, dxp::detail::CBufferLayouts& layouts);
+
 /// @brief One resource declaration within a typed array (YAML data form).
 struct AddResourceDeclData {
   std::string handle;
@@ -37,13 +46,8 @@ struct AddResourceDeclData {
   unsigned size = 0;
   std::string type;
   bool is_read_write = false;
-  struct Field {
-    std::string name;
-    dxp::ComponentType type = dxp::ComponentType::F32;
-    unsigned width = 0;
-    unsigned offset = 0;
-  };
-  std::vector<Field> fields;
+  std::vector<dxp::detail::CBufferFieldData> fields;  ///< cbuffers: field layout (auto-packed when offsets are omitted).
+  glz::generic meta;  ///< Opaque consumer metadata, reported verbatim (null = absent; see CBufferFieldData).
 };
 
 /// @brief Top-level YAML block for grouped resource declarations.
@@ -89,21 +93,6 @@ struct meta<dxp::sm6::ResourceKind> {
       T::TextureCubeArray, T::TypedBuffer, T::RawBuffer, T::StructuredBuffer,
       T::CBuffer, T::Sampler, T::TBuffer, T::RTAccelerationStructure,
       T::FeedbackTexture2D, T::FeedbackTexture2DArray, T::NumEntries};
-};
-
-template <>
-struct meta<dxp::ComponentType> {
-  using T = dxp::ComponentType;
-  static constexpr auto keys = std::array{
-      "Invalid", "I1", "I16", "U16", "I32", "U32", "I64", "U64",
-      "F16", "F32", "F64", "SNormF16", "UNormF16", "SNormF32", "UNormF32",
-      "SNormF64", "UNormF64", "PackedS8x32", "PackedU8x32", "U8", "I8",
-      "F8_E4M3FN", "F8_E5M2"};
-  static constexpr auto value = std::array{
-      T::Invalid, T::I1, T::I16, T::U16, T::I32, T::U32, T::I64, T::U64,
-      T::F16, T::F32, T::F64, T::SNormF16, T::UNormF16, T::SNormF32, T::UNormF32,
-      T::SNormF64, T::UNormF64, T::PackedS8x32, T::PackedU8x32, T::U8, T::I8,
-      T::F8_E4M3FN, T::F8_E5M2};
 };
 
 template <>

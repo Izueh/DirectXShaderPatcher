@@ -51,14 +51,6 @@ struct ResourceBindingDesc {
   std::optional<uint32_t> space = std::nullopt;           ///< Space. nullopt = auto.
 };
 
-/// @brief Constant buffer resource descriptor. User-facing mirror of @c hlsl::DxilCBuffer.
-struct CBufferDesc {
-  std::string name;                                                                             ///< Cbuffer name.
-  ResourceBindingDesc binding = ResourceBindingDesc{.resource_class = ResourceClass::CBuffer};  ///< Binding info.
-  uint32_t size_in_bytes = 0;                                                                   ///< Size in bytes.
-  const struct CBufferSchema* schema = nullptr;                                                 ///< Optional schema.
-};
-
 /// @brief Constant buffer schema field descriptor. Mirrors a field within @c hlsl::DxilCBuffer schema.
 struct CBufferFieldDesc {
   std::string name;                                        ///< Field name.
@@ -74,6 +66,16 @@ struct CBufferSchema {
   std::vector<CBufferFieldDesc> fields;  ///< Field list.
 };
 
+/// @brief Constant buffer resource descriptor. User-facing mirror of @c hlsl::DxilCBuffer.
+struct CBufferDesc {
+  std::string name;                                                                             ///< Cbuffer name.
+  ResourceBindingDesc binding = ResourceBindingDesc{.resource_class = ResourceClass::CBuffer};  ///< Binding info.
+  uint32_t size_in_bytes = 0;                                                                   ///< Size in bytes.
+  std::optional<CBufferSchema> schema;                                                          ///< Optional DXIL type schema.
+  std::optional<dxp::CBufferLayout> layout;                                                     ///< Field layout with defaults, for reporting.
+  std::optional<dxp::MetaValue> meta;                                                           ///< Opaque `meta:` subtree.
+};
+
 /// @brief Texture SRV/UAV resource descriptor. User-facing mirror of @c hlsl::DxilResource (texture variant).
 struct TextureResourceDesc {
   std::string name;                                                                         ///< Texture name.
@@ -82,12 +84,14 @@ struct TextureResourceDesc {
   dxp::ComponentType element_kind = dxp::ComponentType::F32;                                ///< Element type.
   uint32_t vector_width = 4;                                                                ///< Vector width.
   bool is_read_write = false;                                                               ///< Whether this is a UAV.
+  std::optional<dxp::MetaValue> meta;                                                       ///< Opaque `meta:` subtree.
 };
 
 /// @brief Sampler resource descriptor. User-facing mirror of @c hlsl::DxilSampler.
 struct SamplerDesc {
   std::string name;                                                                             ///< Sampler name.
   ResourceBindingDesc binding = ResourceBindingDesc{.resource_class = ResourceClass::Sampler};  ///< Binding info.
+  std::optional<dxp::MetaValue> meta;                                                           ///< Opaque `meta:` subtree.
 };
 
 }  // namespace dxp::sm6

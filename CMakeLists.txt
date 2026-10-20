@@ -255,6 +255,7 @@ set(DXP_SM5_SOURCES
   "src/dxp/sm5/step/common/Match.cpp"
   "src/dxp/sm5/Recipe.cpp"
   "src/dxp/Condition.cpp"
+  "src/dxp/CBufferLayout.cpp"
 )
 
 # SM6 sources (x64 only — DXIL/LLVM dependent)
