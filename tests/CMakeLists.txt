@@ -213,6 +213,26 @@ dxp_add_test(resource_declarations_test "resource_declarations_test.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/0x7AFF256C.ps_5_0.cso"
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/sm6_rule_patterns.cs_6_6.cso")
 
+# ReShade add-on modules (recipe loading, chained patching, env overrides, DDS) without
+# ReShade itself: the test executable exports the ReShade log/config entry points.
+if(TARGET dxp_reshade_addon AND NOT DXP_ARCH STREQUAL "x86")
+    add_executable(reshade_addon_test
+        "reshade_addon_test.cpp"
+        "${CMAKE_SOURCE_DIR}/tools/reshade_addon/config.cpp"
+        "${CMAKE_SOURCE_DIR}/tools/reshade_addon/dds.cpp"
+        "${CMAKE_SOURCE_DIR}/tools/reshade_addon/recipes.cpp"
+    )
+    target_include_directories(reshade_addon_test PRIVATE "${CMAKE_SOURCE_DIR}/tools/reshade_addon")
+    target_include_directories(reshade_addon_test SYSTEM PRIVATE
+        "${reshade_SOURCE_DIR}/include" "${imgui_SOURCE_DIR}" "${CMAKE_SOURCE_DIR}/external")
+    target_compile_definitions(reshade_addon_test PRIVATE
+        DXP_ADDON_HAS_SM6=1 NOMINMAX WIN32_LEAN_AND_MEAN
+        DXP_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+        DXP_TEST_OUTPUT_DIR="$<TARGET_FILE_DIR:reshade_addon_test>")
+    target_link_libraries(reshade_addon_test PRIVATE dxpatcher)
+    add_test(NAME reshade_addon_test COMMAND reshade_addon_test)
+endif()
+
 # Benchmarks (conditional)
 if(DXP_BUILD_BENCHMARKS)
     add_executable(sm5_benchmarks

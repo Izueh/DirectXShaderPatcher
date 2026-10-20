@@ -1,0 +1,57 @@
+# Example SM5 (DXBC) pixel shader recipe. Rename to *.recipe.yml to enable.
+#
+# Replaces interleaved gradient noise, frac(52.98 * frac(dot(pos.xy, k))), with a
+# lookup into resources/blue_noise.dds using the built-in "point_wrap" sampler.
+#
+# D3D11: registers are picked automatically from the slots the shader leaves free;
+# the add-on restores the game's binding in that slot after each draw.
+# D3D12: SM5.0 shaders only see space 0, so set register_index explicitly and
+# configure [DXP] InjectSpace=0 / InjectSrvBase / InjectSamplerBase to match.
+version: 1
+env:
+  noise_uv_scale: 0.015625  # 1 / texture size (64x64)
+steps:
+  - kind: add_resource
+    name: add_blue_noise
+    temps: [noise_uv]
+    textures:
+      - handle: blue_noise
+        dimension: texture2d
+    samplers:
+      - handle: point_wrap
+
+  - kind: apply_rule
+    name: ign_to_blue_noise
+    rewrite_mode: replace_range
+    rule:
+      match:
+        - opcode: dp2
+          operands:
+            - type: temp
+              capture: ign_dst
+            - capture: ign_coord
+        - opcode: frc
+        - opcode: mul
+        - opcode: frc
+      emit:
+        - opcode: mul
+          operands:
+            - type: temp
+              handle: { name: noise_uv }
+              components: { selection_mode: mask, value: xy }
+            - capture: ign_coord
+            - type: immediate32
+              immediates_f32: [noise_uv_scale]
+        - opcode: sample_l
+          operands:
+            - capture: ign_dst
+            - type: temp
+              handle: { name: noise_uv }
+              components: { selection_mode: swizzle, value: xyxx }
+            - type: resource
+              handle: { name: blue_noise }
+              components: { selection_mode: swizzle, value: xxxx }
+            - type: sampler
+              handle: { name: point_wrap }
+            - type: immediate32
+              immediates_f32: [0]

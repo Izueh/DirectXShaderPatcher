@@ -397,6 +397,53 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/dxp.cpp" AND NOT DXP_ARCH STREQUAL 
     endif()
 endif()
 
+# ReShade add-on — patches game shaders at runtime (see tools/reshade_addon/README.md).
+# Only the ReShade and Dear ImGui headers are needed. They are fetched at configure time;
+# for offline builds point FETCHCONTENT_SOURCE_DIR_RESHADE / FETCHCONTENT_SOURCE_DIR_IMGUI
+# at local checkouts. The ImGui version must match the one ReShade's headers expect.
+option(DXP_BUILD_RESHADE_ADDON "Build the DXP ReShade add-on" ON)
+if(DXP_BUILD_RESHADE_ADDON AND WIN32)
+    FetchContent_Declare(reshade
+        URL https://github.com/crosire/reshade/archive/refs/tags/v6.7.1.tar.gz
+        URL_HASH SHA256=23f7bce965813e0a3215b5e3b19afc65daa961d130ce08e1e9af21ebb2d65ecf
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+        # ReShade's own CMakeLists builds ReShade itself; the include dir has none.
+        SOURCE_SUBDIR include
+    )
+    FetchContent_Declare(imgui
+        # ReShade's overlay API is built against the docking branch.
+        URL https://github.com/ocornut/imgui/archive/refs/tags/v1.92.5-docking.tar.gz
+        URL_HASH SHA256=c816c20e8c75f3e15ae867350e79925502d1a6a85938bb1a73b8927e5f31f9cb
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    )
+    FetchContent_MakeAvailable(reshade imgui)
+
+    add_library(dxp_reshade_addon SHARED
+        tools/reshade_addon/addon.cpp
+        tools/reshade_addon/config.cpp
+        tools/reshade_addon/dds.cpp
+        tools/reshade_addon/overlay.cpp
+        tools/reshade_addon/recipes.cpp
+        tools/reshade_addon/resources.cpp
+        tools/reshade_addon/runtime.cpp
+    )
+    if(DXP_ARCH STREQUAL "x86")
+        set(DXP_ADDON_SUFFIX ".addon32")
+        set(DXP_ADDON_HAS_SM6 0)
+    else()
+        set(DXP_ADDON_SUFFIX ".addon64")
+        set(DXP_ADDON_HAS_SM6 1)
+    endif()
+    set_target_properties(dxp_reshade_addon PROPERTIES OUTPUT_NAME "dxp" PREFIX "" SUFFIX "${DXP_ADDON_SUFFIX}")
+    target_include_directories(dxp_reshade_addon SYSTEM PRIVATE
+        "${reshade_SOURCE_DIR}/include"
+        "${imgui_SOURCE_DIR}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/external"  # value_types, used by the public DXP headers
+    )
+    target_compile_definitions(dxp_reshade_addon PRIVATE DXP_ADDON_HAS_SM6=${DXP_ADDON_HAS_SM6} NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(dxp_reshade_addon PRIVATE dxpatcher)
+endif()
+
 # Schema generator — regenerates docs/sm*_recipe_schema.json from the glaze meta
 # that defines the actual YAML surface. Run as `gen_schema --check` in CI to keep
 # the committed schemas in sync (see the schema_sync ctest).
@@ -522,6 +569,25 @@ endif()
             FILES "${CMAKE_CURRENT_SOURCE_DIR}/external/DirectXShaderCompiler/ThirdPartyNotices.txt"
             DESTINATION "${DXP_ARCH_SUBDIR}/$<CONFIG>/bin"
             COMPONENT ${DXP_CLI_COMPONENT}
+        )
+    endif()
+
+    # ReShade add-on: dxp.addon64/.addon32 plus the example dxp/ folder layout.
+    if(TARGET dxp_reshade_addon)
+        install(
+            TARGETS dxp_reshade_addon
+            RUNTIME DESTINATION "${DXP_ARCH_SUBDIR}/$<CONFIG>/reshade"
+            COMPONENT DirectXShaderPatcherReShadeAddon
+        )
+        install(
+            DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tools/reshade_addon/example/dxp"
+            DESTINATION "${DXP_ARCH_SUBDIR}/$<CONFIG>/reshade"
+            COMPONENT DirectXShaderPatcherReShadeAddon
+        )
+        install(
+            FILES "${CMAKE_CURRENT_SOURCE_DIR}/tools/reshade_addon/README.md"
+            DESTINATION "${DXP_ARCH_SUBDIR}/$<CONFIG>/reshade"
+            COMPONENT DirectXShaderPatcherReShadeAddon
         )
     endif()
 

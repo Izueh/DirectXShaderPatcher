@@ -1,0 +1,70 @@
+# Example SM6 (DXIL) pixel shader recipe. Rename to *.recipe.yml to enable.
+#
+# Re-points a Texture3D noise load (t1, space0) at resources/noise.dds.
+#
+# D3D12 binding rule: resources added by a recipe must be declared inside the
+# descriptor ranges the add-on appends to every root signature, which default to
+# space100: t0-t15, u0-u7, s0-s7 (ReShade.ini [DXP] Inject* settings). Always set
+# space and register_index explicitly.
+version: 1
+env:
+  # Shown as an editable value in the add-on's overlay; changing it re-patches.
+  noise_mip: 0
+steps:
+  - kind: add_resource
+    name: add_noise
+    textures:
+      - handle: noise            # resolves resources/noise.dds
+        kind: Texture2D
+        space: 100
+        register_index: 0
+
+  - kind: apply_rule
+    name: replace_noise_load
+    rewrite_mode: replace
+    required: true
+    rule:
+      name: replace_noise_load
+      prune: true
+      match:
+        - opcode: TextureLoad
+          capture: texture_load
+          operands:
+            - index: 1
+              kind: resource
+              resource_class: SRV
+              resource_kind: Texture3D
+              register_index: 1
+              space: 0
+            - index: 3
+              kind: call
+              capture: coord_x
+            - index: 4
+              kind: call
+              capture: coord_y
+      emit:
+        - opcode: TextureLoad
+          result_component_type: F32
+          name: noise_load
+          replace_captured: texture_load
+          operands:
+            - index: 1
+              kind: resource
+              handle: noise
+            - index: 2
+              kind: constant
+              constant_int_values: [noise_mip]
+            - index: 3
+              kind: call
+              capture: coord_x
+            - index: 4
+              kind: call
+              capture: coord_y
+            - index: 5
+              kind: undefined
+            - index: 6
+              kind: undefined
+            - index: 7
+              kind: undefined
+            - index: 8
+              kind: undefined
