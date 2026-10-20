@@ -65,7 +65,7 @@ jobs:
                 per_page: 100
               });
               const preset = wf === 'ninja-x64.yml' ? 'ninja-x64' : 'ninja-x86';
-              const requiredNames = [preset, `${preset}-static`];
+              const requiredNames = [preset, `${preset}-static`, `reshade-${preset}-static`];
               let selectedRun;
               for (const run of runs) {
                 if (run.head_sha !== releaseSha || run.conclusion !== 'success'
@@ -127,6 +127,22 @@ jobs:
           run-id: ${{ needs.prepare.outputs.x86RunId || github.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Download x64 ReShade add-on artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: reshade-ninja-x64-static
+          path: out/install-reshade/ninja-x64-static/
+          run-id: ${{ needs.prepare.outputs.x64RunId || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download x86 ReShade add-on artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: reshade-ninja-x86-static
+          path: out/install-reshade/ninja-x86-static/
+          run-id: ${{ needs.prepare.outputs.x86RunId || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Prepare release folders
         run: |
           New-Item -ItemType Directory -Path githubrelease -Force | Out-Null
@@ -140,6 +156,8 @@ jobs:
 
       - name: Package artifacts
         shell: powershell
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           $archToLabel = @{
             'x64' = 'ninja-x64'
@@ -155,6 +173,25 @@ jobs:
             }
             Compress-Archive -Path "githubrelease/$arch/*" -DestinationPath "githubrelease/DirectXShaderPatcher-$label.zip" -Force
           }
+          # ReShade add-on: one player-facing zip with both bitnesses from the static-CRT
+          # Release builds. The dxp/ example folder and README are identical in both.
+          $reshadeStage = 'reshade-release'
+          New-Item -ItemType Directory -Path $reshadeStage -Force | Out-Null
+          $x64Addon = 'out/install-reshade/ninja-x64-static/x64/Release/reshade'
+          $x86Addon = 'out/install-reshade/ninja-x86-static/x86/Release/reshade'
+          foreach ($required in @("$x64Addon/dxp.addon64", "$x86Addon/dxp.addon32", "$x64Addon/README.md")) {
+            if (!(Test-Path -LiteralPath $required -PathType Leaf)) {
+              throw "Required ReShade add-on file is missing: $required"
+            }
+          }
+          if (!(Test-Path -LiteralPath "$x64Addon/dxp" -PathType Container)) {
+            throw "Required ReShade add-on folder is missing: $x64Addon/dxp"
+          }
+          Copy-Item -LiteralPath "$x64Addon/dxp.addon64" -Destination $reshadeStage -ErrorAction Stop
+          Copy-Item -LiteralPath "$x86Addon/dxp.addon32" -Destination $reshadeStage -ErrorAction Stop
+          Copy-Item -LiteralPath "$x64Addon/dxp" -Destination "$reshadeStage/dxp" -Recurse -ErrorAction Stop
+          Copy-Item -LiteralPath "$x64Addon/README.md" -Destination $reshadeStage -ErrorAction Stop
+          Compress-Archive -Path "$reshadeStage/*" -DestinationPath "githubrelease/DirectXShaderPatcher-ReShade-$env:RELEASE_VERSION.zip" -Force
           foreach ($algorithm in @('SHA256', 'SHA512')) {
             Get-ChildItem githubrelease -Filter *.zip | Sort-Object Name | Get-FileHash -Algorithm $algorithm | ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path -Path $_.Path -Leaf)" } | Set-Content "githubrelease/${algorithm}SUMS" -Encoding ascii
           }

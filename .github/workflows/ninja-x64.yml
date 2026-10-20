@@ -104,10 +104,26 @@ jobs:
       - name: Install CLI (${{ matrix.preset }} Debug)
         run: cmake --install out/build/${{ matrix.preset }} --config Debug --component DirectXShaderPatcherCLI --prefix out/install/${{ matrix.preset }}
 
+      # The ReShade add-on ships as its own release download, built only from the
+      # static-CRT Release presets so players need no Visual C++ runtime. It is still
+      # built in every preset above so compile breaks are caught.
+      - name: Install ReShade add-on (${{ matrix.preset }} Release)
+        if: endsWith(matrix.preset, '-static')
+        run: cmake --install out/build/${{ matrix.preset }} --config Release --component DirectXShaderPatcherReShadeAddon --prefix out/install-reshade/${{ matrix.preset }}
+
       - name: Upload artifacts
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.preset }}
           path: out/install/${{ matrix.preset }}/
+          retention-days: 7
+
+      - name: Upload ReShade add-on artifact
+        if: success() && endsWith(matrix.preset, '-static')
+        uses: actions/upload-artifact@v4
+        with:
+          name: reshade-${{ matrix.preset }}
+          path: out/install-reshade/${{ matrix.preset }}/
+          if-no-files-found: error
           retention-days: 7
