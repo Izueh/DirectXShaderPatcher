@@ -15,17 +15,17 @@
 
 namespace dxp::detail {
 
+// glaze 7.9 reads only the first key of a block-style YAML mapping into a generic reached
+// through std::optional or a wrapper type, so `meta`/`default` are plain glz::generic
+// members where null means the key was absent. gen_schema describes them by name.
+
 /// @brief YAML form of one constant-buffer field (shared by SM5 and SM6).
 struct CBufferFieldData {
   std::string name;
   dxp::ComponentType type = dxp::ComponentType::F32;
   uint32_t width = 1;
   std::optional<uint32_t> offset;  ///< Unset: auto-packed after the previous field.
-  /// Number or bool (broadcast to every component), or one number per component.
-  /// Parsed generically for the same glaze limitation as meta (null = absent).
-  glz::generic default_value;
-  // Not std::optional: glaze 7.9 reads only the first key of a block-style YAML mapping into
-  // an optional map/generic. A null generic means the key was absent.
+  glz::generic default_value;  ///< Number/bool broadcast to every component, or one number per component.
   glz::generic meta;
 };
 
@@ -53,16 +53,31 @@ namespace glz {
 template <>
 struct meta<dxp::ComponentType> {
   using T = dxp::ComponentType;
-  static constexpr auto keys = std::array{
-      "Invalid", "I1", "I16", "U16", "I32", "U32", "I64", "U64",
-      "F16", "F32", "F64", "SNormF16", "UNormF16", "SNormF32", "UNormF32",
-      "SNormF64", "UNormF64", "PackedS8x32", "PackedU8x32", "U8", "I8",
-      "F8_E4M3FN", "F8_E5M2"};
-  static constexpr auto value = std::array{
-      T::Invalid, T::I1, T::I16, T::U16, T::I32, T::U32, T::I64, T::U64,
-      T::F16, T::F32, T::F64, T::SNormF16, T::UNormF16, T::SNormF32, T::UNormF32,
-      T::SNormF64, T::UNormF64, T::PackedS8x32, T::PackedU8x32, T::U8, T::I8,
-      T::F8_E4M3FN, T::F8_E5M2};
+  // enumerate (not keys/value arrays) so the JSON schema lists the names.
+  static constexpr auto value = enumerate(
+      "Invalid", T::Invalid,
+      "I1", T::I1,
+      "I16", T::I16,
+      "U16", T::U16,
+      "I32", T::I32,
+      "U32", T::U32,
+      "I64", T::I64,
+      "U64", T::U64,
+      "F16", T::F16,
+      "F32", T::F32,
+      "F64", T::F64,
+      "SNormF16", T::SNormF16,
+      "UNormF16", T::UNormF16,
+      "SNormF32", T::SNormF32,
+      "UNormF32", T::UNormF32,
+      "SNormF64", T::SNormF64,
+      "UNormF64", T::UNormF64,
+      "PackedS8x32", T::PackedS8x32,
+      "PackedU8x32", T::PackedU8x32,
+      "U8", T::U8,
+      "I8", T::I8,
+      "F8_E4M3FN", T::F8_E4M3FN,
+      "F8_E5M2", T::F8_E5M2);
 };
 
 template <>

@@ -13,171 +13,182 @@ namespace glz {
 template <>
 struct meta<dxp::sm5::model::NumComponents> {
   using T = dxp::sm5::model::NumComponents;
-  static constexpr std::array keys = {"zero", "one", "four", "n"};
-  static constexpr std::array value = {T::Zero, T::One, T::Four, T::N};
+  // enumerate (not keys/value arrays) so the JSON schema lists the names.
+  static constexpr auto value = enumerate(
+      "zero", T::Zero,
+      "one", T::One,
+      "four", T::Four,
+      "n", T::N);
 };
 
 template <>
 struct meta<dxp::sm5::model::SelectionMode> {
   using T = dxp::sm5::model::SelectionMode;
-  static constexpr std::array keys = {"mask", "swizzle", "select"};
-  static constexpr std::array value = {T::Mask, T::Swizzle, T::Select};
+  // enumerate (not keys/value arrays) so the JSON schema lists the names.
+  static constexpr auto value = enumerate(
+      "mask", T::Mask,
+      "swizzle", T::Swizzle,
+      "select", T::Select);
 };
 
 template <>
 struct meta<dxp::sm5::model::InterpolationMode> {
   using T = dxp::sm5::model::InterpolationMode;  // alias of dxp::InterpolationMode
-  static constexpr std::array keys = {"undefined",
-                                      "constant",
-                                      "linear",
-                                      "linear_centroid",
-                                      "linear_noperspective",
-                                      "linear_noperspective_centroid",
-                                      "linear_sample",
-                                      "linear_noperspective_sample",
-                                      "invalid"};
-  static constexpr std::array value = {T::Undefined,
-                                       T::Constant,
-                                       T::Linear,
-                                       T::LinearCentroid,
-                                       T::LinearNoperspective,
-                                       T::LinearNoperspectiveCentroid,
-                                       T::LinearSample,
-                                       T::LinearNoperspectiveSample,
-                                       T::Invalid};
+  // enumerate (not keys/value arrays) so the JSON schema lists the names.
+  static constexpr auto value = enumerate(
+      "undefined", T::Undefined,
+      "constant", T::Constant,
+      "linear", T::Linear,
+      "linear_centroid", T::LinearCentroid,
+      "linear_noperspective", T::LinearNoperspective,
+      "linear_noperspective_centroid", T::LinearNoperspectiveCentroid,
+      "linear_sample", T::LinearSample,
+      "linear_noperspective_sample", T::LinearNoperspectiveSample,
+      "invalid", T::Invalid);
 };
 
 template <>
 struct meta<dxp::sm5::model::CbufferAccessPattern> {
   using T = dxp::sm5::model::CbufferAccessPattern;
-  static constexpr std::array keys = {"immediate_indexed", "dynamic_indexed"};
-  static constexpr std::array value = {T::ImmediateIndexed, T::DynamicIndexed};
+  // enumerate (not keys/value arrays) so the JSON schema lists the names.
+  static constexpr auto value = enumerate(
+      "immediate_indexed", T::ImmediateIndexed,
+      "dynamic_indexed", T::DynamicIndexed);
 };
 
 template <>
 struct meta<dxp::sm5::model::SamplerMode> {
   using T = dxp::sm5::model::SamplerMode;
-  static constexpr std::array keys = {"default", "comparison", "mono"};
-  static constexpr std::array value = {T::Default, T::Comparison, T::Mono};
+  // enumerate (not keys/value arrays) so the JSON schema lists the names.
+  static constexpr auto value = enumerate(
+      "default", T::Default,
+      "comparison", T::Comparison,
+      "mono", T::Mono);
 };
 
 template <>
 struct meta<dxp::sm5::model::SignatureSemantic> {
   using T = dxp::sm5::model::SignatureSemantic;
-  static constexpr std::array keys = {"undefined",
-                                      "position",
-                                      "clip_distance",
-                                      "cull_distance",
-                                      "render_target_array_index",
-                                      "viewport_array_index",
-                                      "vertex_id",
-                                      "primitive_id",
-                                      "instance_id",
-                                      "is_front_face",
-                                      "sample_index",
-                                      "final_quad_u_eq_0_edge_tessfactor",
-                                      "final_quad_v_eq_0_edge_tessfactor",
-                                      "final_quad_u_eq_1_edge_tessfactor",
-                                      "final_quad_v_eq_1_edge_tessfactor",
-                                      "final_quad_u_inside_tessfactor",
-                                      "final_quad_v_inside_tessfactor",
-                                      "final_tri_u_eq_0_edge_tessfactor",
-                                      "final_tri_v_eq_0_edge_tessfactor",
-                                      "final_tri_w_eq_0_edge_tessfactor",
-                                      "final_tri_inside_tessfactor",
-                                      "final_line_detail_tessfactor",
-                                      "final_line_density_tessfactor"};
-  static constexpr std::array value = {T::Undefined,
-                                       T::Position,
-                                       T::ClipDistance,
-                                       T::CullDistance,
-                                       T::RenderTargetArrayIndex,
-                                       T::ViewportArrayIndex,
-                                       T::VertexId,
-                                       T::PrimitiveId,
-                                       T::InstanceId,
-                                       T::IsFrontFace,
-                                       T::SampleIndex,
-                                       T::FinalQuadUEq0EdgeTessfactor,
-                                       T::FinalQuadVEq0EdgeTessfactor,
-                                       T::FinalQuadUEq1EdgeTessfactor,
-                                       T::FinalQuadVEq1EdgeTessfactor,
-                                       T::FinalQuadUInsideTessfactor,
-                                       T::FinalQuadVInsideTessfactor,
-                                       T::FinalTriUEq0EdgeTessfactor,
-                                       T::FinalTriVEq0EdgeTessfactor,
-                                       T::FinalTriWEq0EdgeTessfactor,
-                                       T::FinalTriInsideTessfactor,
-                                       T::FinalLineDetailTessfactor,
-                                       T::FinalLineDensityTessfactor};
+  // enumerate (not keys/value arrays) so the JSON schema lists the names.
+  static constexpr auto value = enumerate(
+      "undefined", T::Undefined,
+      "position", T::Position,
+      "clip_distance", T::ClipDistance,
+      "cull_distance", T::CullDistance,
+      "render_target_array_index", T::RenderTargetArrayIndex,
+      "viewport_array_index", T::ViewportArrayIndex,
+      "vertex_id", T::VertexId,
+      "primitive_id", T::PrimitiveId,
+      "instance_id", T::InstanceId,
+      "is_front_face", T::IsFrontFace,
+      "sample_index", T::SampleIndex,
+      "final_quad_u_eq_0_edge_tessfactor", T::FinalQuadUEq0EdgeTessfactor,
+      "final_quad_v_eq_0_edge_tessfactor", T::FinalQuadVEq0EdgeTessfactor,
+      "final_quad_u_eq_1_edge_tessfactor", T::FinalQuadUEq1EdgeTessfactor,
+      "final_quad_v_eq_1_edge_tessfactor", T::FinalQuadVEq1EdgeTessfactor,
+      "final_quad_u_inside_tessfactor", T::FinalQuadUInsideTessfactor,
+      "final_quad_v_inside_tessfactor", T::FinalQuadVInsideTessfactor,
+      "final_tri_u_eq_0_edge_tessfactor", T::FinalTriUEq0EdgeTessfactor,
+      "final_tri_v_eq_0_edge_tessfactor", T::FinalTriVEq0EdgeTessfactor,
+      "final_tri_w_eq_0_edge_tessfactor", T::FinalTriWEq0EdgeTessfactor,
+      "final_tri_inside_tessfactor", T::FinalTriInsideTessfactor,
+      "final_line_detail_tessfactor", T::FinalLineDetailTessfactor,
+      "final_line_density_tessfactor", T::FinalLineDensityTessfactor);
 };
 
 template <>
 struct meta<dxp::sm5::model::OperandType> {
   using T = dxp::sm5::model::OperandType;
-  static constexpr std::array keys = {
-      "temp", "input", "output", "indexable_temp",
-      "immediate32", "immediate64", "sampler", "resource",
-      "constant_buffer", "immediate_constant_buffer", "label",
-      "input_primitive_id", "output_depth", "null",
-      "rasterizer", "output_coverage_mask",
-      "stream", "function_body", "function_table", "interface",
-      "function_input", "function_output",
-      "output_control_point_id", "input_fork_instance_id",
-      "input_join_instance_id", "input_control_point",
-      "output_control_point", "input_patch_constant",
-      "input_domain_point", "this_pointer",
-      "unordered_access_view", "thread_group_shared_memory",
-      "input_thread_id", "input_thread_group_id",
-      "input_thread_id_in_group", "input_coverage_mask",
-      "input_thread_id_in_group_flattened",
-      "input_gs_instance_id",
-      "output_depth_greater_equal", "output_depth_less_equal",
-      "cycle_counter"};
-  static constexpr std::array value = {
-      T::Temp, T::Input, T::Output, T::IndexableTemp,
-      T::Immediate32, T::Immediate64, T::Sampler, T::Resource,
-      T::CBuffer, T::ImmediateConstantBuffer, T::Label,
-      T::InputPrimitiveId, T::OutputDepth, T::Null,
-      T::Rasterizer, T::OutputCoverageMask,
-      T::Stream, T::FunctionBody, T::FunctionTable, T::Interface,
-      T::FunctionInput, T::FunctionOutput,
-      T::OutputControlPointId, T::InputForkInstanceId,
-      T::InputJoinInstanceId, T::InputControlPoint,
-      T::OutputControlPoint, T::InputPatchConstant,
-      T::InputDomainPoint, T::ThisPointer,
-      T::UAV, T::ThreadGroupSharedMemory,
-      T::InputThreadId, T::InputThreadGroupId,
-      T::InputThreadIdInGroup, T::InputCoverageMask,
-      T::InputThreadIdInGroupFlattened,
-      T::InputGsInstanceId,
-      T::OutputDepthGreaterEqual, T::OutputDepthLessEqual,
-      T::CycleCounter};
+  // enumerate (not keys/value arrays) so the JSON schema lists the names.
+  static constexpr auto value = enumerate(
+      "temp", T::Temp,
+      "input", T::Input,
+      "output", T::Output,
+      "indexable_temp", T::IndexableTemp,
+      "immediate32", T::Immediate32,
+      "immediate64", T::Immediate64,
+      "sampler", T::Sampler,
+      "resource", T::Resource,
+      "constant_buffer", T::CBuffer,
+      "immediate_constant_buffer", T::ImmediateConstantBuffer,
+      "label", T::Label,
+      "input_primitive_id", T::InputPrimitiveId,
+      "output_depth", T::OutputDepth,
+      "null", T::Null,
+      "rasterizer", T::Rasterizer,
+      "output_coverage_mask", T::OutputCoverageMask,
+      "stream", T::Stream,
+      "function_body", T::FunctionBody,
+      "function_table", T::FunctionTable,
+      "interface", T::Interface,
+      "function_input", T::FunctionInput,
+      "function_output", T::FunctionOutput,
+      "output_control_point_id", T::OutputControlPointId,
+      "input_fork_instance_id", T::InputForkInstanceId,
+      "input_join_instance_id", T::InputJoinInstanceId,
+      "input_control_point", T::InputControlPoint,
+      "output_control_point", T::OutputControlPoint,
+      "input_patch_constant", T::InputPatchConstant,
+      "input_domain_point", T::InputDomainPoint,
+      "this_pointer", T::ThisPointer,
+      "unordered_access_view", T::UAV,
+      "thread_group_shared_memory", T::ThreadGroupSharedMemory,
+      "input_thread_id", T::InputThreadId,
+      "input_thread_group_id", T::InputThreadGroupId,
+      "input_thread_id_in_group", T::InputThreadIdInGroup,
+      "input_coverage_mask", T::InputCoverageMask,
+      "input_thread_id_in_group_flattened", T::InputThreadIdInGroupFlattened,
+      "input_gs_instance_id", T::InputGsInstanceId,
+      "output_depth_greater_equal", T::OutputDepthGreaterEqual,
+      "output_depth_less_equal", T::OutputDepthLessEqual,
+      "cycle_counter", T::CycleCounter);
 };
 
 template <>
 struct meta<dxp::sm5::model::OperandModifier> {
   using T = dxp::sm5::model::OperandModifier;
-  static constexpr std::array keys = {"none", "neg", "abs", "abs_neg"};
-  static constexpr std::array value = {T::None, T::Neg, T::Abs, T::AbsNeg};
+  // enumerate (not keys/value arrays) so the JSON schema lists the names.
+  static constexpr auto value = enumerate(
+      "none", T::None,
+      "neg", T::Neg,
+      "abs", T::Abs,
+      "abs_neg", T::AbsNeg);
 };
 
 template <>
 struct meta<dxp::sm5::model::ResourceDimension> {
   using T = dxp::sm5::model::ResourceDimension;
-  static constexpr std::array keys = {"unknown", "buffer", "texture1d", "texture2d", "texture2dms",
-                                      "texture3d", "texturecube", "texture1darray", "texture2darray",
-                                      "texture2dmsarray", "texturecubearray", "raw_buffer", "structured_buffer"};
-  static constexpr std::array value = {T::Unknown, T::Buffer, T::Texture1D, T::Texture2D, T::Texture2DMS,
-                                       T::Texture3D, T::TextureCube, T::Texture1DArray, T::Texture2DArray,
-                                       T::Texture2DMSArray, T::TextureCubeArray, T::RawBuffer, T::StructuredBuffer};
+  // enumerate (not keys/value arrays) so the JSON schema lists the names.
+  static constexpr auto value = enumerate(
+      "unknown", T::Unknown,
+      "buffer", T::Buffer,
+      "texture1d", T::Texture1D,
+      "texture2d", T::Texture2D,
+      "texture2dms", T::Texture2DMS,
+      "texture3d", T::Texture3D,
+      "texturecube", T::TextureCube,
+      "texture1darray", T::Texture1DArray,
+      "texture2darray", T::Texture2DArray,
+      "texture2dmsarray", T::Texture2DMSArray,
+      "texturecubearray", T::TextureCubeArray,
+      "raw_buffer", T::RawBuffer,
+      "structured_buffer", T::StructuredBuffer);
 };
 
 template <>
 struct meta<dxp::sm5::model::ResourceReturnType> {
   using T = dxp::sm5::model::ResourceReturnType;
-  static constexpr std::array keys = {"unorm", "snorm", "sint", "uint", "float", "mixed", "double", "continued", "unused"};
-  static constexpr std::array value = {T::UNorm, T::SNorm, T::SInt, T::UInt, T::Float, T::Mixed, T::Double, T::Continued, T::Unused};
+  // enumerate (not keys/value arrays) so the JSON schema lists the names.
+  static constexpr auto value = enumerate(
+      "unorm", T::UNorm,
+      "snorm", T::SNorm,
+      "sint", T::SInt,
+      "uint", T::UInt,
+      "float", T::Float,
+      "mixed", T::Mixed,
+      "double", T::Double,
+      "continued", T::Continued,
+      "unused", T::Unused);
 };
 
 template <>

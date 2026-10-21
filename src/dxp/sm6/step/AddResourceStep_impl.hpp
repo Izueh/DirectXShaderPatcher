@@ -74,25 +74,40 @@ namespace glz {
 template <>
 struct meta<dxp::sm6::ResourceClass> {
   using T = dxp::sm6::ResourceClass;
-  static constexpr auto keys = std::array{"SRV", "UAV", "CBuffer", "Sampler", "Invalid"};
-  static constexpr auto value = std::array{T::SRV, T::UAV, T::CBuffer, T::Sampler, T::Invalid};
+  // enumerate (not keys/value arrays) so the JSON schema lists the names.
+  static constexpr auto value = enumerate(
+      "SRV", T::SRV,
+      "UAV", T::UAV,
+      "CBuffer", T::CBuffer,
+      "Sampler", T::Sampler,
+      "Invalid", T::Invalid);
 };
 
 template <>
 struct meta<dxp::sm6::ResourceKind> {
   using T = dxp::sm6::ResourceKind;
-  static constexpr auto keys = std::array{
-      "Invalid", "Texture1D", "Texture2D", "Texture2DMS", "Texture3D",
-      "TextureCube", "Texture1DArray", "Texture2DArray", "Texture2DMSArray",
-      "TextureCubeArray", "TypedBuffer", "RawBuffer", "StructuredBuffer",
-      "CBuffer", "Sampler", "TBuffer", "RTAccelerationStructure",
-      "FeedbackTexture2D", "FeedbackTexture2DArray", "NumEntries"};
-  static constexpr auto value = std::array{
-      T::Invalid, T::Texture1D, T::Texture2D, T::Texture2DMS, T::Texture3D,
-      T::TextureCube, T::Texture1DArray, T::Texture2DArray, T::Texture2DMSArray,
-      T::TextureCubeArray, T::TypedBuffer, T::RawBuffer, T::StructuredBuffer,
-      T::CBuffer, T::Sampler, T::TBuffer, T::RTAccelerationStructure,
-      T::FeedbackTexture2D, T::FeedbackTexture2DArray, T::NumEntries};
+  // enumerate (not keys/value arrays) so the JSON schema lists the names.
+  static constexpr auto value = enumerate(
+      "Invalid", T::Invalid,
+      "Texture1D", T::Texture1D,
+      "Texture2D", T::Texture2D,
+      "Texture2DMS", T::Texture2DMS,
+      "Texture3D", T::Texture3D,
+      "TextureCube", T::TextureCube,
+      "Texture1DArray", T::Texture1DArray,
+      "Texture2DArray", T::Texture2DArray,
+      "Texture2DMSArray", T::Texture2DMSArray,
+      "TextureCubeArray", T::TextureCubeArray,
+      "TypedBuffer", T::TypedBuffer,
+      "RawBuffer", T::RawBuffer,
+      "StructuredBuffer", T::StructuredBuffer,
+      "CBuffer", T::CBuffer,
+      "Sampler", T::Sampler,
+      "TBuffer", T::TBuffer,
+      "RTAccelerationStructure", T::RTAccelerationStructure,
+      "FeedbackTexture2D", T::FeedbackTexture2D,
+      "FeedbackTexture2DArray", T::FeedbackTexture2DArray,
+      "NumEntries", T::NumEntries);
 };
 
 template <>

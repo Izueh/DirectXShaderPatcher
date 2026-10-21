@@ -187,10 +187,9 @@ std::expected<DeclareFunctionStep, std::string> DeclareFunctionData::Compile() c
   step.condition = condition.Compile();
   for (const auto& param : params) step.signature.params.push_back({param.name, FunctionType{param.type}});
   if (return_type != "void") {
-    auto type = std::ranges::find(glz::meta<dxp::ComponentType>::keys, return_type);
-    if (type == std::end(glz::meta<dxp::ComponentType>::keys)) return std::unexpected("declare_function '" + name + "': unknown return_type '" + return_type + "'");
-    const auto index = std::distance(std::begin(glz::meta<dxp::ComponentType>::keys), type);
-    step.signature.return_type = FunctionType{glz::meta<dxp::ComponentType>::value[index]};
+    auto type = glz::read_json<dxp::ComponentType>("\"" + return_type + "\"");
+    if (!type) return std::unexpected("declare_function '" + name + "': unknown return_type '" + return_type + "'");
+    step.signature.return_type = FunctionType{*type};
   }
   for (const auto& pattern : emit) {
     auto compiled = pattern.Compile();

@@ -30,9 +30,7 @@ Execute(const CheckOpcodeCountStep& step, ExecutionContext& ctx) {
 
   dxp::CheckOpcodeCountResults results;
   for (const auto op : step.opcodes) {
-    const auto idx = static_cast<size_t>(static_cast<uint32_t>(op));
-    if (idx < glz::meta<Opcode>::keys.size()) {
-      const auto* const op_name = glz::meta<Opcode>::keys.at(idx);
+    if (const std::string op_name(glz::get_enum_name(op)); !op_name.empty()) {
       auto it = all_counts.find(op_name);
       results.opcode_counts[op_name] = (it != all_counts.end()) ? it->second : 0;
     }

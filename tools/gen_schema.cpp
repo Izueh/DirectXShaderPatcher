@@ -32,6 +32,69 @@ constexpr SchemaDoc kSchemas[] = {
      "docs/sm6_recipe_schema.json"},
 };
 
+bool IsNullType(const glz::json_t& node) {
+  return node.is_object() && node.get_object().size() == 1 && node.contains("type") && node["type"].is_string() &&
+         node["type"].get_string() == "null";
+}
+
+/// Recipes are YAML: an optional key is omitted, never written as null. glaze renders
+/// std::optional members as `anyOf: [T, {type: null}]` (or a type list with "null"),
+/// which reads as if null were a meaningful value, so that alternative is dropped.
+void StripNullAlternatives(glz::json_t& node) {
+  if (node.is_array()) {
+    for (auto& element : node.get_array()) StripNullAlternatives(element);
+    return;
+  }
+  if (!node.is_object()) return;
+
+  auto& object = node.get_object();
+  if (auto any_of = object.find("anyOf"); any_of != object.end() && any_of->second.is_array()) {
+    auto& alternatives = any_of->second.get_array();
+    std::erase_if(alternatives, IsNullType);
+    if (alternatives.size() == 1 && alternatives.front().is_object()) {
+      glz::json_t only = std::move(alternatives.front());
+      object.erase("anyOf");
+      for (auto& [key, value] : only.get_object()) object[std::string(key)] = std::move(value);
+    }
+  }
+  if (auto type = object.find("type"); type != object.end() && type->second.is_array()) {
+    auto& types = type->second.get_array();
+    std::erase_if(types, [](const glz::json_t& t) { return t.is_string() && t.get_string() == "null"; });
+    if (types.size() == 1) {
+      glz::json_t single = std::move(types.front());
+      type->second = std::move(single);
+    }
+  }
+  for (auto& [key, value] : object) StripNullAlternatives(value);
+}
+
+/// `meta:` and cbuffer-field `default:` are parsed as glz::generic, whose generated schema
+/// spells out the C++ variant (null alternative, C++ type names). Describe them instead.
+void DescribeGenericProperties(glz::json_t& node) {
+  if (node.is_array()) {
+    for (auto& element : node.get_array()) DescribeGenericProperties(element);
+    return;
+  }
+  if (!node.is_object()) return;
+  auto& object = node.get_object();
+  if (auto properties = object.find("properties"); properties != object.end() && properties->second.is_object()) {
+    auto& props = properties->second.get_object();
+    if (auto meta = props.find("meta"); meta != props.end()) {
+      glz::json_t described;
+      described["description"] = "Opaque metadata for hosts: any YAML value, reported verbatim and never interpreted by DXP.";
+      meta->second = std::move(described);
+    }
+    if (auto def = props.find("default"); def != props.end() && def->second.contains("$ref")) {
+      glz::json_t described;
+      described["type"] = glz::json_t::array_t{"number", "boolean", "array"};
+      described["items"]["type"] = "number";
+      described["description"] = "Initial value: a number or bool broadcast to every component, or one number per component.";
+      def->second = std::move(described);
+    }
+  }
+  for (auto& [key, value] : object) DescribeGenericProperties(value);
+}
+
 std::string GenerateFor(const SchemaDoc& doc, const glz::json_t& schema) {
   std::string out;
   auto ec = glz::write<glz::opts{.prettify = true}>(schema, out);
@@ -71,6 +134,9 @@ int main(int argc, char** argv) {
   };
 
   const auto emit = [&](const SchemaDoc& doc, glz::json_t schema) {
+    DescribeGenericProperties(schema);
+    if (schema.contains("$defs")) schema["$defs"].get_object().erase("glz::generic");
+    StripNullAlternatives(schema);
     schema["$schema"] = "https://json-schema.org/draft/2020-12/schema";
     schema["$id"] = doc.id;
     schema["title"] = doc.title;

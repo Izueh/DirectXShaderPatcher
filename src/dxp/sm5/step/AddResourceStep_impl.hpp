@@ -94,8 +94,11 @@ namespace glz {
 template <>
 struct meta<dxp::sm5::step::AddResourceStep::UavKind> {
   using T = dxp::sm5::step::AddResourceStep::UavKind;
-  static constexpr auto keys = std::array{"typed", "raw", "structured"};
-  static constexpr auto value = std::array{T::Typed, T::Raw, T::Structured};
+  // enumerate (not keys/value arrays) so the JSON schema lists the names.
+  static constexpr auto value = enumerate(
+      "typed", T::Typed,
+      "raw", T::Raw,
+      "structured", T::Structured);
 };
 
 }  // namespace glz

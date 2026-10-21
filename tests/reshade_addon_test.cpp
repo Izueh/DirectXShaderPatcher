@@ -146,13 +146,50 @@ void TestRecipes(const fs::path& source_root, const fs::path& dir) {
                 fs::copy_options::overwrite_existing);
   fs::copy_file(examples / "sm5/ps/ign_to_blue_noise.recipe.yml.example", recipes / "sm5/ps/ign_to_blue_noise.recipe.yml",
                 fs::copy_options::overwrite_existing);
+  // Patching runs against a committed fixture (sm6_rule_patterns: Texture2D load at t7), so the
+  // example recipes above are only checked for loading and declarations.
+  WriteText(recipes / "sm6/cs/replace_load.recipe.yml", R"YAML(
+env:
+  noise_mip: 0
+steps:
+  - kind: add_resource
+    name: add_noise
+    textures:
+      - { handle: noise, kind: Texture2D, space: 100, register_index: 0 }
+  - kind: apply_rule
+    name: replace_load
+    rewrite_mode: replace
+    rule:
+      name: replace_load
+      match:
+        - opcode: TextureLoad
+          capture: texture_load
+          operands:
+            - { index: 1, kind: resource, resource_class: SRV, resource_kind: Texture2D, register_index: 7, space: 0 }
+            - { index: 3, capture: coord_x }
+            - { index: 4, capture: coord_y }
+      emit:
+        - opcode: TextureLoad
+          result_component_type: F32
+          name: noise_load
+          replace_captured: texture_load
+          operands:
+            - { index: 1, kind: resource, handle: noise }
+            - { index: 2, kind: constant, constant_int_values: [noise_mip] }
+            - { index: 3, kind: call, capture: coord_x }
+            - { index: 4, kind: call, capture: coord_y }
+            - { index: 5, kind: undefined }
+            - { index: 6, kind: undefined }
+            - { index: 7, kind: undefined }
+            - { index: 8, kind: undefined }
+)YAML");
   WriteText(recipes / "sm6/broken.recipe.yml", "steps: [ {kind: not_a_step} ]\n");
   WriteText(recipes / "sm6/ignored/skipped.recipe.yml", "steps: []\n");  // unknown stage folder
 
   Settings settings;
   settings.root = dir;
   auto set = RecipeSet::Load(recipes, {});
-  Check(set->Entries().size() == 3, "three recipes found (unknown stage folder ignored)");
+  Check(set->Entries().size() == 4, "four recipes found (unknown stage folder ignored)");
 
   const RecipeEntry* sm6 = nullptr;
   const RecipeEntry* broken = nullptr;
@@ -161,30 +198,33 @@ void TestRecipes(const fs::path& source_root, const fs::path& dir) {
     if (entry.name == "sm6/broken.recipe.yml") broken = &entry;
   }
   Check(broken != nullptr && !broken->Loaded(), "broken recipe reports a load error");
-  Check(sm6 != nullptr && sm6->Loaded() && sm6->stage == Stage::kPixel, "SM6 recipe loads with the pixel stage");
+  Check(sm6 != nullptr && sm6->Loaded() && sm6->stage == Stage::kPixel, "SM6 example recipe loads with the pixel stage");
   Check(sm6 != nullptr && sm6->env_defaults.contains("noise_mip"), "env defaults come from Recipe::GetEnv");
   Check(set->AnyAddResource(), "add_resource is detected");
-  Check(set->AppliesTo(ShaderModel::kSm6, Stage::kPixel) && !set->AppliesTo(ShaderModel::kSm6, Stage::kCompute),
+  Check(set->AppliesTo(ShaderModel::kSm6, Stage::kPixel) && set->AppliesTo(ShaderModel::kSm6, Stage::kCompute) &&
+            !set->AppliesTo(ShaderModel::kSm6, Stage::kVertex),
         "stage folders filter recipes");
 
-  const auto dxil = ReadFile(source_root / "playground/dither_ps_6_6.cso");
+  const auto dxil = ReadFile(source_root / "tests/shaders/sm6_rule_patterns.cs_6_6.cso");
   Check(DetectShaderModel(dxil) == ShaderModel::kSm6, "DXIL container detected");
   const uint64_t hash = HashShader(dxil);
-  auto patched = set->Patch(ShaderModel::kSm6, Stage::kPixel, hash, dxil, settings);
-  Check(patched != nullptr && patched->code != dxil, "SM6 pixel shader is patched");
+  Check(set->Patch(ShaderModel::kSm6, Stage::kPixel, hash, dxil, settings) == nullptr,
+        "recipes in the cs folder do not run for the pixel stage");
+  auto patched = set->Patch(ShaderModel::kSm6, Stage::kCompute, hash, dxil, settings);
+  Check(patched != nullptr && patched->code != dxil, "SM6 compute shader is patched");
   if (patched) {
     Check(patched->bindings.size() == 1 && patched->bindings[0].handle == "noise" && patched->bindings[0].space == 100 &&
               patched->bindings[0].register_index == 0 && patched->bindings[0].binding_class == dxp::BindingClass::Texture,
           "SM6 binding is the noise texture at t0 space100");
   }
-  Check(set->Patch(ShaderModel::kSm6, Stage::kPixel, hash, dxil, settings) == patched, "patch results are cached per generation");
+  Check(set->Patch(ShaderModel::kSm6, Stage::kCompute, hash, dxil, settings) == patched, "patch results are cached per generation");
 
   // Env override: a different mip constant must change the output, and the set must be a new generation.
-  auto overridden = set->WithOverrides({{"sm6/ps/replace_noise_srv.recipe.yml", {{"noise_mip", dxp::PrimitiveValue(int64_t{3})}}}});
+  auto overridden = set->WithOverrides({{"sm6/cs/replace_load.recipe.yml", {{"noise_mip", dxp::PrimitiveValue(int64_t{3})}}}});
   Check(overridden->Generation() != set->Generation(), "env overrides publish a new generation");
-  auto patched_mip3 = overridden->Patch(ShaderModel::kSm6, Stage::kPixel, hash, dxil, settings);
+  auto patched_mip3 = overridden->Patch(ShaderModel::kSm6, Stage::kCompute, hash, dxil, settings);
   Check(patched && patched_mip3 && patched_mip3->code != patched->code, "env override changes the patched shader");
-  Check(overridden->WithOverrides({{"sm6/ps/replace_noise_srv.recipe.yml", {{"unknown", dxp::PrimitiveValue(true)}}}})->Overrides().empty(),
+  Check(overridden->WithOverrides({{"sm6/cs/replace_load.recipe.yml", {{"unknown", dxp::PrimitiveValue(true)}}}})->Overrides().empty(),
         "overrides for undeclared variables are dropped");
 
   // Config round trip of an override value, parsed with the default's type.

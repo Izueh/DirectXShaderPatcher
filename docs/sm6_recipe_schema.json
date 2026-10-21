@@ -42,17 +42,48 @@
                                  "type": "string"
                               },
                               "interp_mode": {
-                                 "$ref": "#/$defs/dxp::sm5::model::InterpolationMode"
-                              },
-                              "register_index": {
-                                 "anyOf": [
+                                 "type": "string",
+                                 "oneOf": [
                                     {
-                                       "$ref": "#/$defs/uint32_t"
+                                       "title": "undefined",
+                                       "const": "undefined"
                                     },
                                     {
-                                       "type": "null"
+                                       "title": "constant",
+                                       "const": "constant"
+                                    },
+                                    {
+                                       "title": "linear",
+                                       "const": "linear"
+                                    },
+                                    {
+                                       "title": "linear_centroid",
+                                       "const": "linear_centroid"
+                                    },
+                                    {
+                                       "title": "linear_noperspective",
+                                       "const": "linear_noperspective"
+                                    },
+                                    {
+                                       "title": "linear_noperspective_centroid",
+                                       "const": "linear_noperspective_centroid"
+                                    },
+                                    {
+                                       "title": "linear_sample",
+                                       "const": "linear_sample"
+                                    },
+                                    {
+                                       "title": "linear_noperspective_sample",
+                                       "const": "linear_noperspective_sample"
+                                    },
+                                    {
+                                       "title": "invalid",
+                                       "const": "invalid"
                                     }
                                  ]
+                              },
+                              "register_index": {
+                                 "$ref": "#/$defs/uint32_t"
                               },
                               "semantic_name": {
                                  "type": "string"
@@ -82,14 +113,7 @@
                                  "type": "string"
                               },
                               "register_index": {
-                                 "anyOf": [
-                                    {
-                                       "$ref": "#/$defs/uint32_t"
-                                    },
-                                    {
-                                       "type": "null"
-                                    }
-                                 ]
+                                 "$ref": "#/$defs/uint32_t"
                               },
                               "semantic_name": {
                                  "type": "string"
@@ -329,14 +353,7 @@
                         "type": "boolean"
                      },
                      "return": {
-                        "anyOf": [
-                           {
-                              "$ref": "#/$defs/dxp::sm6::step::EmitOperandPatternData"
-                           },
-                           {
-                              "type": "null"
-                           }
-                        ]
+                        "$ref": "#/$defs/dxp::sm6::step::EmitOperandPatternData"
                      },
                      "return_type": {
                         "type": "string"
@@ -358,13 +375,100 @@
    "additionalProperties": false,
    "$defs": {
       "dxp::ComponentType": {
-         "type": [
-            "number",
-            "string",
-            "boolean",
-            "object",
-            "array",
-            "null"
+         "type": "string",
+         "oneOf": [
+            {
+               "title": "Invalid",
+               "const": "Invalid"
+            },
+            {
+               "title": "I1",
+               "const": "I1"
+            },
+            {
+               "title": "I16",
+               "const": "I16"
+            },
+            {
+               "title": "U16",
+               "const": "U16"
+            },
+            {
+               "title": "I32",
+               "const": "I32"
+            },
+            {
+               "title": "U32",
+               "const": "U32"
+            },
+            {
+               "title": "I64",
+               "const": "I64"
+            },
+            {
+               "title": "U64",
+               "const": "U64"
+            },
+            {
+               "title": "F16",
+               "const": "F16"
+            },
+            {
+               "title": "F32",
+               "const": "F32"
+            },
+            {
+               "title": "F64",
+               "const": "F64"
+            },
+            {
+               "title": "SNormF16",
+               "const": "SNormF16"
+            },
+            {
+               "title": "UNormF16",
+               "const": "UNormF16"
+            },
+            {
+               "title": "SNormF32",
+               "const": "SNormF32"
+            },
+            {
+               "title": "UNormF32",
+               "const": "UNormF32"
+            },
+            {
+               "title": "SNormF64",
+               "const": "SNormF64"
+            },
+            {
+               "title": "UNormF64",
+               "const": "UNormF64"
+            },
+            {
+               "title": "PackedS8x32",
+               "const": "PackedS8x32"
+            },
+            {
+               "title": "PackedU8x32",
+               "const": "PackedU8x32"
+            },
+            {
+               "title": "U8",
+               "const": "U8"
+            },
+            {
+               "title": "I8",
+               "const": "I8"
+            },
+            {
+               "title": "F8_E4M3FN",
+               "const": "F8_E4M3FN"
+            },
+            {
+               "title": "F8_E5M2",
+               "const": "F8_E5M2"
+            }
          ]
       },
       "dxp::ConditionData": {
@@ -415,34 +519,89 @@
          },
          "additionalProperties": false
       },
-      "dxp::sm5::model::InterpolationMode": {
-         "type": [
-            "number",
-            "string",
-            "boolean",
-            "object",
-            "array",
-            "null"
-         ]
-      },
-      "dxp::sm6::ResourceClass": {
-         "type": [
-            "number",
-            "string",
-            "boolean",
-            "object",
-            "array",
-            "null"
-         ]
-      },
       "dxp::sm6::ResourceKind": {
-         "type": [
-            "number",
-            "string",
-            "boolean",
-            "object",
-            "array",
-            "null"
+         "type": "string",
+         "oneOf": [
+            {
+               "title": "Invalid",
+               "const": "Invalid"
+            },
+            {
+               "title": "Texture1D",
+               "const": "Texture1D"
+            },
+            {
+               "title": "Texture2D",
+               "const": "Texture2D"
+            },
+            {
+               "title": "Texture2DMS",
+               "const": "Texture2DMS"
+            },
+            {
+               "title": "Texture3D",
+               "const": "Texture3D"
+            },
+            {
+               "title": "TextureCube",
+               "const": "TextureCube"
+            },
+            {
+               "title": "Texture1DArray",
+               "const": "Texture1DArray"
+            },
+            {
+               "title": "Texture2DArray",
+               "const": "Texture2DArray"
+            },
+            {
+               "title": "Texture2DMSArray",
+               "const": "Texture2DMSArray"
+            },
+            {
+               "title": "TextureCubeArray",
+               "const": "TextureCubeArray"
+            },
+            {
+               "title": "TypedBuffer",
+               "const": "TypedBuffer"
+            },
+            {
+               "title": "RawBuffer",
+               "const": "RawBuffer"
+            },
+            {
+               "title": "StructuredBuffer",
+               "const": "StructuredBuffer"
+            },
+            {
+               "title": "CBuffer",
+               "const": "CBuffer"
+            },
+            {
+               "title": "Sampler",
+               "const": "Sampler"
+            },
+            {
+               "title": "TBuffer",
+               "const": "TBuffer"
+            },
+            {
+               "title": "RTAccelerationStructure",
+               "const": "RTAccelerationStructure"
+            },
+            {
+               "title": "FeedbackTexture2D",
+               "const": "FeedbackTexture2D"
+            },
+            {
+               "title": "FeedbackTexture2DArray",
+               "const": "FeedbackTexture2DArray"
+            },
+            {
+               "title": "NumEntries",
+               "const": "NumEntries"
+            }
          ]
       },
       "dxp::sm6::step::EmitOperandPatternData": {
@@ -452,14 +611,7 @@
                "type": "string"
             },
             "component_type": {
-               "anyOf": [
-                  {
-                     "$ref": "#/$defs/dxp::ComponentType"
-                  },
-                  {
-                     "type": "null"
-                  }
-               ]
+               "$ref": "#/$defs/dxp::ComponentType"
             },
             "constant_float_values": {
                "$ref": "#/$defs/std::vector<std::variant<std::string,double>>"
@@ -474,24 +626,10 @@
                "$ref": "#/$defs/uint32_t"
             },
             "instruction": {
-               "anyOf": [
-                  {
-                     "$ref": "#/$defs/dxp::sm6::step::MatchInstructionPatternData"
-                  },
-                  {
-                     "type": "null"
-                  }
-               ]
+               "$ref": "#/$defs/dxp::sm6::step::MatchInstructionPatternData"
             },
             "kind": {
-               "anyOf": [
-                  {
-                     "$ref": "#/$defs/dxp::sm6::step::OperandKind"
-                  },
-                  {
-                     "type": "null"
-                  }
-               ]
+               "$ref": "#/$defs/dxp::sm6::step::OperandKind"
             }
          },
          "additionalProperties": false
@@ -503,53 +641,25 @@
                "type": "string"
             },
             "extract": {
-               "anyOf": [
-                  {
-                     "type": "object",
-                     "properties": {
-                        "aggregate_type": {
-                           "anyOf": [
-                              {
-                                 "$ref": "#/$defs/dxp::sm6::step::ValueTypePatternData"
-                              },
-                              {
-                                 "type": "null"
-                              }
-                           ]
-                        },
-                        "indices": {
-                           "type": "array",
-                           "items": {
-                              "$ref": "#/$defs/uint32_t"
-                           }
-                        },
-                        "result_type": {
-                           "anyOf": [
-                              {
-                                 "$ref": "#/$defs/dxp::sm6::step::ValueTypePatternData"
-                              },
-                              {
-                                 "type": "null"
-                              }
-                           ]
-                        }
-                     },
-                     "additionalProperties": false
+               "type": "object",
+               "properties": {
+                  "aggregate_type": {
+                     "$ref": "#/$defs/dxp::sm6::step::ValueTypePatternData"
                   },
-                  {
-                     "type": "null"
+                  "indices": {
+                     "type": "array",
+                     "items": {
+                        "$ref": "#/$defs/uint32_t"
+                     }
+                  },
+                  "result_type": {
+                     "$ref": "#/$defs/dxp::sm6::step::ValueTypePatternData"
                   }
-               ]
+               },
+               "additionalProperties": false
             },
             "extract_index": {
-               "anyOf": [
-                  {
-                     "$ref": "#/$defs/uint32_t"
-                  },
-                  {
-                     "type": "null"
-                  }
-               ]
+               "$ref": "#/$defs/uint32_t"
             },
             "match_capture": {
                "type": "string"
@@ -566,14 +676,7 @@
                         "type": "string"
                      },
                      "component_type": {
-                        "anyOf": [
-                           {
-                              "$ref": "#/$defs/dxp::ComponentType"
-                           },
-                           {
-                              "type": "null"
-                           }
-                        ]
+                        "$ref": "#/$defs/dxp::ComponentType"
                      },
                      "constant_float_values": {
                         "$ref": "#/$defs/std::vector<std::variant<std::string,double>>"
@@ -582,66 +685,50 @@
                         "$ref": "#/$defs/std::vector<std::variant<std::string,int64_t>>"
                      },
                      "export_as": {
-                        "type": [
-                           "string",
-                           "null"
-                        ]
+                        "type": "string"
                      },
                      "index": {
                         "$ref": "#/$defs/uint32_t"
                      },
                      "instruction": {
-                        "anyOf": [
-                           {
-                              "$ref": "#/$defs/dxp::sm6::step::MatchInstructionPatternData"
-                           },
-                           {
-                              "type": "null"
-                           }
-                        ]
+                        "$ref": "#/$defs/dxp::sm6::step::MatchInstructionPatternData"
                      },
                      "kind": {
-                        "anyOf": [
-                           {
-                              "$ref": "#/$defs/dxp::sm6::step::OperandKind"
-                           },
-                           {
-                              "type": "null"
-                           }
-                        ]
+                        "$ref": "#/$defs/dxp::sm6::step::OperandKind"
                      },
                      "match_capture": {
                         "type": "string"
                      },
                      "register_index": {
-                        "anyOf": [
-                           {
-                              "$ref": "#/$defs/int32_t"
-                           },
-                           {
-                              "type": "null"
-                           }
-                        ]
+                        "$ref": "#/$defs/int32_t"
                      },
                      "resource_class": {
-                        "anyOf": [
+                        "type": "string",
+                        "oneOf": [
                            {
-                              "$ref": "#/$defs/dxp::sm6::ResourceClass"
+                              "title": "SRV",
+                              "const": "SRV"
                            },
                            {
-                              "type": "null"
+                              "title": "UAV",
+                              "const": "UAV"
+                           },
+                           {
+                              "title": "CBuffer",
+                              "const": "CBuffer"
+                           },
+                           {
+                              "title": "Sampler",
+                              "const": "Sampler"
+                           },
+                           {
+                              "title": "Invalid",
+                              "const": "Invalid"
                            }
                         ]
                      },
                      "resource_kind": {
-                        "anyOf": [
-                           {
-                              "$ref": "#/$defs/dxp::sm6::ResourceKind"
-                           },
-                           {
-                              "type": "null"
-                           }
-                        ]
+                        "$ref": "#/$defs/dxp::sm6::ResourceKind"
                      },
                      "resource_name": {
                         "type": "string"
@@ -650,14 +737,7 @@
                         "type": "string"
                      },
                      "space": {
-                        "anyOf": [
-                           {
-                              "$ref": "#/$defs/int32_t"
-                           },
-                           {
-                              "type": "null"
-                           }
-                        ]
+                        "$ref": "#/$defs/int32_t"
                      }
                   },
                   "additionalProperties": false
@@ -691,96 +771,34 @@
          "type": "object",
          "properties": {
             "component_type": {
-               "anyOf": [
-                  {
-                     "$ref": "#/$defs/dxp::ComponentType"
-                  },
-                  {
-                     "type": "null"
-                  }
-               ]
+               "$ref": "#/$defs/dxp::ComponentType"
             },
             "kind": {
-               "anyOf": [
+               "type": "string",
+               "oneOf": [
                   {
-                     "type": "string",
-                     "oneOf": [
-                        {
-                           "title": "scalar",
-                           "const": "scalar"
-                        },
-                        {
-                           "title": "vector",
-                           "const": "vector"
-                        },
-                        {
-                           "title": "array",
-                           "const": "array"
-                        },
-                        {
-                           "title": "struct",
-                           "const": "struct"
-                        }
-                     ]
+                     "title": "scalar",
+                     "const": "scalar"
                   },
                   {
-                     "type": "null"
+                     "title": "vector",
+                     "const": "vector"
+                  },
+                  {
+                     "title": "array",
+                     "const": "array"
+                  },
+                  {
+                     "title": "struct",
+                     "const": "struct"
                   }
                ]
             },
             "struct_name": {
-               "type": [
-                  "string",
-                  "null"
-               ]
+               "type": "string"
             }
          },
          "additionalProperties": false
-      },
-      "glz::generic": {
-         "type": [
-            "number",
-            "string",
-            "boolean",
-            "object",
-            "array",
-            "null"
-         ],
-         "oneOf": [
-            {
-               "type": "null",
-               "title": "std::nullptr_t",
-               "const": null
-            },
-            {
-               "type": "number",
-               "title": "double",
-               "minimum": -1.7976931348623157E308,
-               "maximum": 1.7976931348623157E308
-            },
-            {
-               "type": "string",
-               "title": "std::string"
-            },
-            {
-               "type": "boolean",
-               "title": "bool"
-            },
-            {
-               "type": "array",
-               "items": {
-                  "$ref": "#/$defs/glz::generic"
-               },
-               "title": "std::vector<glz::generic>"
-            },
-            {
-               "type": "object",
-               "additionalProperties": {
-                  "$ref": "#/$defs/glz::generic"
-               },
-               "title": "glz::ordered_small_map<glz::generic_json<glz::num_mode::f64>>"
-            }
-         ]
       },
       "int32_t": {
          "type": "integer",
@@ -956,23 +974,24 @@
                      "type": "object",
                      "properties": {
                         "default": {
-                           "$ref": "#/$defs/glz::generic"
+                           "type": [
+                              "number",
+                              "boolean",
+                              "array"
+                           ],
+                           "items": {
+                              "type": "number"
+                           },
+                           "description": "Initial value: a number or bool broadcast to every component, or one number per component."
                         },
                         "meta": {
-                           "$ref": "#/$defs/glz::generic"
+                           "description": "Opaque metadata for hosts: any YAML value, reported verbatim and never interpreted by DXP."
                         },
                         "name": {
                            "type": "string"
                         },
                         "offset": {
-                           "anyOf": [
-                              {
-                                 "$ref": "#/$defs/uint32_t"
-                              },
-                              {
-                                 "type": "null"
-                              }
-                           ]
+                           "$ref": "#/$defs/uint32_t"
                         },
                         "type": {
                            "$ref": "#/$defs/dxp::ComponentType"
@@ -994,30 +1013,16 @@
                   "$ref": "#/$defs/dxp::sm6::ResourceKind"
                },
                "meta": {
-                  "$ref": "#/$defs/glz::generic"
+                  "description": "Opaque metadata for hosts: any YAML value, reported verbatim and never interpreted by DXP."
                },
                "register_index": {
-                  "anyOf": [
-                     {
-                        "$ref": "#/$defs/uint32_t"
-                     },
-                     {
-                        "type": "null"
-                     }
-                  ]
+                  "$ref": "#/$defs/uint32_t"
                },
                "size": {
                   "$ref": "#/$defs/uint32_t"
                },
                "space": {
-                  "anyOf": [
-                     {
-                        "$ref": "#/$defs/uint32_t"
-                     },
-                     {
-                        "type": "null"
-                     }
-                  ]
+                  "$ref": "#/$defs/uint32_t"
                },
                "type": {
                   "type": "string"
@@ -1041,84 +1046,46 @@
                   "type": "string"
                },
                "cast_opcode": {
-                  "type": [
-                     "string",
-                     "null"
-                  ]
+                  "type": "string"
                },
                "cbuffer_field": {
-                  "anyOf": [
-                     {
-                        "type": "object",
-                        "properties": {
-                           "component": {
-                              "$ref": "#/$defs/uint32_t"
-                           },
-                           "field": {
-                              "type": "string"
-                           },
-                           "handle": {
-                              "type": "string"
-                           }
-                        },
-                        "additionalProperties": false
-                     },
-                     {
-                        "type": "null"
-                     }
-                  ]
-               },
-               "extract": {
-                  "anyOf": [
-                     {
-                        "type": "object",
-                        "properties": {
-                           "aggregate": {
-                              "type": "string"
-                           },
-                           "aggregate_type": {
-                              "anyOf": [
-                                 {
-                                    "$ref": "#/$defs/dxp::sm6::step::ValueTypePatternData"
-                                 },
-                                 {
-                                    "type": "null"
-                                 }
-                              ]
-                           },
-                           "indices": {
-                              "type": "array",
-                              "items": {
-                                 "$ref": "#/$defs/std::variant<uint32_t,dxp::sm6::step::CaptureExtractIndexData>"
-                              }
-                           },
-                           "result_type": {
-                              "anyOf": [
-                                 {
-                                    "$ref": "#/$defs/dxp::sm6::step::ValueTypePatternData"
-                                 },
-                                 {
-                                    "type": "null"
-                                 }
-                              ]
-                           }
-                        },
-                        "additionalProperties": false
-                     },
-                     {
-                        "type": "null"
-                     }
-                  ]
-               },
-               "extract_index": {
-                  "anyOf": [
-                     {
+                  "type": "object",
+                  "properties": {
+                     "component": {
                         "$ref": "#/$defs/uint32_t"
                      },
-                     {
-                        "type": "null"
+                     "field": {
+                        "type": "string"
+                     },
+                     "handle": {
+                        "type": "string"
                      }
-                  ]
+                  },
+                  "additionalProperties": false
+               },
+               "extract": {
+                  "type": "object",
+                  "properties": {
+                     "aggregate": {
+                        "type": "string"
+                     },
+                     "aggregate_type": {
+                        "$ref": "#/$defs/dxp::sm6::step::ValueTypePatternData"
+                     },
+                     "indices": {
+                        "type": "array",
+                        "items": {
+                           "$ref": "#/$defs/std::variant<uint32_t,dxp::sm6::step::CaptureExtractIndexData>"
+                        }
+                     },
+                     "result_type": {
+                        "$ref": "#/$defs/dxp::sm6::step::ValueTypePatternData"
+                     }
+                  },
+                  "additionalProperties": false
+               },
+               "extract_index": {
+                  "$ref": "#/$defs/uint32_t"
                },
                "function": {
                   "type": "string"
@@ -1139,14 +1106,7 @@
                   "type": "string"
                },
                "result_component_type": {
-                  "anyOf": [
-                     {
-                        "$ref": "#/$defs/dxp::ComponentType"
-                     },
-                     {
-                        "type": "null"
-                     }
-                  ]
+                  "$ref": "#/$defs/dxp::ComponentType"
                }
             },
             "additionalProperties": false

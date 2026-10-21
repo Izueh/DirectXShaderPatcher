@@ -93,38 +93,31 @@
                         "$ref": "#/$defs/dxp::ConditionData"
                      },
                      "emit_blob": {
-                        "anyOf": [
-                           {
-                              "type": "object",
-                              "properties": {
-                                 "mode": {
-                                    "type": "string",
-                                    "oneOf": [
-                                       {
-                                          "title": "none",
-                                          "const": "none"
-                                       },
-                                       {
-                                          "title": "replace",
-                                          "const": "replace"
-                                       },
-                                       {
-                                          "title": "before",
-                                          "const": "before"
-                                       },
-                                       {
-                                          "title": "after",
-                                          "const": "after"
-                                       }
-                                    ]
+                        "type": "object",
+                        "properties": {
+                           "mode": {
+                              "type": "string",
+                              "oneOf": [
+                                 {
+                                    "title": "none",
+                                    "const": "none"
+                                 },
+                                 {
+                                    "title": "replace",
+                                    "const": "replace"
+                                 },
+                                 {
+                                    "title": "before",
+                                    "const": "before"
+                                 },
+                                 {
+                                    "title": "after",
+                                    "const": "after"
                                  }
-                              },
-                              "additionalProperties": false
-                           },
-                           {
-                              "type": "null"
+                              ]
                            }
-                        ]
+                        },
+                        "additionalProperties": false
                      },
                      "insert_index": {
                         "$ref": "#/$defs/int32_t"
@@ -133,26 +126,19 @@
                         "const": "apply_rule"
                      },
                      "match_blob": {
-                        "anyOf": [
-                           {
-                              "type": "object",
-                              "properties": {
-                                 "capture": {
-                                    "type": "string"
-                                 },
-                                 "match_end": {
-                                    "$ref": "#/$defs/dxp::sm5::step::InstructionMatchData"
-                                 },
-                                 "match_start": {
-                                    "$ref": "#/$defs/dxp::sm5::step::InstructionMatchData"
-                                 }
-                              },
-                              "additionalProperties": false
+                        "type": "object",
+                        "properties": {
+                           "capture": {
+                              "type": "string"
                            },
-                           {
-                              "type": "null"
+                           "match_end": {
+                              "$ref": "#/$defs/dxp::sm5::step::InstructionMatchData"
+                           },
+                           "match_start": {
+                              "$ref": "#/$defs/dxp::sm5::step::InstructionMatchData"
                            }
-                        ]
+                        },
+                        "additionalProperties": false
                      },
                      "match_mode": {
                         "$ref": "#/$defs/dxp::sm5::step::MatchKind"
@@ -338,16 +324,6 @@
          "minimum": -1.7976931348623157E308,
          "maximum": 1.7976931348623157E308
       },
-      "dxp::ComponentType": {
-         "type": [
-            "number",
-            "string",
-            "boolean",
-            "object",
-            "array",
-            "null"
-         ]
-      },
       "dxp::ConditionData": {
          "type": "object",
          "properties": {
@@ -397,13 +373,16 @@
          "additionalProperties": false
       },
       "dxp::sm5::model::CbufferAccessPattern": {
-         "type": [
-            "number",
-            "string",
-            "boolean",
-            "object",
-            "array",
-            "null"
+         "type": "string",
+         "oneOf": [
+            {
+               "title": "immediate_indexed",
+               "const": "immediate_indexed"
+            },
+            {
+               "title": "dynamic_indexed",
+               "const": "dynamic_indexed"
+            }
          ]
       },
       "dxp::sm5::model::ExtendedOpcodeType": {
@@ -428,23 +407,44 @@
          ]
       },
       "dxp::sm5::model::InterpolationMode": {
-         "type": [
-            "number",
-            "string",
-            "boolean",
-            "object",
-            "array",
-            "null"
-         ]
-      },
-      "dxp::sm5::model::NumComponents": {
-         "type": [
-            "number",
-            "string",
-            "boolean",
-            "object",
-            "array",
-            "null"
+         "type": "string",
+         "oneOf": [
+            {
+               "title": "undefined",
+               "const": "undefined"
+            },
+            {
+               "title": "constant",
+               "const": "constant"
+            },
+            {
+               "title": "linear",
+               "const": "linear"
+            },
+            {
+               "title": "linear_centroid",
+               "const": "linear_centroid"
+            },
+            {
+               "title": "linear_noperspective",
+               "const": "linear_noperspective"
+            },
+            {
+               "title": "linear_noperspective_centroid",
+               "const": "linear_noperspective_centroid"
+            },
+            {
+               "title": "linear_sample",
+               "const": "linear_sample"
+            },
+            {
+               "title": "linear_noperspective_sample",
+               "const": "linear_noperspective_sample"
+            },
+            {
+               "title": "invalid",
+               "const": "invalid"
+            }
          ]
       },
       "dxp::sm5::model::Opcode": {
@@ -453,28 +453,7 @@
             "string",
             "boolean",
             "object",
-            "array",
-            "null"
-         ]
-      },
-      "dxp::sm5::model::OperandModifier": {
-         "type": [
-            "number",
-            "string",
-            "boolean",
-            "object",
-            "array",
-            "null"
-         ]
-      },
-      "dxp::sm5::model::OperandType": {
-         "type": [
-            "number",
-            "string",
-            "boolean",
-            "object",
-            "array",
-            "null"
+            "array"
          ]
       },
       "dxp::sm5::model::ResourceDimPayload": {
@@ -490,23 +469,60 @@
          "additionalProperties": false
       },
       "dxp::sm5::model::ResourceDimension": {
-         "type": [
-            "number",
-            "string",
-            "boolean",
-            "object",
-            "array",
-            "null"
-         ]
-      },
-      "dxp::sm5::model::ResourceReturnType": {
-         "type": [
-            "number",
-            "string",
-            "boolean",
-            "object",
-            "array",
-            "null"
+         "type": "string",
+         "oneOf": [
+            {
+               "title": "unknown",
+               "const": "unknown"
+            },
+            {
+               "title": "buffer",
+               "const": "buffer"
+            },
+            {
+               "title": "texture1d",
+               "const": "texture1d"
+            },
+            {
+               "title": "texture2d",
+               "const": "texture2d"
+            },
+            {
+               "title": "texture2dms",
+               "const": "texture2dms"
+            },
+            {
+               "title": "texture3d",
+               "const": "texture3d"
+            },
+            {
+               "title": "texturecube",
+               "const": "texturecube"
+            },
+            {
+               "title": "texture1darray",
+               "const": "texture1darray"
+            },
+            {
+               "title": "texture2darray",
+               "const": "texture2darray"
+            },
+            {
+               "title": "texture2dmsarray",
+               "const": "texture2dmsarray"
+            },
+            {
+               "title": "texturecubearray",
+               "const": "texturecubearray"
+            },
+            {
+               "title": "raw_buffer",
+               "const": "raw_buffer"
+            },
+            {
+               "title": "structured_buffer",
+               "const": "structured_buffer"
+            }
          ]
       },
       "dxp::sm5::model::SampleControlsPayload": {
@@ -525,169 +541,69 @@
          "additionalProperties": false
       },
       "dxp::sm5::model::SamplerMode": {
-         "type": [
-            "number",
-            "string",
-            "boolean",
-            "object",
-            "array",
-            "null"
-         ]
-      },
-      "dxp::sm5::model::SelectionMode": {
-         "type": [
-            "number",
-            "string",
-            "boolean",
-            "object",
-            "array",
-            "null"
-         ]
-      },
-      "dxp::sm5::model::SignatureSemantic": {
-         "type": [
-            "number",
-            "string",
-            "boolean",
-            "object",
-            "array",
-            "null"
-         ]
-      },
-      "dxp::sm5::step::AddResourceStep::UavKind": {
-         "type": [
-            "number",
-            "string",
-            "boolean",
-            "object",
-            "array",
-            "null"
+         "type": "string",
+         "oneOf": [
+            {
+               "title": "default",
+               "const": "default"
+            },
+            {
+               "title": "comparison",
+               "const": "comparison"
+            },
+            {
+               "title": "mono",
+               "const": "mono"
+            }
          ]
       },
       "dxp::sm5::step::InstructionMatchData": {
          "type": "object",
          "properties": {
             "access_pattern": {
-               "anyOf": [
-                  {
-                     "$ref": "#/$defs/dxp::sm5::model::CbufferAccessPattern"
-                  },
-                  {
-                     "type": "null"
-                  }
-               ]
+               "$ref": "#/$defs/dxp::sm5::model::CbufferAccessPattern"
             },
             "capture": {
                "type": "string"
             },
             "dimension": {
-               "anyOf": [
-                  {
-                     "$ref": "#/$defs/dxp::sm5::model::ResourceDimension"
-                  },
-                  {
-                     "type": "null"
-                  }
-               ]
+               "$ref": "#/$defs/dxp::sm5::model::ResourceDimension"
             },
             "extended_opcodes": {
-               "anyOf": [
-                  {
-                     "type": "array",
-                     "items": {
-                        "type": "object",
-                        "properties": {
-                           "any": {
-                              "type": "boolean"
-                           },
-                           "raw": {
-                              "anyOf": [
-                                 {
-                                    "$ref": "#/$defs/uint32_t"
-                                 },
-                                 {
-                                    "type": "null"
-                                 }
-                              ]
-                           },
-                           "resource_dim": {
-                              "anyOf": [
-                                 {
-                                    "$ref": "#/$defs/dxp::sm5::model::ResourceDimPayload"
-                                 },
-                                 {
-                                    "type": "null"
-                                 }
-                              ]
-                           },
-                           "resource_return_type": {
-                              "anyOf": [
-                                 {
-                                    "$ref": "#/$defs/std::array<uint32_t,4>"
-                                 },
-                                 {
-                                    "type": "null"
-                                 }
-                              ]
-                           },
-                           "sample_controls": {
-                              "anyOf": [
-                                 {
-                                    "$ref": "#/$defs/dxp::sm5::model::SampleControlsPayload"
-                                 },
-                                 {
-                                    "type": "null"
-                                 }
-                              ]
-                           },
-                           "type": {
-                              "anyOf": [
-                                 {
-                                    "$ref": "#/$defs/dxp::sm5::model::ExtendedOpcodeType"
-                                 },
-                                 {
-                                    "type": "null"
-                                 }
-                              ]
-                           }
-                        },
-                        "additionalProperties": false
+               "type": "array",
+               "items": {
+                  "type": "object",
+                  "properties": {
+                     "any": {
+                        "type": "boolean"
+                     },
+                     "raw": {
+                        "$ref": "#/$defs/uint32_t"
+                     },
+                     "resource_dim": {
+                        "$ref": "#/$defs/dxp::sm5::model::ResourceDimPayload"
+                     },
+                     "resource_return_type": {
+                        "$ref": "#/$defs/std::array<uint32_t,4>"
+                     },
+                     "sample_controls": {
+                        "$ref": "#/$defs/dxp::sm5::model::SampleControlsPayload"
+                     },
+                     "type": {
+                        "$ref": "#/$defs/dxp::sm5::model::ExtendedOpcodeType"
                      }
                   },
-                  {
-                     "type": "null"
-                  }
-               ]
+                  "additionalProperties": false
+               }
             },
             "interpolation": {
-               "anyOf": [
-                  {
-                     "$ref": "#/$defs/dxp::sm5::model::InterpolationMode"
-                  },
-                  {
-                     "type": "null"
-                  }
-               ]
+               "$ref": "#/$defs/dxp::sm5::model::InterpolationMode"
             },
             "mode": {
-               "anyOf": [
-                  {
-                     "$ref": "#/$defs/dxp::sm5::model::SamplerMode"
-                  },
-                  {
-                     "type": "null"
-                  }
-               ]
+               "$ref": "#/$defs/dxp::sm5::model::SamplerMode"
             },
             "opcode": {
-               "anyOf": [
-                  {
-                     "$ref": "#/$defs/dxp::sm5::model::Opcode"
-                  },
-                  {
-                     "type": "null"
-                  }
-               ]
+               "$ref": "#/$defs/dxp::sm5::model::Opcode"
             },
             "operands": {
                "$ref": "#/$defs/std::vector<dxp::sm5::step::OperandData>"
@@ -696,10 +612,7 @@
                "$ref": "#/$defs/std::array<std::optional<dxp::sm5::model::ResourceReturnType>,4>"
             },
             "saturate": {
-               "type": [
-                  "boolean",
-                  "null"
-               ]
+               "type": "boolean"
             },
             "structure_stride": {
                "$ref": "#/$defs/uint32_t"
@@ -740,140 +653,190 @@
                "type": "string"
             },
             "components": {
-               "anyOf": [
-                  {
-                     "type": "object",
-                     "properties": {
-                        "num_components": {
-                           "$ref": "#/$defs/dxp::sm5::model::NumComponents"
+               "type": "object",
+               "properties": {
+                  "num_components": {
+                     "type": "string",
+                     "oneOf": [
+                        {
+                           "title": "zero",
+                           "const": "zero"
                         },
-                        "selection_mode": {
-                           "$ref": "#/$defs/dxp::sm5::model::SelectionMode"
+                        {
+                           "title": "one",
+                           "const": "one"
                         },
-                        "value": {
-                           "type": "string"
+                        {
+                           "title": "four",
+                           "const": "four"
+                        },
+                        {
+                           "title": "n",
+                           "const": "n"
                         }
-                     },
-                     "additionalProperties": false
+                     ]
                   },
-                  {
-                     "type": "null"
+                  "selection_mode": {
+                     "type": "string",
+                     "oneOf": [
+                        {
+                           "title": "mask",
+                           "const": "mask"
+                        },
+                        {
+                           "title": "swizzle",
+                           "const": "swizzle"
+                        },
+                        {
+                           "title": "select",
+                           "const": "select"
+                        }
+                     ]
+                  },
+                  "value": {
+                     "type": "string"
                   }
-               ]
+               },
+               "additionalProperties": false
             },
             "decl": {
-               "anyOf": [
-                  {
-                     "type": "object",
-                     "properties": {
-                        "access_pattern": {
-                           "anyOf": [
-                              {
-                                 "$ref": "#/$defs/dxp::sm5::model::CbufferAccessPattern"
-                              },
-                              {
-                                 "type": "null"
-                              }
-                           ]
-                        },
-                        "dimension": {
-                           "anyOf": [
-                              {
-                                 "$ref": "#/$defs/dxp::sm5::model::ResourceDimension"
-                              },
-                              {
-                                 "type": "null"
-                              }
-                           ]
-                        },
-                        "interpolation": {
-                           "anyOf": [
-                              {
-                                 "$ref": "#/$defs/dxp::sm5::model::InterpolationMode"
-                              },
-                              {
-                                 "type": "null"
-                              }
-                           ]
-                        },
-                        "mode": {
-                           "anyOf": [
-                              {
-                                 "$ref": "#/$defs/dxp::sm5::model::SamplerMode"
-                              },
-                              {
-                                 "type": "null"
-                              }
-                           ]
-                        },
-                        "return_type": {
-                           "$ref": "#/$defs/std::array<std::optional<dxp::sm5::model::ResourceReturnType>,4>"
-                        },
-                        "semantic": {
-                           "anyOf": [
-                              {
-                                 "$ref": "#/$defs/dxp::sm5::model::SignatureSemantic"
-                              },
-                              {
-                                 "type": "null"
-                              }
-                           ]
-                        },
-                        "structure_stride": {
-                           "anyOf": [
-                              {
-                                 "$ref": "#/$defs/uint32_t"
-                              },
-                              {
-                                 "type": "null"
-                              }
-                           ]
-                        }
-                     },
-                     "additionalProperties": false
+               "type": "object",
+               "properties": {
+                  "access_pattern": {
+                     "$ref": "#/$defs/dxp::sm5::model::CbufferAccessPattern"
                   },
-                  {
-                     "type": "null"
+                  "dimension": {
+                     "$ref": "#/$defs/dxp::sm5::model::ResourceDimension"
+                  },
+                  "interpolation": {
+                     "$ref": "#/$defs/dxp::sm5::model::InterpolationMode"
+                  },
+                  "mode": {
+                     "$ref": "#/$defs/dxp::sm5::model::SamplerMode"
+                  },
+                  "return_type": {
+                     "$ref": "#/$defs/std::array<std::optional<dxp::sm5::model::ResourceReturnType>,4>"
+                  },
+                  "semantic": {
+                     "type": "string",
+                     "oneOf": [
+                        {
+                           "title": "undefined",
+                           "const": "undefined"
+                        },
+                        {
+                           "title": "position",
+                           "const": "position"
+                        },
+                        {
+                           "title": "clip_distance",
+                           "const": "clip_distance"
+                        },
+                        {
+                           "title": "cull_distance",
+                           "const": "cull_distance"
+                        },
+                        {
+                           "title": "render_target_array_index",
+                           "const": "render_target_array_index"
+                        },
+                        {
+                           "title": "viewport_array_index",
+                           "const": "viewport_array_index"
+                        },
+                        {
+                           "title": "vertex_id",
+                           "const": "vertex_id"
+                        },
+                        {
+                           "title": "primitive_id",
+                           "const": "primitive_id"
+                        },
+                        {
+                           "title": "instance_id",
+                           "const": "instance_id"
+                        },
+                        {
+                           "title": "is_front_face",
+                           "const": "is_front_face"
+                        },
+                        {
+                           "title": "sample_index",
+                           "const": "sample_index"
+                        },
+                        {
+                           "title": "final_quad_u_eq_0_edge_tessfactor",
+                           "const": "final_quad_u_eq_0_edge_tessfactor"
+                        },
+                        {
+                           "title": "final_quad_v_eq_0_edge_tessfactor",
+                           "const": "final_quad_v_eq_0_edge_tessfactor"
+                        },
+                        {
+                           "title": "final_quad_u_eq_1_edge_tessfactor",
+                           "const": "final_quad_u_eq_1_edge_tessfactor"
+                        },
+                        {
+                           "title": "final_quad_v_eq_1_edge_tessfactor",
+                           "const": "final_quad_v_eq_1_edge_tessfactor"
+                        },
+                        {
+                           "title": "final_quad_u_inside_tessfactor",
+                           "const": "final_quad_u_inside_tessfactor"
+                        },
+                        {
+                           "title": "final_quad_v_inside_tessfactor",
+                           "const": "final_quad_v_inside_tessfactor"
+                        },
+                        {
+                           "title": "final_tri_u_eq_0_edge_tessfactor",
+                           "const": "final_tri_u_eq_0_edge_tessfactor"
+                        },
+                        {
+                           "title": "final_tri_v_eq_0_edge_tessfactor",
+                           "const": "final_tri_v_eq_0_edge_tessfactor"
+                        },
+                        {
+                           "title": "final_tri_w_eq_0_edge_tessfactor",
+                           "const": "final_tri_w_eq_0_edge_tessfactor"
+                        },
+                        {
+                           "title": "final_tri_inside_tessfactor",
+                           "const": "final_tri_inside_tessfactor"
+                        },
+                        {
+                           "title": "final_line_detail_tessfactor",
+                           "const": "final_line_detail_tessfactor"
+                        },
+                        {
+                           "title": "final_line_density_tessfactor",
+                           "const": "final_line_density_tessfactor"
+                        }
+                     ]
+                  },
+                  "structure_stride": {
+                     "$ref": "#/$defs/uint32_t"
                   }
-               ]
+               },
+               "additionalProperties": false
             },
             "export_as": {
-               "type": [
-                  "string",
-                  "null"
-               ]
+               "type": "string"
             },
             "handle": {
-               "anyOf": [
-                  {
-                     "type": "object",
-                     "properties": {
-                        "element_index": {
-                           "anyOf": [
-                              {
-                                 "$ref": "#/$defs/std::variant<std::string,uint32_t>"
-                              },
-                              {
-                                 "type": "null"
-                              }
-                           ]
-                        },
-                        "field": {
-                           "type": [
-                              "string",
-                              "null"
-                           ]
-                        },
-                        "name": {
-                           "type": "string"
-                        }
-                     },
-                     "additionalProperties": false
+               "type": "object",
+               "properties": {
+                  "element_index": {
+                     "$ref": "#/$defs/std::variant<std::string,uint32_t>"
                   },
-                  {
-                     "type": "null"
+                  "field": {
+                     "type": "string"
+                  },
+                  "name": {
+                     "type": "string"
                   }
-               ]
+               },
+               "additionalProperties": false
             },
             "immediates_f32": {
                "type": "array",
@@ -923,37 +886,16 @@
                         "type": "string"
                      },
                      "immediate_hi": {
-                        "anyOf": [
-                           {
-                              "$ref": "#/$defs/uint32_t"
-                           },
-                           {
-                              "type": "null"
-                           }
-                        ]
+                        "$ref": "#/$defs/uint32_t"
                      },
                      "immediate_lo": {
-                        "anyOf": [
-                           {
-                              "$ref": "#/$defs/uint32_t"
-                           },
-                           {
-                              "type": "null"
-                           }
-                        ]
+                        "$ref": "#/$defs/uint32_t"
                      },
                      "match_capture": {
                         "type": "string"
                      },
                      "relative_operand": {
-                        "anyOf": [
-                           {
-                              "$ref": "#/$defs/dxp::sm5::step::OperandData"
-                           },
-                           {
-                              "type": "null"
-                           }
-                        ]
+                        "$ref": "#/$defs/dxp::sm5::step::OperandData"
                      },
                      "representation": {
                         "type": "string",
@@ -988,22 +930,192 @@
                "type": "string"
             },
             "modifier": {
-               "anyOf": [
+               "type": "string",
+               "oneOf": [
                   {
-                     "$ref": "#/$defs/dxp::sm5::model::OperandModifier"
+                     "title": "none",
+                     "const": "none"
                   },
                   {
-                     "type": "null"
+                     "title": "neg",
+                     "const": "neg"
+                  },
+                  {
+                     "title": "abs",
+                     "const": "abs"
+                  },
+                  {
+                     "title": "abs_neg",
+                     "const": "abs_neg"
                   }
                ]
             },
             "type": {
-               "anyOf": [
+               "type": "string",
+               "oneOf": [
                   {
-                     "$ref": "#/$defs/dxp::sm5::model::OperandType"
+                     "title": "temp",
+                     "const": "temp"
                   },
                   {
-                     "type": "null"
+                     "title": "input",
+                     "const": "input"
+                  },
+                  {
+                     "title": "output",
+                     "const": "output"
+                  },
+                  {
+                     "title": "indexable_temp",
+                     "const": "indexable_temp"
+                  },
+                  {
+                     "title": "immediate32",
+                     "const": "immediate32"
+                  },
+                  {
+                     "title": "immediate64",
+                     "const": "immediate64"
+                  },
+                  {
+                     "title": "sampler",
+                     "const": "sampler"
+                  },
+                  {
+                     "title": "resource",
+                     "const": "resource"
+                  },
+                  {
+                     "title": "constant_buffer",
+                     "const": "constant_buffer"
+                  },
+                  {
+                     "title": "immediate_constant_buffer",
+                     "const": "immediate_constant_buffer"
+                  },
+                  {
+                     "title": "label",
+                     "const": "label"
+                  },
+                  {
+                     "title": "input_primitive_id",
+                     "const": "input_primitive_id"
+                  },
+                  {
+                     "title": "output_depth",
+                     "const": "output_depth"
+                  },
+                  {
+                     "title": "null",
+                     "const": "null"
+                  },
+                  {
+                     "title": "rasterizer",
+                     "const": "rasterizer"
+                  },
+                  {
+                     "title": "output_coverage_mask",
+                     "const": "output_coverage_mask"
+                  },
+                  {
+                     "title": "stream",
+                     "const": "stream"
+                  },
+                  {
+                     "title": "function_body",
+                     "const": "function_body"
+                  },
+                  {
+                     "title": "function_table",
+                     "const": "function_table"
+                  },
+                  {
+                     "title": "interface",
+                     "const": "interface"
+                  },
+                  {
+                     "title": "function_input",
+                     "const": "function_input"
+                  },
+                  {
+                     "title": "function_output",
+                     "const": "function_output"
+                  },
+                  {
+                     "title": "output_control_point_id",
+                     "const": "output_control_point_id"
+                  },
+                  {
+                     "title": "input_fork_instance_id",
+                     "const": "input_fork_instance_id"
+                  },
+                  {
+                     "title": "input_join_instance_id",
+                     "const": "input_join_instance_id"
+                  },
+                  {
+                     "title": "input_control_point",
+                     "const": "input_control_point"
+                  },
+                  {
+                     "title": "output_control_point",
+                     "const": "output_control_point"
+                  },
+                  {
+                     "title": "input_patch_constant",
+                     "const": "input_patch_constant"
+                  },
+                  {
+                     "title": "input_domain_point",
+                     "const": "input_domain_point"
+                  },
+                  {
+                     "title": "this_pointer",
+                     "const": "this_pointer"
+                  },
+                  {
+                     "title": "unordered_access_view",
+                     "const": "unordered_access_view"
+                  },
+                  {
+                     "title": "thread_group_shared_memory",
+                     "const": "thread_group_shared_memory"
+                  },
+                  {
+                     "title": "input_thread_id",
+                     "const": "input_thread_id"
+                  },
+                  {
+                     "title": "input_thread_group_id",
+                     "const": "input_thread_group_id"
+                  },
+                  {
+                     "title": "input_thread_id_in_group",
+                     "const": "input_thread_id_in_group"
+                  },
+                  {
+                     "title": "input_coverage_mask",
+                     "const": "input_coverage_mask"
+                  },
+                  {
+                     "title": "input_thread_id_in_group_flattened",
+                     "const": "input_thread_id_in_group_flattened"
+                  },
+                  {
+                     "title": "input_gs_instance_id",
+                     "const": "input_gs_instance_id"
+                  },
+                  {
+                     "title": "output_depth_greater_equal",
+                     "const": "output_depth_greater_equal"
+                  },
+                  {
+                     "title": "output_depth_less_equal",
+                     "const": "output_depth_less_equal"
+                  },
+                  {
+                     "title": "cycle_counter",
+                     "const": "cycle_counter"
                   }
                ]
             }
@@ -1044,51 +1156,6 @@
          "minimum": -3.4028234663852886E38,
          "maximum": 3.4028234663852886E38
       },
-      "glz::generic": {
-         "type": [
-            "number",
-            "string",
-            "boolean",
-            "object",
-            "array",
-            "null"
-         ],
-         "oneOf": [
-            {
-               "type": "null",
-               "title": "std::nullptr_t",
-               "const": null
-            },
-            {
-               "type": "number",
-               "title": "double",
-               "minimum": -1.7976931348623157E308,
-               "maximum": 1.7976931348623157E308
-            },
-            {
-               "type": "string",
-               "title": "std::string"
-            },
-            {
-               "type": "boolean",
-               "title": "bool"
-            },
-            {
-               "type": "array",
-               "items": {
-                  "$ref": "#/$defs/glz::generic"
-               },
-               "title": "std::vector<glz::generic>"
-            },
-            {
-               "type": "object",
-               "additionalProperties": {
-                  "$ref": "#/$defs/glz::generic"
-               },
-               "title": "glz::ordered_small_map<glz::generic_json<glz::num_mode::f64>>"
-            }
-         ]
-      },
       "int32_t": {
          "type": "integer",
          "minimum": -2147483648,
@@ -1102,12 +1169,43 @@
       "std::array<std::optional<dxp::sm5::model::ResourceReturnType>,4>": {
          "type": "array",
          "items": {
-            "anyOf": [
+            "type": "string",
+            "oneOf": [
                {
-                  "$ref": "#/$defs/dxp::sm5::model::ResourceReturnType"
+                  "title": "unorm",
+                  "const": "unorm"
                },
                {
-                  "type": "null"
+                  "title": "snorm",
+                  "const": "snorm"
+               },
+               {
+                  "title": "sint",
+                  "const": "sint"
+               },
+               {
+                  "title": "uint",
+                  "const": "uint"
+               },
+               {
+                  "title": "float",
+                  "const": "float"
+               },
+               {
+                  "title": "mixed",
+                  "const": "mixed"
+               },
+               {
+                  "title": "double",
+                  "const": "double"
+               },
+               {
+                  "title": "continued",
+                  "const": "continued"
+               },
+               {
+                  "title": "unused",
+                  "const": "unused"
                }
             ]
          },
@@ -1329,24 +1427,10 @@
             "type": "object",
             "properties": {
                "dimension": {
-                  "anyOf": [
-                     {
-                        "$ref": "#/$defs/dxp::sm5::model::ResourceDimension"
-                     },
-                     {
-                        "type": "null"
-                     }
-                  ]
+                  "$ref": "#/$defs/dxp::sm5::model::ResourceDimension"
                },
                "elements": {
-                  "anyOf": [
-                     {
-                        "$ref": "#/$defs/uint32_t"
-                     },
-                     {
-                        "type": "null"
-                     }
-                  ]
+                  "$ref": "#/$defs/uint32_t"
                },
                "fields": {
                   "type": "array",
@@ -1354,26 +1438,121 @@
                      "type": "object",
                      "properties": {
                         "default": {
-                           "$ref": "#/$defs/glz::generic"
+                           "type": [
+                              "number",
+                              "boolean",
+                              "array"
+                           ],
+                           "items": {
+                              "type": "number"
+                           },
+                           "description": "Initial value: a number or bool broadcast to every component, or one number per component."
                         },
                         "meta": {
-                           "$ref": "#/$defs/glz::generic"
+                           "description": "Opaque metadata for hosts: any YAML value, reported verbatim and never interpreted by DXP."
                         },
                         "name": {
                            "type": "string"
                         },
                         "offset": {
-                           "anyOf": [
-                              {
-                                 "$ref": "#/$defs/uint32_t"
-                              },
-                              {
-                                 "type": "null"
-                              }
-                           ]
+                           "$ref": "#/$defs/uint32_t"
                         },
                         "type": {
-                           "$ref": "#/$defs/dxp::ComponentType"
+                           "type": "string",
+                           "oneOf": [
+                              {
+                                 "title": "Invalid",
+                                 "const": "Invalid"
+                              },
+                              {
+                                 "title": "I1",
+                                 "const": "I1"
+                              },
+                              {
+                                 "title": "I16",
+                                 "const": "I16"
+                              },
+                              {
+                                 "title": "U16",
+                                 "const": "U16"
+                              },
+                              {
+                                 "title": "I32",
+                                 "const": "I32"
+                              },
+                              {
+                                 "title": "U32",
+                                 "const": "U32"
+                              },
+                              {
+                                 "title": "I64",
+                                 "const": "I64"
+                              },
+                              {
+                                 "title": "U64",
+                                 "const": "U64"
+                              },
+                              {
+                                 "title": "F16",
+                                 "const": "F16"
+                              },
+                              {
+                                 "title": "F32",
+                                 "const": "F32"
+                              },
+                              {
+                                 "title": "F64",
+                                 "const": "F64"
+                              },
+                              {
+                                 "title": "SNormF16",
+                                 "const": "SNormF16"
+                              },
+                              {
+                                 "title": "UNormF16",
+                                 "const": "UNormF16"
+                              },
+                              {
+                                 "title": "SNormF32",
+                                 "const": "SNormF32"
+                              },
+                              {
+                                 "title": "UNormF32",
+                                 "const": "UNormF32"
+                              },
+                              {
+                                 "title": "SNormF64",
+                                 "const": "SNormF64"
+                              },
+                              {
+                                 "title": "UNormF64",
+                                 "const": "UNormF64"
+                              },
+                              {
+                                 "title": "PackedS8x32",
+                                 "const": "PackedS8x32"
+                              },
+                              {
+                                 "title": "PackedU8x32",
+                                 "const": "PackedU8x32"
+                              },
+                              {
+                                 "title": "U8",
+                                 "const": "U8"
+                              },
+                              {
+                                 "title": "I8",
+                                 "const": "I8"
+                              },
+                              {
+                                 "title": "F8_E4M3FN",
+                                 "const": "F8_E4M3FN"
+                              },
+                              {
+                                 "title": "F8_E5M2",
+                                 "const": "F8_E5M2"
+                              }
+                           ]
                         },
                         "width": {
                            "$ref": "#/$defs/uint32_t"
@@ -1383,68 +1562,45 @@
                   }
                },
                "globally_coherent": {
-                  "type": [
-                     "boolean",
-                     "null"
-                  ]
+                  "type": "boolean"
                },
                "handle": {
                   "type": "string"
                },
                "has_counter": {
-                  "type": [
-                     "boolean",
-                     "null"
-                  ]
+                  "type": "boolean"
                },
                "interpolation": {
-                  "anyOf": [
-                     {
-                        "$ref": "#/$defs/dxp::sm5::model::InterpolationMode"
-                     },
-                     {
-                        "type": "null"
-                     }
-                  ]
+                  "$ref": "#/$defs/dxp::sm5::model::InterpolationMode"
                },
                "kind": {
-                  "anyOf": [
+                  "type": "string",
+                  "oneOf": [
                      {
-                        "$ref": "#/$defs/dxp::sm5::step::AddResourceStep::UavKind"
+                        "title": "typed",
+                        "const": "typed"
                      },
                      {
-                        "type": "null"
+                        "title": "raw",
+                        "const": "raw"
+                     },
+                     {
+                        "title": "structured",
+                        "const": "structured"
                      }
                   ]
                },
                "meta": {
-                  "$ref": "#/$defs/glz::generic"
+                  "description": "Opaque metadata for hosts: any YAML value, reported verbatim and never interpreted by DXP."
                },
                "mode": {
-                  "anyOf": [
-                     {
-                        "$ref": "#/$defs/dxp::sm5::model::SamplerMode"
-                     },
-                     {
-                        "type": "null"
-                     }
-                  ]
+                  "$ref": "#/$defs/dxp::sm5::model::SamplerMode"
                },
                "register_index": {
-                  "anyOf": [
-                     {
-                        "$ref": "#/$defs/uint32_t"
-                     },
-                     {
-                        "type": "null"
-                     }
-                  ]
+                  "$ref": "#/$defs/uint32_t"
                },
                "reverse_bind": {
-                  "type": [
-                     "boolean",
-                     "null"
-                  ]
+                  "type": "boolean"
                },
                "stride": {
                   "$ref": "#/$defs/uint32_t"
@@ -1459,14 +1615,7 @@
             "type": "object",
             "properties": {
                "access_pattern": {
-                  "anyOf": [
-                     {
-                        "$ref": "#/$defs/dxp::sm5::model::CbufferAccessPattern"
-                     },
-                     {
-                        "type": "null"
-                     }
-                  ]
+                  "$ref": "#/$defs/dxp::sm5::model::CbufferAccessPattern"
                },
                "blob": {
                   "type": "string"
@@ -1475,14 +1624,7 @@
                   "type": "string"
                },
                "dimension": {
-                  "anyOf": [
-                     {
-                        "$ref": "#/$defs/dxp::sm5::model::ResourceDimension"
-                     },
-                     {
-                        "type": "null"
-                     }
-                  ]
+                  "$ref": "#/$defs/dxp::sm5::model::ResourceDimension"
                },
                "extended_opcodes": {
                   "type": "array",
@@ -1490,88 +1632,32 @@
                      "type": "object",
                      "properties": {
                         "raw": {
-                           "anyOf": [
-                              {
-                                 "$ref": "#/$defs/uint32_t"
-                              },
-                              {
-                                 "type": "null"
-                              }
-                           ]
+                           "$ref": "#/$defs/uint32_t"
                         },
                         "resource_dim": {
-                           "anyOf": [
-                              {
-                                 "$ref": "#/$defs/dxp::sm5::model::ResourceDimPayload"
-                              },
-                              {
-                                 "type": "null"
-                              }
-                           ]
+                           "$ref": "#/$defs/dxp::sm5::model::ResourceDimPayload"
                         },
                         "resource_return_type": {
-                           "anyOf": [
-                              {
-                                 "$ref": "#/$defs/std::array<uint32_t,4>"
-                              },
-                              {
-                                 "type": "null"
-                              }
-                           ]
+                           "$ref": "#/$defs/std::array<uint32_t,4>"
                         },
                         "sample_controls": {
-                           "anyOf": [
-                              {
-                                 "$ref": "#/$defs/dxp::sm5::model::SampleControlsPayload"
-                              },
-                              {
-                                 "type": "null"
-                              }
-                           ]
+                           "$ref": "#/$defs/dxp::sm5::model::SampleControlsPayload"
                         },
                         "type": {
-                           "anyOf": [
-                              {
-                                 "$ref": "#/$defs/dxp::sm5::model::ExtendedOpcodeType"
-                              },
-                              {
-                                 "type": "null"
-                              }
-                           ]
+                           "$ref": "#/$defs/dxp::sm5::model::ExtendedOpcodeType"
                         }
                      },
                      "additionalProperties": false
                   }
                },
                "interpolation": {
-                  "anyOf": [
-                     {
-                        "$ref": "#/$defs/dxp::sm5::model::InterpolationMode"
-                     },
-                     {
-                        "type": "null"
-                     }
-                  ]
+                  "$ref": "#/$defs/dxp::sm5::model::InterpolationMode"
                },
                "mode": {
-                  "anyOf": [
-                     {
-                        "$ref": "#/$defs/dxp::sm5::model::SamplerMode"
-                     },
-                     {
-                        "type": "null"
-                     }
-                  ]
+                  "$ref": "#/$defs/dxp::sm5::model::SamplerMode"
                },
                "opcode": {
-                  "anyOf": [
-                     {
-                        "$ref": "#/$defs/dxp::sm5::model::Opcode"
-                     },
-                     {
-                        "type": "null"
-                     }
-                  ]
+                  "$ref": "#/$defs/dxp::sm5::model::Opcode"
                },
                "operands": {
                   "$ref": "#/$defs/std::vector<dxp::sm5::step::OperandData>"
@@ -1583,74 +1669,64 @@
                   }
                },
                "repeat": {
-                  "anyOf": [
-                     {
+                  "type": "object",
+                  "properties": {
+                     "params": {
                         "type": "object",
-                        "properties": {
-                           "params": {
-                              "type": "object",
-                              "additionalProperties": {
-                                 "type": "object",
-                                 "properties": {
-                                    "f32": {
-                                       "type": "array",
-                                       "items": {
-                                          "$ref": "#/$defs/float"
-                                       }
-                                    },
-                                    "f64": {
-                                       "type": "array",
-                                       "items": {
-                                          "$ref": "#/$defs/double"
-                                       }
-                                    },
-                                    "i32": {
-                                       "type": "array",
-                                       "items": {
-                                          "$ref": "#/$defs/int32_t"
-                                       }
-                                    },
-                                    "i64": {
-                                       "type": "array",
-                                       "items": {
-                                          "$ref": "#/$defs/int64_t"
-                                       }
-                                    },
-                                    "u32": {
-                                       "type": "array",
-                                       "items": {
-                                          "$ref": "#/$defs/uint32_t"
-                                       }
-                                    },
-                                    "u64": {
-                                       "type": "array",
-                                       "items": {
-                                          "$ref": "#/$defs/uint64_t"
-                                       }
-                                    }
-                                 },
-                                 "additionalProperties": false
+                        "additionalProperties": {
+                           "type": "object",
+                           "properties": {
+                              "f32": {
+                                 "type": "array",
+                                 "items": {
+                                    "$ref": "#/$defs/float"
+                                 }
+                              },
+                              "f64": {
+                                 "type": "array",
+                                 "items": {
+                                    "$ref": "#/$defs/double"
+                                 }
+                              },
+                              "i32": {
+                                 "type": "array",
+                                 "items": {
+                                    "$ref": "#/$defs/int32_t"
+                                 }
+                              },
+                              "i64": {
+                                 "type": "array",
+                                 "items": {
+                                    "$ref": "#/$defs/int64_t"
+                                 }
+                              },
+                              "u32": {
+                                 "type": "array",
+                                 "items": {
+                                    "$ref": "#/$defs/uint32_t"
+                                 }
+                              },
+                              "u64": {
+                                 "type": "array",
+                                 "items": {
+                                    "$ref": "#/$defs/uint64_t"
+                                 }
                               }
                            },
-                           "times": {
-                              "$ref": "#/$defs/uint32_t"
-                           }
-                        },
-                        "additionalProperties": false
+                           "additionalProperties": false
+                        }
                      },
-                     {
-                        "type": "null"
+                     "times": {
+                        "$ref": "#/$defs/uint32_t"
                      }
-                  ]
+                  },
+                  "additionalProperties": false
                },
                "return_type": {
                   "$ref": "#/$defs/std::array<std::optional<dxp::sm5::model::ResourceReturnType>,4>"
                },
                "saturate": {
-                  "type": [
-                     "boolean",
-                     "null"
-                  ]
+                  "type": "boolean"
                },
                "structure_stride": {
                   "$ref": "#/$defs/uint32_t"

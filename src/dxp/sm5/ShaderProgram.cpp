@@ -846,9 +846,8 @@ auto ShaderProgram::GetShaderChunk() -> ShaderProgram::DxbcChunk* {
 auto ShaderProgram::GetOpcodeCounts() const -> std::unordered_map<std::string, int32_t> {
   std::unordered_map<std::string, int32_t> counts;
   for (const auto& instr : instructions) {
-    const auto val = static_cast<uint32_t>(instr.opcode);
-    if (val < glz::meta<Opcode>::keys.size()) {
-      counts[glz::meta<Opcode>::keys.at(val)]++;
+    if (const std::string_view name = glz::get_enum_name(instr.opcode); !name.empty()) {
+      counts[std::string(name)]++;
     }
   }
   return counts;
