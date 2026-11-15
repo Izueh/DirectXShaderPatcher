@@ -22,6 +22,7 @@ using StepDataVariant =
 struct RecipeData {
   uint32_t version = 1;
   std::unordered_map<std::string, PrimitiveValue> env;
+  glz::generic meta;  ///< Opaque host metadata, reported verbatim (null = absent).
   std::vector<StepDataVariant> steps;
 };
 
@@ -45,7 +46,7 @@ struct meta<dxp::sm5::StepDataVariant> {
 template <>
 struct meta<dxp::sm5::RecipeData> {
   using T = dxp::sm5::RecipeData;
-  static constexpr auto value = object("version", &T::version, "env", &T::env, "steps", &T::steps);
+  static constexpr auto value = object("version", &T::version, "env", &T::env, "meta", &T::meta, "steps", &T::steps);
   static constexpr auto validate = [](const dxp::sm5::RecipeData& self, std::string& error) {
     if (self.steps.empty()) {
       error = "recipe requires at least one step";

@@ -48,7 +48,7 @@ dxp sm6 validate <recipe.recipe.yml>
 dxp sm5|sm6 inspect <recipe.recipe.yml>
 ```
 
-`inspect` prints a recipe's env variables and the resources it declares (types, bindings, cbuffer layouts, `meta`).
+`inspect` prints a recipe's `meta`, env variables and the resources it declares (types, bindings, cbuffer layouts and their `meta`).
 
 Run `dxp --help` for the full usage reference.
 

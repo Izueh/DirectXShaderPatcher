@@ -26,7 +26,7 @@ void PrintUsage() {
             << "  dxp sm5 inspect <recipe.recipe.yml>\n"
             << "  dxp sm6 patch <recipe.recipe.yml> <input.cso> [output.cso] [--log-level <level>]\n"
             << "  dxp sm6 validate <recipe.recipe.yml>\n"
-            << "  dxp sm6 inspect <recipe.recipe.yml>   Print env variables and declared resources.\n"
+            << "  dxp sm6 inspect <recipe.recipe.yml>   Print meta, env variables and declared resources.\n"
             << "  dxp --help         Show this help.\n"
             << "  dxp --version      Print the library version.\n"
             << "Recipe files are YAML documents.\n"
@@ -159,6 +159,8 @@ int RunInspectCommand(const char* backend, const char* recipe_path) {
   const Recipe& recipe = parse_result.value();
   std::cout << backend << " recipe " << recipe_path << " (version " << recipe.GetVersion() << ", " << recipe.GetStepCount()
             << " step(s))\n";
+
+  if (const auto& meta = recipe.GetMeta()) std::cout << "meta: " << FormatMeta(*meta) << "\n";
 
   const std::map<std::string, dxp::PrimitiveValue> env(recipe.GetEnv().begin(), recipe.GetEnv().end());
   std::cout << "env:" << (env.empty() ? " none\n" : "\n");

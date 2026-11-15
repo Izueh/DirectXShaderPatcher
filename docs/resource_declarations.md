@@ -93,6 +93,7 @@ Every resource declaration (textures, UAVs, raw and structured buffers,
 cbuffers, samplers) and every cbuffer field may carry a `meta:` value. Any YAML
 is allowed (scalars, lists, nested maps). DXP returns it verbatim as
 `dxp::MetaValue` and never acts on it, so patching is identical with or without it.
+A recipe may also carry one at its top level (see [Recipe-level `meta`](#recipe-level-meta)).
 
 ### Recommended keys
 
@@ -124,4 +125,27 @@ uavs:
       format: r16g16b16a16_float
       size: full
       size_of: render_target
+```
+
+### Recipe-level `meta`
+
+A recipe may carry a `meta:` key at its top level, next to `version`, `env` and
+`steps`, in both SM5 and SM6 recipes. It follows the same rules as declaration
+`meta`: any YAML subtree, optional, parsed into a `dxp::MetaValue` (object keys
+keep their YAML order, numbers are doubles) and never interpreted by DXP.
+Read it with `Recipe::GetMeta()` (`const std::optional<dxp::MetaValue>&`, empty
+when the recipe has no `meta:`), after `ParseFromFile` or `ParseFromText`. The
+value is kept when a recipe is copied or moved, and `dxp sm5|sm6 inspect` prints it.
+
+The keys below are defined by a host application, not by DXP, and are only an
+example of what a host might use to present a recipe to its users:
+
+```yaml
+meta:
+  name: Dithering Fix (Experimental)
+  description: Fixes dithering that can cause checkered patterns when using Super Resolution.
+  default_enabled: true
+  visibility: release
+  env:
+    SOME_VAR: { label: Strength, tooltip: How strong the fix is, visibility: development }
 ```

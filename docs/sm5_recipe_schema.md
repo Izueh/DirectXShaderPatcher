@@ -16,12 +16,13 @@ IR patching.
 
 ## Recipe Structure
 
-Every SM5 recipe is a YAML document with three top-level keys:
+Every SM5 recipe is a YAML document with the following top-level keys:
 
 | key | required | meaning |
 |---|---|---|
 | `version` | optional, defaults to `1` | application-defined recipe revision, an unsigned 32-bit integer |
 | `env` | optional | variable definitions accessible via conditions |
+| `meta` | optional | opaque host metadata, any YAML value; reported by `Recipe::GetMeta()` and never interpreted by DXP (see [resource_declarations.md](resource_declarations.md#recipe-level-meta)) |
 | `steps` | required | non-empty array of step objects, executed in order |
 
 Each step has a unique `name` and a `kind` that determines its behaviour.

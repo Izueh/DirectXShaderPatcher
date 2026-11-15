@@ -7,6 +7,9 @@
             "$ref": "#/$defs/std::variant<bool,int32_t,uint32_t,int64_t,uint64_t,double>"
          }
       },
+      "meta": {
+         "description": "Opaque metadata for hosts: any YAML value, reported verbatim and never interpreted by DXP."
+      },
       "serialization": {
          "type": "object",
          "properties": {

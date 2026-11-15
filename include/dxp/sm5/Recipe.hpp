@@ -4,6 +4,7 @@
 #include <concepts>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -39,11 +40,12 @@ struct Recipe {
   /// @brief Create a recipe with an application-defined revision for cache invalidation.
   explicit Recipe(uint32_t version) : version_(version) {}
 
-  /// @brief Copy constructor — copies version, steps and env; the validation flag follows the source.
+  /// @brief Copy constructor — copies version, steps, env and meta; the validation flag follows the source.
   Recipe(const Recipe& other)
       : version_(other.version_),
         steps_(other.steps_),
         env_(other.env_),
+        meta_(other.meta_),
         validated_(other.validated_.load(std::memory_order_relaxed)) {}
 
   /// @brief Copy assignment — see copy constructor.
@@ -52,16 +54,18 @@ struct Recipe {
       version_ = other.version_;
       steps_ = other.steps_;
       env_ = other.env_;
+      meta_ = other.meta_;
       validated_.store(other.validated_.load(std::memory_order_relaxed), std::memory_order_relaxed);
     }
     return *this;
   }
 
-  /// @brief Move constructor — preserves version, moves steps and env; the validation flag follows the source.
+  /// @brief Move constructor — preserves version, moves steps, env and meta; the validation flag follows the source.
   Recipe(Recipe&& other) noexcept
       : version_(other.version_),
         steps_(std::move(other.steps_)),
         env_(std::move(other.env_)),
+        meta_(std::move(other.meta_)),
         validated_(other.validated_.load(std::memory_order_relaxed)) {}
 
   /// @brief Move assignment — see move constructor.
@@ -70,6 +74,7 @@ struct Recipe {
       version_ = other.version_;
       steps_ = std::move(other.steps_);
       env_ = std::move(other.env_);
+      meta_ = std::move(other.meta_);
       validated_.store(other.validated_.load(std::memory_order_relaxed), std::memory_order_relaxed);
     }
     return *this;
@@ -123,6 +128,16 @@ struct Recipe {
   /// any values seeded via SetEnv. PatchOptions passed to Execute() override these.
   [[nodiscard]] const std::unordered_map<std::string, PrimitiveValue>& GetEnv() const noexcept {
     return env_;
+  }
+
+  /// @brief Get the recipe's top-level `meta:` subtree, verbatim, or nullopt when the
+  /// recipe has none. DXP never interprets it: hosts use it to present the recipe.
+  [[nodiscard]] const std::optional<MetaValue>& GetMeta() const noexcept { return meta_; }
+
+  /// @brief Set the recipe's top-level `meta` (setup-only; parsing fills it from YAML).
+  Recipe& SetMeta(std::optional<MetaValue> meta) {
+    meta_ = std::move(meta);
+    return *this;
   }
 
   /**
@@ -180,6 +195,7 @@ struct Recipe {
   uint32_t version_ = 1;
   std::vector<StepVariant> steps_;
   std::unordered_map<std::string, PrimitiveValue> env_;
+  std::optional<MetaValue> meta_;
 
   /// @brief Lazy validation cache. Written by ValidateRecipe (via the first
   /// Execute or an explicit validate) and reset by AddStep. Logically const —

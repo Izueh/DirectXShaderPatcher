@@ -23,6 +23,7 @@ struct RecipeData {
   uint32_t version = 1;
   SerializationOptions serialization{};
   std::unordered_map<std::string, PrimitiveValue> env;
+  glz::generic meta;  ///< Opaque host metadata, reported verbatim (null = absent).
   std::vector<StepDataVariant> steps;
 };
 
@@ -51,7 +52,7 @@ template <>
 struct meta<dxp::sm6::RecipeData> {
   using T = dxp::sm6::RecipeData;
   static constexpr auto value =
-      object("version", &T::version, "serialization", &T::serialization, "env", &T::env, "steps", &T::steps);
+      object("version", &T::version, "serialization", &T::serialization, "env", &T::env, "meta", &T::meta, "steps", &T::steps);
   static constexpr auto validate = [](const dxp::sm6::RecipeData& self, std::string& error) {
     if (self.steps.empty()) {
       error = "recipe requires at least one step";

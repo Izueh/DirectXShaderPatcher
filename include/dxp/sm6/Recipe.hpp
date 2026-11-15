@@ -4,6 +4,7 @@
 #include <concepts>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -42,11 +43,12 @@ struct Recipe {
   /// @brief Create a recipe with an application-defined revision for cache invalidation.
   explicit Recipe(uint32_t version) : version_(version) {}
 
-  /// @brief Copy constructor — copies version, steps and env; the validation flag follows the source.
+  /// @brief Copy constructor — copies version, steps, env and meta; the validation flag follows the source.
   Recipe(const Recipe& other)
       : version_(other.version_),
         steps_(other.steps_),
         env_(other.env_),
+        meta_(other.meta_),
         validated_(other.validated_.load(std::memory_order_relaxed)),
         serialization_options_(other.serialization_options_) {}
 
@@ -56,17 +58,19 @@ struct Recipe {
       version_ = other.version_;
       steps_ = other.steps_;
       env_ = other.env_;
+      meta_ = other.meta_;
       validated_.store(other.validated_.load(std::memory_order_relaxed), std::memory_order_relaxed);
       serialization_options_ = other.serialization_options_;
     }
     return *this;
   }
 
-  /// @brief Move constructor — preserves version, moves steps and env; the validation flag follows the source.
+  /// @brief Move constructor — preserves version, moves steps, env and meta; the validation flag follows the source.
   Recipe(Recipe&& other) noexcept
       : version_(other.version_),
         steps_(std::move(other.steps_)),
         env_(std::move(other.env_)),
+        meta_(std::move(other.meta_)),
         validated_(other.validated_.load(std::memory_order_relaxed)),
         serialization_options_(other.serialization_options_) {}
 
@@ -76,6 +80,7 @@ struct Recipe {
       version_ = other.version_;
       steps_ = std::move(other.steps_);
       env_ = std::move(other.env_);
+      meta_ = std::move(other.meta_);
       validated_.store(other.validated_.load(std::memory_order_relaxed), std::memory_order_relaxed);
       serialization_options_ = other.serialization_options_;
     }
@@ -130,6 +135,16 @@ struct Recipe {
   /// @return std::expected<RecipeReport, string> with results and serialized output.
   std::expected<RecipeReport, std::string> Execute(std::span<const uint8_t> input,
                                                    const PatchOptions& options = {}) const;
+
+  /// @brief Get the recipe's top-level `meta:` subtree, verbatim, or nullopt when the
+  /// recipe has none. DXP never interprets it: hosts use it to present the recipe.
+  [[nodiscard]] const std::optional<MetaValue>& GetMeta() const noexcept { return meta_; }
+
+  /// @brief Set the recipe's top-level `meta` (setup-only; parsing fills it from YAML).
+  Recipe& SetMeta(std::optional<MetaValue> meta) {
+    meta_ = std::move(meta);
+    return *this;
+  }
 
   static std::expected<Recipe, std::string> ParseFromFile(const std::string& path);
   static std::expected<Recipe, std::string> ParseFromText(const std::string& text, const std::string& source_name = "");
@@ -193,6 +208,7 @@ struct Recipe {
   /// load in Execute.
   mutable std::atomic<bool> validated_{false};
   std::unordered_map<std::string, PrimitiveValue> env_;
+  std::optional<MetaValue> meta_;
   SerializationOptions serialization_options_{};
 
   friend std::expected<void, std::string> ValidateRecipe(const Recipe& recipe);
