@@ -11,7 +11,7 @@ resources and never interprets `meta`.
 
 | API | When | What |
 |---|---|---|
-| `Recipe::GetDeclaredResources()` | right after parsing, no shader needed | every `add_resource` declaration: step, handle, class, type, explicit register/space, cbuffer layout, `meta`, and `conditional` (the step has a `condition` or `required: false`) |
+| `Recipe::GetDeclaredResources()` | right after parsing, no shader needed | every `add_resource` declaration: step, handle, class, type, explicit register/space (`space` is `0` when none is written, and unset when an `env` variable gives it), cbuffer layout, `meta`, and `conditional` (the step has a `condition` or `required: false`) |
 | `RecipeReport::new_bindings` | after `Execute` | what the run actually added, with the assigned register and space plus the same type info and `meta` |
 
 Type info (`dxp::ResourceTypeInfo`) carries `dimension`, `element_type` and

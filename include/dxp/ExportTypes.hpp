@@ -46,6 +46,7 @@ struct PatchChunkReport {
 /// @brief Final serialized output container.
 struct PatchContainerReport {
   std::string format;
+  std::string shader_model;  ///< DXBC: "5.0" or "5.1" (what the output is). Empty for other formats.
   uint32_t total_size_in_bytes = 0;
   std::string hash_hex;
   std::vector<PatchChunkReport> chunks;
@@ -183,7 +184,7 @@ struct ResourceDeclaration {
   std::string handle;
   BindingClass binding_class = BindingClass::Unknown;
   std::optional<uint32_t> register_index;  ///< Unset: assigned at execution.
-  std::optional<uint32_t> space;           ///< Unset: assigned at execution (SM5 is always space 0).
+  std::optional<uint32_t> space;           ///< The declared space (0 when none is written). Unset when it comes from an env variable (SM5) or is assigned at execution (SM6).
   ResourceTypeInfo type;
   bool conditional = false;  ///< The step has a condition or `required: false`.
   std::optional<MetaValue> meta;

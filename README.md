@@ -7,7 +7,7 @@ Meant for patching shaders live during game runtime using patterns instead of ma
 
 ## Features
 
-- Support for adding new resources (SRs, Inputs, Outputs).
+- Support for adding new resources (SRs, Inputs, Outputs), in any register space: SM5 recipes upgrade their output to SM5.1 by themselves when a resource asks for a `space`.
 - Extracting information from operands (cbuffers, constants).
 - Matching and rewriting patterns in the bytecode.
 
@@ -57,4 +57,5 @@ Run `dxp --help` for the full usage reference.
 - [SM5 recipe schema](docs/sm5_recipe_schema.md)
 - [SM6 recipe schema](docs/sm6_recipe_schema.md)
 - [Resource declarations, cbuffer fields and `meta`](docs/resource_declarations.md)
+- [SM5.1 output and register spaces](docs/sm51_upgrade.md)
 

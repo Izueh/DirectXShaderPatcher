@@ -234,6 +234,27 @@ if(TARGET dxp_reshade_addon AND NOT DXP_ARCH STREQUAL "x86")
     add_test(NAME reshade_addon_test COMMAND reshade_addon_test)
 endif()
 
+# SM5.0 -> SM5.1 upgrade. Windows only (Microsoft's disassembler is the oracle), x64 only like the rest.
+if(WIN32 AND NOT DXP_ARCH STREQUAL "x86")
+    file(GLOB SM51_FIXTURES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*_5_0.cso")
+    dxp_add_test(sm51_upgrade_test "sm51_upgrade_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/shaders" ${SM51_FIXTURES})
+    if(TARGET sm51_upgrade_test)
+        target_link_libraries(sm51_upgrade_test PRIVATE d3dcompiler)
+    endif()
+    dxp_add_test(sm51_recipe_test "sm51_recipe_test.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/shaders/sm51_probe_game.ps_5_0.cso"
+        "${CMAKE_CURRENT_SOURCE_DIR}/shaders/sm51_probe.ps_5_0.cso")
+    if(TARGET sm51_recipe_test)
+        target_link_libraries(sm51_recipe_test PRIVATE d3dcompiler)
+    endif()
+    dxp_add_test(sm51_d3d12_smoke_test "sm51_d3d12_smoke_test.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/shaders/sm51_probe.vs_5_0.cso"
+        "${CMAKE_CURRENT_SOURCE_DIR}/shaders/sm51_probe_game.ps_5_0.cso")
+    if(TARGET sm51_d3d12_smoke_test)
+        target_link_libraries(sm51_d3d12_smoke_test PRIVATE d3d12 dxgi)
+    endif()
+endif()
+
 # Benchmarks (conditional)
 if(DXP_BUILD_BENCHMARKS)
     add_executable(sm5_benchmarks

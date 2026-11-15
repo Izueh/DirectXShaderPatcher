@@ -198,6 +198,13 @@ enum class SignatureSemantic : std::uint8_t {
   FinalLineDensityTessfactor = 22,
 };
 
+/// @brief When a recipe's output becomes SM5.1 (`upgrade_to_sm51:` at the top of a recipe).
+enum class Sm51Upgrade : std::uint8_t {
+  Auto = 0,    ///< Only when a resource needs it: a declaration with a non-zero `space`.
+  Always = 1,  ///< Whenever the recipe changes the shader.
+  Never = 2,   ///< Never. A non-zero `space` is an error.
+};
+
 /// @brief Constant buffer access pattern.
 /// Mirrors @c D3D11_SB_CONSTANT_BUFFER_ACCESS_PATTERN from the DXBC token format
 /// (value-identical; verified by static_assert in Model.cpp).

@@ -46,6 +46,7 @@ struct Recipe {
         steps_(other.steps_),
         env_(other.env_),
         meta_(other.meta_),
+        sm51_upgrade_(other.sm51_upgrade_),
         validated_(other.validated_.load(std::memory_order_relaxed)) {}
 
   /// @brief Copy assignment — see copy constructor.
@@ -55,6 +56,7 @@ struct Recipe {
       steps_ = other.steps_;
       env_ = other.env_;
       meta_ = other.meta_;
+      sm51_upgrade_ = other.sm51_upgrade_;
       validated_.store(other.validated_.load(std::memory_order_relaxed), std::memory_order_relaxed);
     }
     return *this;
@@ -66,6 +68,7 @@ struct Recipe {
         steps_(std::move(other.steps_)),
         env_(std::move(other.env_)),
         meta_(std::move(other.meta_)),
+        sm51_upgrade_(other.sm51_upgrade_),
         validated_(other.validated_.load(std::memory_order_relaxed)) {}
 
   /// @brief Move assignment — see move constructor.
@@ -75,6 +78,7 @@ struct Recipe {
       steps_ = std::move(other.steps_);
       env_ = std::move(other.env_);
       meta_ = std::move(other.meta_);
+      sm51_upgrade_ = other.sm51_upgrade_;
       validated_.store(other.validated_.load(std::memory_order_relaxed), std::memory_order_relaxed);
     }
     return *this;
@@ -140,6 +144,16 @@ struct Recipe {
     return *this;
   }
 
+  /// @brief When the output becomes SM5.1 (the recipe's top-level `upgrade_to_sm51`). Default: Auto, which
+  /// upgrades only when a declared resource has a non-zero space. See model::Sm51Upgrade.
+  [[nodiscard]] model::Sm51Upgrade GetSm51Upgrade() const noexcept { return sm51_upgrade_; }
+
+  /// @brief Set the SM5.1 upgrade mode (setup-only; parsing fills it from YAML).
+  Recipe& SetSm51Upgrade(model::Sm51Upgrade mode) {
+    sm51_upgrade_ = mode;
+    return *this;
+  }
+
   /**
    * @brief Parse a recipe from a YAML file.
    * @param path Path to the YAML file.
@@ -196,6 +210,7 @@ struct Recipe {
   std::vector<StepVariant> steps_;
   std::unordered_map<std::string, PrimitiveValue> env_;
   std::optional<MetaValue> meta_;
+  model::Sm51Upgrade sm51_upgrade_ = model::Sm51Upgrade::Auto;
 
   /// @brief Lazy validation cache. Written by ValidateRecipe (via the first
   /// Execute or an explicit validate) and reset by AddStep. Logically const —

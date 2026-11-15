@@ -244,6 +244,7 @@ endif()
 set(DXP_SM5_SOURCES
   "src/dxp/sm5/Model.cpp"
   "src/dxp/sm5/ShaderProgram.cpp"
+  "src/dxp/sm5/Sm51.cpp"
   "src/dxp/sm5/step/ApplyRuleStep.cpp"
   "src/dxp/sm5/step/AddResourceStep.cpp"
   "src/dxp/sm5/step/CheckOpcodeCountStep.cpp"

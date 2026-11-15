@@ -296,6 +296,10 @@ auto EncodeInstructionToken0(const Instruction& instruction, uint32_t total_dwor
     }
   }
 
+  if (opcode == D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_TYPED && instruction.controls.resource_dimension.has_value()) {
+    token0 |= ENCODE_D3D10_SB_RESOURCE_DIMENSION(static_cast<D3D10_SB_RESOURCE_DIMENSION>(static_cast<uint8_t>(*instruction.controls.resource_dimension)));
+  }
+
   if ((opcode == D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_RAW || opcode == D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_STRUCTURED || opcode == D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_TYPED) && instruction.controls.uav_flags != 0) {
     token0 |= ENCODE_D3D11_SB_ACCESS_COHERENCY_FLAGS(instruction.controls.uav_flags);
     token0 |= ENCODE_D3D11_SB_UAV_FLAGS(instruction.controls.uav_flags);
@@ -392,7 +396,12 @@ auto Instruction::Encode() const -> std::vector<uint32_t> {
                                      && controls.semantic_name.has_value()
                                      && operands.size() < GetExpectedOperandCount(opcode);
 
-  uint32_t total_length = 1 + static_cast<uint32_t>(extended_op_codes.size()) + (synthesize_name_token ? 1U : 0U);
+  // A typed UAV declaration ends with its return type token. Parsed ones keep it as a trailing
+  // operand; one a recipe declares has only the UAV operand, so write it from the controls.
+  const bool synthesize_uav_return_type = opcode == Opcode::DclUnorderedAccessViewTyped && operands.size() == 1;
+
+  uint32_t total_length = 1 + static_cast<uint32_t>(extended_op_codes.size()) + (synthesize_name_token ? 1U : 0U) +
+                          (synthesize_uav_return_type ? 1U : 0U);
   for (const auto& operand : operands) {
     total_length += static_cast<uint32_t>(operand.Encode().size());
   }
@@ -438,6 +447,17 @@ auto Instruction::Encode() const -> std::vector<uint32_t> {
 
   if (synthesize_name_token) {
     encoded.push_back(ENCODE_D3D10_SB_NAME(static_cast<D3D10_SB_NAME>(static_cast<uint8_t>(*controls.semantic_name))));
+  }
+
+  if (synthesize_uav_return_type) {
+    uint32_t return_type_token = 0;
+    for (uint32_t component = 0; component < 4; ++component) {
+      const uint32_t return_type = controls.resource_return_type[component].has_value()
+                                       ? static_cast<uint32_t>(static_cast<uint8_t>(*controls.resource_return_type[component]))
+                                       : static_cast<uint32_t>(D3D10_SB_RETURN_TYPE_FLOAT);
+      return_type_token |= ENCODE_D3D10_SB_RESOURCE_RETURN_TYPE(static_cast<D3D10_SB_RESOURCE_RETURN_TYPE>(return_type), component);
+    }
+    encoded.push_back(return_type_token);
   }
 
   return encoded;

@@ -120,6 +120,9 @@ std::expected<Recipe, std::string> ParseRecipeFromText(const std::string& text,
     return std::unexpected(std::move(convert_error));
   }
   recipe.SetMeta(ToOptionalMetaValue(doc.meta));
+  if constexpr (requires { recipe.SetSm51Upgrade(doc.upgrade_to_sm51); }) {
+    recipe.SetSm51Upgrade(doc.upgrade_to_sm51);
+  }
   if constexpr (requires { recipe.SetSerializationOptions(doc.serialization); }) {
     recipe.SetSerializationOptions(doc.serialization);
   }

@@ -104,13 +104,15 @@ auto Recipe::Execute(std::span<const uint8_t> input,
 
   return dxp::detail::ExecuteSteps<ExecutionContext>(
       steps_, env_, input, options,
-      [](std::span<const uint8_t> bytes, const PatchOptions&) -> std::expected<ExecutionContext, std::string> {
+      [this](std::span<const uint8_t> bytes, const PatchOptions&) -> std::expected<ExecutionContext, std::string> {
         ExecutionContext ctx;
         auto program = ShaderProgram::FromBytes(bytes);
         if (!program) {
           return std::unexpected(std::move(program.error()));
         }
         ctx.program = std::move(*program);
+        ctx.sm51_upgrade = sm51_upgrade_;
+        ctx.program.force_sm51 = sm51_upgrade_ == Sm51Upgrade::Always;
         if (ctx.program.instructions.empty() && ctx.program.temp_count == 0) {
           return std::unexpected("failed to parse shader chunk");
         }
@@ -138,6 +140,10 @@ auto Recipe::Execute(std::span<const uint8_t> input,
           output.output_bytes.assign(input_bytes.begin(), input_bytes.end());
         }
         output.container_report = ctx.program.BuildReport();
+        if (!ctx.program_modified) {
+          // The input passes through as it is: its shader model is the report's, not what a patch would have made
+          output.container_report.shader_model = std::to_string(ctx.program.major_version) + "." + std::to_string(ctx.program.minor_version);
+        }
         return output;
       });
 }

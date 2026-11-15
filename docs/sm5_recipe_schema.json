@@ -316,6 +316,23 @@
             ]
          }
       },
+      "upgrade_to_sm51": {
+         "type": "string",
+         "oneOf": [
+            {
+               "title": "auto",
+               "const": "auto"
+            },
+            {
+               "title": "always",
+               "const": "always"
+            },
+            {
+               "title": "never",
+               "const": "never"
+            }
+         ]
+      },
       "version": {
          "$ref": "#/$defs/uint32_t"
       }
@@ -1604,6 +1621,9 @@
                },
                "reverse_bind": {
                   "type": "boolean"
+               },
+               "space": {
+                  "$ref": "#/$defs/std::variant<std::string,uint32_t>"
                },
                "stride": {
                   "$ref": "#/$defs/uint32_t"

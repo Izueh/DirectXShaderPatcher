@@ -5,11 +5,14 @@
 #include <expected>
 #include <format>
 #include <functional>
+#include <limits>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include "dxp/Condition_impl.hpp"
 #include "dxp/ExportTypes.hpp"
 #include "dxp/ResultFieldTraits.hpp"
@@ -61,8 +64,12 @@ std::vector<dxp::ResourceDeclaration> Declarations(const AddResourceStep& step) 
   const bool conditional = step.condition.has_value() || !step.required;
   const auto add = [&](dxp::BindingClass binding_class, const auto& decls) {
     for (const auto& decl : decls) {
+      // No space written means space 0; only an env variable leaves it unknown until execution
+      const std::optional<uint32_t> space = decl.space.has_value() ? decl.space
+                                            : decl.space_variable.empty() ? std::optional<uint32_t>(0U)
+                                                                          : std::nullopt;
       out.push_back({.step = step.name, .handle = decl.handle, .binding_class = binding_class, .register_index = decl.register_index,
-                     .space = 0u, .type = TypeInfoOf(decl), .conditional = conditional, .meta = decl.meta});
+                     .space = space, .type = TypeInfoOf(decl), .conditional = conditional, .meta = decl.meta});
     }
   };
   add(dxp::BindingClass::Texture, step.textures);
@@ -85,21 +92,90 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
   };
 
   auto add_new_binding = [&](dxp::BindingClass kind, const std::string& handle, uint32_t bind_point,
-                             dxp::ResourceTypeInfo type = {}, const std::optional<dxp::MetaValue>& meta = std::nullopt) {
+                             dxp::ResourceTypeInfo type = {}, const std::optional<dxp::MetaValue>& meta = std::nullopt,
+                             uint32_t space = 0) {
     dxp::ResourceBinding binding;
     binding.binding_class = kind;
     binding.handle = handle;
     binding.register_index = bind_point;
-    binding.space = 0;
+    binding.space = space;
     binding.type = std::move(type);
     binding.meta = meta;
     ctx.resource_bindings[handle] = std::move(binding);
   };
 
+  // The space of a declaration: its literal, or the value of its env variable, else 0
+  const auto resolve_space = [&](const auto& decl) -> std::expected<uint32_t, std::string> {
+    if (decl.space.has_value()) return *decl.space;
+    if (decl.space_variable.empty()) return 0U;
+    const PrimitiveValue* value = ctx.FindVariable(decl.space_variable);
+    if (value == nullptr) {
+      return std::unexpected("space variable '" + decl.space_variable + "' is not set");
+    }
+    const auto number = std::visit(
+        [](const auto& v) -> std::optional<int64_t> {
+          using V = std::decay_t<decltype(v)>;
+          if constexpr (std::is_same_v<V, bool> || std::is_same_v<V, double>) {
+            return std::nullopt;
+          } else if constexpr (std::is_same_v<V, uint64_t>) {
+            return v > static_cast<uint64_t>(std::numeric_limits<uint32_t>::max()) ? std::nullopt : std::optional<int64_t>(static_cast<int64_t>(v));
+          } else {
+            return static_cast<int64_t>(v);
+          }
+        },
+        *value);
+    if (!number.has_value() || *number < 0 || *number > static_cast<int64_t>(std::numeric_limits<uint32_t>::max())) {
+      return std::unexpected("space variable '" + decl.space_variable + "' is not a register space number");
+    }
+    return static_cast<uint32_t>(*number);
+  };
+  // Program registers of resources in another space are not limited to the 5.0 ranges
+  constexpr uint32_t kMaxProgramRegister = 0xFFFFFFF;
+
   auto resolve_and_add = [&](const auto& decls, auto add_decl, auto find_next, auto& bindings,
                              dxp::BindingClass kind, uint32_t max_bind_point, const char* kind_name,
-                             uint32_t* count_ptr) -> std::expected<void, std::string> {
+                             uint32_t* count_ptr, sm51::RegClass reg_class) -> std::expected<void, std::string> {
     for (const auto& decl : decls) {
+      const auto space = resolve_space(decl);
+      if (!space) {
+        const std::string message = std::string("add_resource: ") + kind_name + " '" + decl.handle + "': " + space.error();
+        if (!fail_or_warn(message)) return std::unexpected(message);
+        continue;
+      }
+      if (*space != 0) {
+        // Another space: the program gets a free register of its own, the real one is recorded as a
+        // placement and Serialize writes the shader as SM5.1.
+        if (ctx.sm51_upgrade == Sm51Upgrade::Never) {
+          const std::string message = std::string("add_resource: ") + kind_name + " '" + decl.handle + "' is in space " + std::to_string(*space) +
+                                      " which needs SM5.1, and the recipe sets upgrade_to_sm51: never";
+          if (!fail_or_warn(message)) return std::unexpected(message);
+          continue;
+        }
+        uint32_t real_register = 0;
+        std::string place_error;
+        if (!ctx.program.AllocatePlacedRegister(reg_class, *space, decl.register_index, decl.reverse_bind.value_or(false), max_bind_point,
+                                                real_register, place_error)) {
+          const std::string message = std::string("add_resource: ") + kind_name + " '" + decl.handle + "': " + place_error;
+          if (!fail_or_warn(message)) return std::unexpected(message);
+          continue;
+        }
+        const uint32_t program_register = ctx.program.FindFreeProgramRegister(reg_class);
+        auto resolved = decl;
+        resolved.register_index = program_register;
+        std::string decl_error;
+        if (!add_decl(resolved, program_register, kMaxProgramRegister, decl_error)) {
+          const std::string message = std::string("add_resource: ") + kind_name + std::string(" '") + decl.handle + "': " + decl_error;
+          if (!fail_or_warn(message)) return std::unexpected(message);
+          continue;
+        }
+        ctx.program.placements[{reg_class, program_register}] = {*space, real_register};
+        const auto handle = decl.handle.empty() ? "" : decl.handle;
+        bindings[handle] = program_register;  // emit refers to the program register
+        add_new_binding(kind, handle, real_register, TypeInfoOf(decl), decl.meta, *space);
+        ++(*count_ptr);
+        changed = true;
+        continue;
+      }
       uint32_t bind_point = 0;
       if (decl.register_index.has_value()) {
         bind_point = *decl.register_index;
@@ -136,22 +212,22 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
     return {};
   };
 
-  if (auto r = resolve_and_add(step.textures, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddTextureDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableTexture(preferred, from_high); }, ctx.Bindings(BindingClass::Texture), dxp::BindingClass::Texture, kMaxTextureBindPoint, "texture", &result.textures_added); !r) {
+  if (auto r = resolve_and_add(step.textures, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddTextureDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableTexture(preferred, from_high); }, ctx.Bindings(BindingClass::Texture), dxp::BindingClass::Texture, kMaxTextureBindPoint, "texture", &result.textures_added, sm51::RegClass::Resource); !r) {
     return std::unexpected(std::move(r.error()));
   }
-  if (auto r = resolve_and_add(step.raw_resources, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddRawResourceDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableTexture(preferred, from_high); }, ctx.Bindings(BindingClass::RawResource), dxp::BindingClass::RawResource, kMaxTextureBindPoint, "raw_resource", &result.raw_resources_added); !r) {
+  if (auto r = resolve_and_add(step.raw_resources, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddRawResourceDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableTexture(preferred, from_high); }, ctx.Bindings(BindingClass::RawResource), dxp::BindingClass::RawResource, kMaxTextureBindPoint, "raw_resource", &result.raw_resources_added, sm51::RegClass::Resource); !r) {
     return std::unexpected(std::move(r.error()));
   }
-  if (auto r = resolve_and_add(step.structured_resources, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddStructuredResourceDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableTexture(preferred, from_high); }, ctx.Bindings(BindingClass::StructuredResource), dxp::BindingClass::StructuredResource, kMaxTextureBindPoint, "structured_resource", &result.structured_resources_added); !r) {
+  if (auto r = resolve_and_add(step.structured_resources, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddStructuredResourceDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableTexture(preferred, from_high); }, ctx.Bindings(BindingClass::StructuredResource), dxp::BindingClass::StructuredResource, kMaxTextureBindPoint, "structured_resource", &result.structured_resources_added, sm51::RegClass::Resource); !r) {
     return std::unexpected(std::move(r.error()));
   }
-  if (auto r = resolve_and_add(step.cbuffers, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddCBufferDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableCBuffer(preferred, from_high); }, ctx.Bindings(BindingClass::CBuffer), dxp::BindingClass::CBuffer, kMaxCBufferBindPoint, "cbuffer", &result.cbuffers_added); !r) {
+  if (auto r = resolve_and_add(step.cbuffers, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddCBufferDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableCBuffer(preferred, from_high); }, ctx.Bindings(BindingClass::CBuffer), dxp::BindingClass::CBuffer, kMaxCBufferBindPoint, "cbuffer", &result.cbuffers_added, sm51::RegClass::CBuffer); !r) {
     return std::unexpected(std::move(r.error()));
   }
-  if (auto r = resolve_and_add(step.samplers, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddSamplerDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableSampler(preferred, from_high); }, ctx.Bindings(BindingClass::Sampler), dxp::BindingClass::Sampler, kMaxSamplerBindPoint, "sampler", &result.samplers_added); !r) {
+  if (auto r = resolve_and_add(step.samplers, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddSamplerDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableSampler(preferred, from_high); }, ctx.Bindings(BindingClass::Sampler), dxp::BindingClass::Sampler, kMaxSamplerBindPoint, "sampler", &result.samplers_added, sm51::RegClass::Sampler); !r) {
     return std::unexpected(std::move(r.error()));
   }
-  if (auto r = resolve_and_add(step.uavs, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddUavDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableUAV(preferred, from_high); }, ctx.Bindings(BindingClass::Uav), dxp::BindingClass::Uav, kMaxUavBindPoint, "uav", &result.uavs_added); !r) {
+  if (auto r = resolve_and_add(step.uavs, [&](const auto& d, uint32_t bp, uint32_t max_bp, std::string& e) { return ctx.program.AddUavDeclaration(d, bp, max_bp, e); }, [&](const auto& p, unsigned preferred, bool from_high) { return p.FindNextAvailableUAV(preferred, from_high); }, ctx.Bindings(BindingClass::Uav), dxp::BindingClass::Uav, kMaxUavBindPoint, "uav", &result.uavs_added, sm51::RegClass::Uav); !r) {
     return std::unexpected(std::move(r.error()));
   }
 
@@ -333,6 +409,21 @@ std::expected<void, std::string> Validate(const AddResourceStep& step, dxp::Vali
   return {};
 }
 
+namespace {
+
+/// Copies a YAML `space` (a number or an env variable name) onto a declaration.
+template <typename Decl>
+void ApplySpace(Decl& decl, const std::optional<std::variant<std::string, uint32_t>>& space) {
+  if (!space.has_value()) return;
+  if (const auto* number = std::get_if<uint32_t>(&*space)) {
+    decl.space = *number;
+  } else {
+    decl.space_variable = std::get<std::string>(*space);
+  }
+}
+
+}  // namespace
+
 auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::string> {
   auto cond = condition.Compile();
   AddResourceStep step{};
@@ -346,6 +437,7 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     decl.handle = d.handle;
     decl.register_index = d.register_index;
     decl.reverse_bind = d.reverse_bind;
+    ApplySpace(decl, d.space);
     if (d.dimension.has_value()) decl.dimension = *d.dimension;
     decl.meta = dxp::detail::ToOptionalMetaValue(d.meta);
     step.textures.push_back(std::move(decl));
@@ -356,6 +448,7 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     decl.handle = d.handle;
     decl.register_index = d.register_index;
     decl.reverse_bind = d.reverse_bind;
+    ApplySpace(decl, d.space);
     decl.meta = dxp::detail::ToOptionalMetaValue(d.meta);
     step.raw_resources.push_back(std::move(decl));
   }
@@ -368,6 +461,7 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     decl.handle = d.handle;
     decl.register_index = d.register_index;
     decl.reverse_bind = d.reverse_bind;
+    ApplySpace(decl, d.space);
     decl.structure_stride = d.stride;
     decl.meta = dxp::detail::ToOptionalMetaValue(d.meta);
     step.structured_resources.push_back(std::move(decl));
@@ -378,6 +472,7 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     decl.handle = d.handle;
     decl.register_index = d.register_index;
     decl.reverse_bind = d.reverse_bind;
+    ApplySpace(decl, d.space);
     if (d.elements.has_value()) decl.elements = *d.elements;
     decl.meta = dxp::detail::ToOptionalMetaValue(d.meta);
     if (!d.fields.empty()) {
@@ -396,6 +491,7 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     decl.handle = d.handle;
     decl.register_index = d.register_index;
     decl.reverse_bind = d.reverse_bind;
+    ApplySpace(decl, d.space);
     if (d.mode.has_value()) decl.mode = *d.mode;
     decl.meta = dxp::detail::ToOptionalMetaValue(d.meta);
     step.samplers.push_back(std::move(decl));
@@ -406,6 +502,7 @@ auto AddResourceData::Compile() const -> std::expected<AddResourceStep, std::str
     decl.handle = d.handle;
     decl.register_index = d.register_index;
     decl.reverse_bind = d.reverse_bind;
+    ApplySpace(decl, d.space);
     if (d.kind.has_value()) decl.kind = *d.kind;
     if (d.dimension.has_value()) decl.dimension = *d.dimension;
     decl.structure_stride = d.stride;

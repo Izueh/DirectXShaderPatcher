@@ -50,6 +50,9 @@ struct ExecutionContext : VariableStore {
   uint32_t major_version = 0;
   uint32_t minor_version = 0;
 
+  /// @brief The recipe's `upgrade_to_sm51` mode (see Recipe::GetSm51Upgrade).
+  Sm51Upgrade sm51_upgrade = Sm51Upgrade::Auto;
+
   bool program_modified = false;
 
   std::string lastError;

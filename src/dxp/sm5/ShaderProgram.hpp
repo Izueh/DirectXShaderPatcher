@@ -11,6 +11,7 @@
 #include <dxp/ExportTypes.hpp>
 #include "d3d11TokenizedProgramFormat.hpp"
 #include "dxp/sm5/Model_impl.hpp"
+#include "dxp/sm5/Sm51.hpp"
 #include "dxp/sm5/step/AddResourceStep.hpp"
 
 namespace dxp::sm5 {
@@ -83,6 +84,26 @@ struct ShaderProgram {
 
   uint32_t temp_count = 0;
   std::vector<uint32_t> indexable_temps;
+
+  /// @brief Resources outside space 0 (or away from their program register), by program register.
+  /// The program is always 5.0-shaped, see sm51::PlacementMap. A non-empty map means the output is SM5.1.
+  sm51::PlacementMap placements;
+  /// @brief The input was SM5.1 (normalized to the 5.0-shaped program on load). The output stays 5.1.
+  bool input_sm51 = false;
+  /// @brief Write SM5.1 even when nothing needs it (the recipe's `upgrade_to_sm51: always`).
+  bool force_sm51 = false;
+
+  /// @brief Whether Serialize writes SM5.1.
+  [[nodiscard]] bool EmitsSm51() const { return force_sm51 || input_sm51 || !placements.empty(); }
+
+  /// @brief Register numbers the program declares in a family (the program's, not the real ones).
+  [[nodiscard]] std::unordered_set<uint32_t> DeclaredProgramRegisters(sm51::RegClass cls) const;
+  /// @brief Picks the real register for a resource in @p space: @p requested, or the first free one
+  /// (the highest one at or below @p max_bind_point when @p reverse). Space 0 isn't handled here.
+  [[nodiscard]] bool AllocatePlacedRegister(sm51::RegClass cls, uint32_t space, std::optional<uint32_t> requested, bool reverse,
+                                            uint32_t max_bind_point, uint32_t& out_register, std::string& error) const;
+  /// @brief A free program register for a resource that lives in another space.
+  [[nodiscard]] uint32_t FindFreeProgramRegister(sm51::RegClass cls) const;
 
   /// @brief Adds an input signature declaration.
   bool AddInputDeclaration(const step::AddResourceStep::InputDecl& decl, uint32_t& out_register_index, uint32_t max_bind_point, std::string& error);

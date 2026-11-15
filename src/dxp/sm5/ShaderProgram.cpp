@@ -241,6 +241,10 @@ auto ParseOpcodeControls(std::span<const uint8_t> data, uint32_t instruction_sta
       controls.resource_return_type[component] = static_cast<ResourceReturnType>(DECODE_D3D10_SB_RESOURCE_RETURN_TYPE(token0, component));
     }
   }
+  if (kOpcode == D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_TYPED) {
+    // A typed UAV declaration carries its dimension in the opcode token, like dcl_resource
+    controls.resource_dimension = static_cast<ResourceDimension>(DECODE_D3D10_SB_RESOURCE_DIMENSION(token0));
+  }
   // The compiler encodes the input interpolation mode in the opcode token's
   // opcode-specific controls for all PS input declarations, including the SGV
   // form (e.g. dcl_input_ps_sgv "constant" v12.x, is_front_face) — decoding
@@ -545,8 +549,13 @@ ShaderProgram::ShaderProgram(ShaderProgram&& other) noexcept
       global_flags(other.global_flags),
       temp_count(other.temp_count),
       indexable_temps(std::move(other.indexable_temps)),
+      placements(std::move(other.placements)),
+      input_sm51(other.input_sm51),
+      force_sm51(other.force_sm51),
       header(other.header),
       chunks(std::move(other.chunks)) {
+  other.input_sm51 = false;
+  other.force_sm51 = false;
   other.program_type = ProgramType::PixelShader;
   other.major_version = 0;
   other.minor_version = 0;
@@ -572,6 +581,11 @@ auto ShaderProgram::operator=(ShaderProgram&& other) noexcept -> ShaderProgram& 
   global_flags = other.global_flags;
   temp_count = other.temp_count;
   indexable_temps = std::move(other.indexable_temps);
+  placements = std::move(other.placements);
+  input_sm51 = other.input_sm51;
+  force_sm51 = other.force_sm51;
+  other.input_sm51 = false;
+  other.force_sm51 = false;
   header = other.header;
   chunks = std::move(other.chunks);
   other.program_type = ProgramType::PixelShader;
@@ -677,9 +691,24 @@ auto ShaderProgram::FromBytes(std::span<const uint8_t> bytes) -> std::expected<S
     prog.chunks.push_back(std::move(chunk));
   }
 
-  const auto* shader_chunk = prog.GetShaderChunk();
+  auto* shader_chunk = prog.GetShaderChunk();
   if (shader_chunk == nullptr || shader_chunk->data.empty()) {
     return prog;
+  }
+  if (shader_chunk->data.size() >= 8 && shader_chunk->data.size() % 4 == 0) {
+    std::vector<uint32_t> words(shader_chunk->data.size() / 4);
+    std::memcpy(words.data(), shader_chunk->data.data(), shader_chunk->data.size());
+    if (sm51::IsSm51VersionToken(words[0])) {
+      // SM5.1 input: read it as the 5.0-shaped program. Range ids go, resources outside
+      // space 0 get program registers and a placement, Serialize puts them back.
+      auto downgraded = sm51::DowngradeTokens(words, prog.placements);
+      if (!downgraded) {
+        return std::unexpected(std::move(downgraded.error()));
+      }
+      shader_chunk->data.resize(downgraded->size() * sizeof(uint32_t));
+      std::memcpy(shader_chunk->data.data(), downgraded->data(), shader_chunk->data.size());
+      prog.input_sm51 = true;
+    }
   }
   ParseProgramImpl(std::span<const uint8_t>(shader_chunk->data.data(), shader_chunk->data.size()),
                    static_cast<uint32_t>(shader_chunk->data.size()), prog);
@@ -693,17 +722,41 @@ auto ShaderProgram::Serialize() -> std::expected<std::vector<uint8_t>, std::stri
 
   auto shader_bytecode = SerializeBitcode();
 
+  const bool emit_sm51 = EmitsSm51();
+  if (emit_sm51) {
+    if (major_version != 5) {
+      return std::unexpected("[sm5] only SM5 shaders can be written as SM5.1");
+    }
+    std::vector<uint32_t> words(shader_bytecode.size() / sizeof(uint32_t));
+    std::memcpy(words.data(), shader_bytecode.data(), shader_bytecode.size());
+    auto upgraded = sm51::UpgradeTokens(words, placements);
+    if (!upgraded) {
+      return std::unexpected(std::move(upgraded.error()));
+    }
+    shader_bytecode.resize(upgraded->size() * sizeof(uint32_t));
+    std::memcpy(shader_bytecode.data(), upgraded->data(), shader_bytecode.size());
+  }
+
   auto* shader_chunk = GetShaderChunk();
   if (shader_chunk != nullptr) {
     shader_chunk->data = shader_bytecode;
   }
 
-  auto chunk_count = static_cast<uint32_t>(chunks.size());
+  // The 5.0 resource definitions (RDEF) don't describe a 5.1 shader and the runtime doesn't read them
+  std::vector<const DxbcChunk*> out_chunks;
+  out_chunks.reserve(chunks.size());
+  for (const auto& chunk : chunks) {
+    if (!(emit_sm51 && chunk.kind == ChunkKind::RDEF)) {
+      out_chunks.push_back(&chunk);
+    }
+  }
+
+  auto chunk_count = static_cast<uint32_t>(out_chunks.size());
   const uint32_t header_size = 32 + (chunk_count * 4);
 
   uint32_t total_chunk_data_size = 0;
-  for (const auto& chunk : chunks) {
-    total_chunk_data_size += AlignToDword(8 + static_cast<uint32_t>(chunk.data.size()));
+  for (const auto* chunk : out_chunks) {
+    total_chunk_data_size += AlignToDword(8 + static_cast<uint32_t>(chunk->data.size()));
   }
 
   const uint32_t total_size = AlignToDword(header_size + total_chunk_data_size);
@@ -730,11 +783,11 @@ auto ShaderProgram::Serialize() -> std::expected<std::vector<uint8_t>, std::stri
   out_offset += 4;
 
   std::vector<uint32_t> chunk_offsets;
-  chunk_offsets.reserve(chunks.size());
+  chunk_offsets.reserve(out_chunks.size());
   auto current_offset = header_size;
-  for (const auto& chunk : chunks) {
+  for (const auto* chunk : out_chunks) {
     chunk_offsets.push_back(current_offset);
-    current_offset += AlignToDword(8 + static_cast<uint32_t>(chunk.data.size()));
+    current_offset += AlignToDword(8 + static_cast<uint32_t>(chunk->data.size()));
   }
 
   for (uint32_t i = 0; i < chunk_count; ++i) {
@@ -742,8 +795,8 @@ auto ShaderProgram::Serialize() -> std::expected<std::vector<uint8_t>, std::stri
     out_offset += 4;
   }
 
-  for (size_t i = 0; i < chunks.size(); ++i) {
-    const auto& chunk = chunks[i];
+  for (size_t i = 0; i < out_chunks.size(); ++i) {
+    const auto& chunk = *out_chunks[i];
     auto chunk_data_size = static_cast<uint32_t>(chunk.data.size());
     std::memcpy(&out_bytes[chunk_offsets[i]], &chunk.four_cc, 4);
     std::memcpy(&out_bytes[chunk_offsets[i] + 4], &chunk_data_size, 4);
@@ -776,8 +829,12 @@ auto ShaderProgram::BuildReport() -> dxp::PatchContainerReport {
   report.total_size_in_bytes = header.total_size_in_bytes;
   report.hash_hex = DxbcHashToHex(header);
 
+  report.shader_model = EmitsSm51() ? "5.1" : std::to_string(major_version) + "." + std::to_string(minor_version);
   report.chunks.reserve(chunks.size());
   for (const auto& chunk : chunks) {
+    if (EmitsSm51() && chunk.kind == ChunkKind::RDEF) {
+      continue;
+    }
     dxp::PatchChunkReport chunk_report;
     chunk_report.id = FourCCToString(chunk.four_cc);
     chunk_report.four_cc = chunk.four_cc;
@@ -1419,4 +1476,85 @@ auto ShaderProgram::AddUavDeclaration(const dxp::sm5::step::AddResourceStep::Uav
   instructions.insert(instructions.begin() + static_cast<ptrdiff_t>(insert_index), BuildUavDeclaration(resolved_decl));
   return true;
 }
+namespace {
+
+bool OpcodeInFamily(Opcode opcode, sm51::RegClass cls) {
+  switch (cls) {
+    case sm51::RegClass::CBuffer:
+      return opcode == Opcode::DclConstantBuffer;
+    case sm51::RegClass::Sampler:
+      return opcode == Opcode::DclSampler;
+    case sm51::RegClass::Resource:
+      return opcode == Opcode::DclResource || opcode == Opcode::DclResourceRaw || opcode == Opcode::DclResourceStructured;
+    case sm51::RegClass::Uav:
+      return opcode == Opcode::DclUnorderedAccessViewTyped || opcode == Opcode::DclUnorderedAccessViewRaw ||
+             opcode == Opcode::DclUnorderedAccessViewStructured;
+  }
+  return false;
+}
+
+/// Free registers in a space are not limited by the 5.0 ranges, but auto-binding stays bounded.
+constexpr uint32_t kMaxPlacedRegisterSearch = 0xFFFF;
+
+}  // namespace
+
+auto ShaderProgram::DeclaredProgramRegisters(sm51::RegClass cls) const -> std::unordered_set<uint32_t> {
+  std::unordered_set<uint32_t> registers;
+  for (const auto& instruction : instructions) {
+    if (OpcodeInFamily(instruction.opcode, cls) && !instruction.operands.empty() && !instruction.operands.front().index_entries.empty() &&
+        instruction.operands.front().index_entries.front().immediate_lo.has_value()) {
+      registers.insert(*instruction.operands.front().index_entries.front().immediate_lo);
+    }
+  }
+  return registers;
+}
+
+auto ShaderProgram::FindFreeProgramRegister(sm51::RegClass cls) const -> uint32_t {
+  const auto occupied = DeclaredProgramRegisters(cls);
+  uint32_t candidate = 0;
+  while (occupied.contains(candidate)) {
+    ++candidate;
+  }
+  return candidate;
+}
+
+auto ShaderProgram::AllocatePlacedRegister(sm51::RegClass cls, uint32_t space, std::optional<uint32_t> requested, bool reverse,
+                                           uint32_t max_bind_point, uint32_t& out_register, std::string& error) const -> bool {
+  std::unordered_set<uint32_t> occupied;
+  for (const auto& [key, placement] : placements) {
+    if (key.first == cls && placement.space == space) {
+      occupied.insert(placement.reg);
+    }
+  }
+  if (requested.has_value()) {
+    if (occupied.contains(*requested)) {
+      error = "register " + std::to_string(*requested) + " is already used in space " + std::to_string(space);
+      return false;
+    }
+    out_register = *requested;
+    return true;
+  }
+  if (reverse) {
+    uint32_t candidate = max_bind_point;
+    while (occupied.contains(candidate)) {
+      if (candidate == 0) {
+        error = "auto-bind exhausted in space " + std::to_string(space);
+        return false;
+      }
+      --candidate;
+    }
+    out_register = candidate;
+    return true;
+  }
+  uint32_t candidate = 0;
+  while (occupied.contains(candidate)) {
+    if (++candidate > kMaxPlacedRegisterSearch) {
+      error = "auto-bind exhausted in space " + std::to_string(space);
+      return false;
+    }
+  }
+  out_register = candidate;
+  return true;
+}
+
 }  // namespace dxp::sm5

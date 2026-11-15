@@ -57,6 +57,15 @@ struct meta<dxp::sm5::model::CbufferAccessPattern> {
 };
 
 template <>
+struct meta<dxp::sm5::model::Sm51Upgrade> {
+  using T = dxp::sm5::model::Sm51Upgrade;
+  static constexpr auto value = enumerate(
+      "auto", T::Auto,
+      "always", T::Always,
+      "never", T::Never);
+};
+
+template <>
 struct meta<dxp::sm5::model::SamplerMode> {
   using T = dxp::sm5::model::SamplerMode;
   // enumerate (not keys/value arrays) so the JSON schema lists the names.

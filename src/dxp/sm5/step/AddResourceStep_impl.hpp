@@ -45,6 +45,7 @@ struct AddResourceDeclData {
   std::string handle;
   std::optional<uint32_t> register_index;
   std::optional<bool> reverse_bind;  ///< Auto-bind reverse order: take the HIGHEST free slot instead of the lowest.
+  std::optional<std::variant<std::string, uint32_t>> space;  ///< Register space: a number, or the name of an env variable holding it.
 
   std::optional<uint32_t> elements;
   std::optional<InterpolationMode> interpolation;

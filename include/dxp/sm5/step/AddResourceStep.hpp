@@ -33,6 +33,8 @@ struct AddResourceStep {
   struct TextureDecl {
     std::optional<uint32_t> register_index;  ///< Binding register index. Empty for next available, or a number for explicit.
     std::optional<bool> reverse_bind;        ///< Auto-bind reverse order: take the HIGHEST free slot (scan down from the max) instead of the lowest.
+    std::optional<uint32_t> space;  ///< Register space. Non-zero needs SM5.1 output, which the recipe upgrades to by itself (see `upgrade_to_sm51`).
+    std::string space_variable;     ///< Name of an env variable holding the space, instead of `space`.
     model::ResourceDimension dimension = model::ResourceDimension::Texture3D;
     std::string handle;
     std::optional<dxp::MetaValue> meta;     ///< Opaque `meta:` subtree, reported verbatim.
@@ -70,6 +72,8 @@ struct AddResourceStep {
   struct CBufferDecl {
     std::optional<uint32_t> register_index;  ///< Binding register index. Empty for next available, or a number for explicit.
     std::optional<bool> reverse_bind;        ///< Auto-bind reverse order: take the HIGHEST free slot (scan down from the max) instead of the lowest.
+    std::optional<uint32_t> space;  ///< Register space. Non-zero needs SM5.1 output, which the recipe upgrades to by itself (see `upgrade_to_sm51`).
+    std::string space_variable;     ///< Name of an env variable holding the space, instead of `space`.
     uint32_t elements = 1;
     CbufferAccessPattern access_pattern = CbufferAccessPattern::ImmediateIndexed;
     std::string handle;
@@ -81,6 +85,8 @@ struct AddResourceStep {
   struct SamplerDecl {
     std::optional<uint32_t> register_index;  ///< Binding register index. Empty for next available, or a number for explicit.
     std::optional<bool> reverse_bind;        ///< Auto-bind reverse order: take the HIGHEST free slot (scan down from the max) instead of the lowest.
+    std::optional<uint32_t> space;  ///< Register space. Non-zero needs SM5.1 output, which the recipe upgrades to by itself (see `upgrade_to_sm51`).
+    std::string space_variable;     ///< Name of an env variable holding the space, instead of `space`.
     SamplerMode mode = SamplerMode::Default;
     std::string handle;
     std::optional<dxp::MetaValue> meta;     ///< Opaque `meta:` subtree, reported verbatim.
@@ -90,6 +96,8 @@ struct AddResourceStep {
   struct RawResourceDecl {
     std::optional<uint32_t> register_index;  ///< Binding register index. Empty for next available, or a number for explicit.
     std::optional<bool> reverse_bind;        ///< Auto-bind reverse order: take the HIGHEST free slot (scan down from the max) instead of the lowest.
+    std::optional<uint32_t> space;  ///< Register space. Non-zero needs SM5.1 output, which the recipe upgrades to by itself (see `upgrade_to_sm51`).
+    std::string space_variable;     ///< Name of an env variable holding the space, instead of `space`.
     std::string handle;
     std::optional<dxp::MetaValue> meta;     ///< Opaque `meta:` subtree, reported verbatim.
   };
@@ -98,6 +106,8 @@ struct AddResourceStep {
   struct StructuredResourceDecl {
     std::optional<uint32_t> register_index;  ///< Binding register index. Empty for next available, or a number for explicit.
     std::optional<bool> reverse_bind;        ///< Auto-bind reverse order: take the HIGHEST free slot (scan down from the max) instead of the lowest.
+    std::optional<uint32_t> space;  ///< Register space. Non-zero needs SM5.1 output, which the recipe upgrades to by itself (see `upgrade_to_sm51`).
+    std::string space_variable;     ///< Name of an env variable holding the space, instead of `space`.
     uint32_t structure_stride;               ///< Required: byte stride of structured buffer elements
     std::string handle;
     std::optional<dxp::MetaValue> meta;     ///< Opaque `meta:` subtree, reported verbatim.
@@ -107,6 +117,8 @@ struct AddResourceStep {
   struct UavDecl {
     std::optional<uint32_t> register_index;  ///< Binding register index. Empty for next available, or a number for explicit.
     std::optional<bool> reverse_bind;        ///< Auto-bind reverse order: take the HIGHEST free slot (scan down from the max) instead of the lowest.
+    std::optional<uint32_t> space;  ///< Register space. Non-zero needs SM5.1 output, which the recipe upgrades to by itself (see `upgrade_to_sm51`).
+    std::string space_variable;     ///< Name of an env variable holding the space, instead of `space`.
     UavKind kind = UavKind::Typed;
     model::ResourceDimension dimension = model::ResourceDimension::Texture3D;
     uint32_t structure_stride = 0;  ///< 0 = skip stride token, DXBC loader uses its default
