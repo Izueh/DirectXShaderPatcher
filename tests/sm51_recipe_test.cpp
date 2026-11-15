@@ -215,6 +215,63 @@ int main(int argc, char** argv) {
     Check(literal.size() == 1 && literal[0].space == 100u, "a literal space is declared");
   }
 
+  // 5b. One recipe for both APIs: the env default is space 0 (D3D11, stays SM5.0), the D3D12 host sets 100
+  {
+    const auto shared = Parse(R"YAML(version: 1
+upgrade_to_sm51: auto
+env:
+  LUMA_SPACE: 0
+steps:
+  - kind: add_resource
+    name: add_luma
+    temps: [scratch]
+    cbuffers:
+      - handle: luma
+        elements: 1
+        register_index: 13
+        space: LUMA_SPACE
+  - kind: apply_rule
+    name: read_luma
+    rule:
+      match:
+        - opcode: add
+          operands:
+            - type: output
+              capture: dst
+            - type: temp
+              capture: a
+            - type: constant_buffer
+              capture: c
+      emit:
+        - opcode: add
+          operands:
+            - type: temp
+              handle: { name: scratch }
+              components: {selection_mode: mask, value: xyzw}
+            - capture: a
+            - capture: c
+        - opcode: add
+          operands:
+            - capture: dst
+            - type: temp
+              handle: { name: scratch }
+              components: {selection_mode: swizzle, value: xyzw}
+            - type: constant_buffer
+              handle: { name: luma, element_index: 0 }
+              components: {selection_mode: swizzle, value: xyzw}
+)YAML");
+    const auto d3d11 = shared.Execute(game);
+    Check(d3d11.has_value() && d3d11->modified && ShaderMinor(d3d11->output_bytes) == 0 && d3d11->new_bindings.at("luma").space == 0 &&
+              d3d11->new_bindings.at("luma").register_index == 13,
+          "shared recipe on D3D11: SM5.0, b13 in space 0");
+    dxp::PatchOptions d3d12;
+    d3d12.SetEnv("LUMA_SPACE", uint32_t{100});
+    const auto upgraded = shared.Execute(game, d3d12);
+    Check(upgraded.has_value() && ShaderMinor(upgraded->output_bytes) == 1 && upgraded->new_bindings.at("luma").space == 100 &&
+              upgraded->new_bindings.at("luma").register_index == 13,
+          "shared recipe on D3D12: SM5.1, b13 in space 100");
+  }
+
   // 6. Recipes chained on the 5.1 output
   {
     const auto first = Parse(CBufferRecipe("upgrade_to_sm51: auto\n", "        register_index: 13\n        space: 100\n")).Execute(game);

@@ -35,8 +35,22 @@ A top-level recipe key (`Recipe::SetSm51Upgrade` from C++):
 | `auto` | SM5.1 only when a declaration has a non-zero `space`. A recipe without one still writes SM5.0 |
 | `always` | SM5.1 whenever the recipe changes the shader, even with everything in space 0 |
 
-SM5.1 isn't loadable by D3D11, so a recipe that is shared between D3D11 and D3D12 should use `auto` and let the host
-choose the space: `space: SOME_VAR` is 0 for D3D11 (stays SM5.0) and non-zero for D3D12.
+SM5.1 isn't loadable by D3D11, so a recipe that is shared between D3D11 and D3D12 should use `auto` and take its space
+from an env variable that defaults to 0. The D3D11 host passes nothing and gets SM5.0; the D3D12 host sets the variable
+(`PatchOptions::SetEnv("LUMA_SPACE", 100u)`) and gets SM5.1, with the same recipe and the same register:
+
+```yaml
+upgrade_to_sm51: auto
+env:
+  LUMA_SPACE: 0              # D3D11: space 0, the output stays SM5.0
+steps:
+  - kind: add_resource
+    name: add_luma
+    cbuffers:
+      - handle: luma
+        register_index: 13
+        space: LUMA_SPACE    # D3D12: 100
+```
 
 A recipe that changes nothing passes the input through as it is, whatever the option says. Only SM5 input can be upgraded.
 
