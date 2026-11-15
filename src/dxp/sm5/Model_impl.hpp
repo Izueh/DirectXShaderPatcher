@@ -60,9 +60,9 @@ template <>
 struct meta<dxp::sm5::model::Sm51Upgrade> {
   using T = dxp::sm5::model::Sm51Upgrade;
   static constexpr auto value = enumerate(
+      "never", T::Never,
       "auto", T::Auto,
-      "always", T::Always,
-      "never", T::Never);
+      "always", T::Always);
 };
 
 template <>

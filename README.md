@@ -7,7 +7,7 @@ Meant for patching shaders live during game runtime using patterns instead of ma
 
 ## Features
 
-- Support for adding new resources (SRs, Inputs, Outputs), in any register space: SM5 recipes upgrade their output to SM5.1 by themselves when a resource asks for a `space`.
+- Support for adding new resources (SRs, Inputs, Outputs), in any register space: an SM5 recipe that sets `upgrade_to_sm51: auto` writes SM5.1 when a resource asks for a `space`.
 - Extracting information from operands (cbuffers, constants).
 - Matching and rewriting patterns in the bytecode.
 

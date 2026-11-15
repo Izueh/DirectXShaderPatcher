@@ -144,8 +144,8 @@ struct Recipe {
     return *this;
   }
 
-  /// @brief When the output becomes SM5.1 (the recipe's top-level `upgrade_to_sm51`). Default: Auto, which
-  /// upgrades only when a declared resource has a non-zero space. See model::Sm51Upgrade.
+  /// @brief When the output becomes SM5.1 (the recipe's top-level `upgrade_to_sm51`). Default: Never, so a
+  /// recipe has to opt in. See model::Sm51Upgrade.
   [[nodiscard]] model::Sm51Upgrade GetSm51Upgrade() const noexcept { return sm51_upgrade_; }
 
   /// @brief Set the SM5.1 upgrade mode (setup-only; parsing fills it from YAML).
@@ -210,7 +210,7 @@ struct Recipe {
   std::vector<StepVariant> steps_;
   std::unordered_map<std::string, PrimitiveValue> env_;
   std::optional<MetaValue> meta_;
-  model::Sm51Upgrade sm51_upgrade_ = model::Sm51Upgrade::Auto;
+  model::Sm51Upgrade sm51_upgrade_ = model::Sm51Upgrade::Never;
 
   /// @brief Lazy validation cache. Written by ValidateRecipe (via the first
   /// Execute or an explicit validate) and reset by AddStep. Logically const —

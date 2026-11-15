@@ -147,7 +147,7 @@ std::expected<dxp::AddResourceResults, std::string> Execute(const AddResourceSte
         // placement and Serialize writes the shader as SM5.1.
         if (ctx.sm51_upgrade == Sm51Upgrade::Never) {
           const std::string message = std::string("add_resource: ") + kind_name + " '" + decl.handle + "' is in space " + std::to_string(*space) +
-                                      " which needs SM5.1, and the recipe sets upgrade_to_sm51: never";
+                                      " which needs SM5.1: the recipe doesn't allow it (upgrade_to_sm51 is never, its default; set it to auto)";
           if (!fail_or_warn(message)) return std::unexpected(message);
           continue;
         }

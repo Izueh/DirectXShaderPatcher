@@ -272,6 +272,7 @@ int main(int argc, char** argv) {
   }
   // Luma's shape: a recipe adds a cbuffer in its own space and reads it (the space comes from an env variable)
   const char* recipe_text = R"YAML(version: 1
+upgrade_to_sm51: auto
 steps:
   - kind: add_resource
     name: add_luma

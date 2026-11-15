@@ -320,16 +320,16 @@
          "type": "string",
          "oneOf": [
             {
+               "title": "never",
+               "const": "never"
+            },
+            {
                "title": "auto",
                "const": "auto"
             },
             {
                "title": "always",
                "const": "always"
-            },
-            {
-               "title": "never",
-               "const": "never"
             }
          ]
       },

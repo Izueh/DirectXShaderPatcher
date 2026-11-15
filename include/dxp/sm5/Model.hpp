@@ -200,9 +200,9 @@ enum class SignatureSemantic : std::uint8_t {
 
 /// @brief When a recipe's output becomes SM5.1 (`upgrade_to_sm51:` at the top of a recipe).
 enum class Sm51Upgrade : std::uint8_t {
-  Auto = 0,    ///< Only when a resource needs it: a declaration with a non-zero `space`.
-  Always = 1,  ///< Whenever the recipe changes the shader.
-  Never = 2,   ///< Never. A non-zero `space` is an error.
+  Never = 0,   ///< Never (the default): the output stays SM5.0 and a non-zero `space` is an error.
+  Auto = 1,    ///< Only when a resource needs it: a declaration with a non-zero `space`.
+  Always = 2,  ///< Whenever the recipe changes the shader.
 };
 
 /// @brief Constant buffer access pattern.

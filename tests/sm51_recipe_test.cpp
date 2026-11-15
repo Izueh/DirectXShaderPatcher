@@ -138,7 +138,7 @@ int main(int argc, char** argv) {
 
   // 1. A resource in space 100 upgrades the output by itself
   {
-    const auto recipe = Parse(CBufferRecipe("", "        register_index: 13\n        space: 100\n"));
+    const auto recipe = Parse(CBufferRecipe("upgrade_to_sm51: auto\n", "        register_index: 13\n        space: 100\n"));
     const auto report = recipe.Execute(game);
     Check(report.has_value(), "space 100 cbuffer: " + (report ? std::string() : report.error()));
     if (report) {
@@ -188,14 +188,17 @@ int main(int argc, char** argv) {
   {
     const auto recipe = Parse(CBufferRecipe("upgrade_to_sm51: never\n", "        register_index: 13\n        space: 100\n"));
     const auto report = recipe.Execute(game);
-    Check(!report.has_value() && Contains(report.error(), "upgrade_to_sm51: never"), "never refuses space 100");
+    Check(!report.has_value() && Contains(report.error(), "upgrade_to_sm51"), "never refuses space 100");
+    // never is the default: a recipe has to opt in before a space changes the shader model
+    const auto by_default = Parse(CBufferRecipe("", "        register_index: 13\n        space: 100\n")).Execute(game);
+    Check(!by_default.has_value() && Contains(by_default.error(), "set it to auto"), "a space without upgrade_to_sm51 is refused, naming the fix");
     const auto fine = Parse(CBufferRecipe("upgrade_to_sm51: never\n", "        register_index: 13\n")).Execute(game);
     Check(fine.has_value() && fine->output_container.shader_model == "5.0", "never is fine without a space");
   }
 
   // 5. The space from an env variable
   {
-    const auto recipe = Parse(CBufferRecipe("", "        register_index: 13\n        space: LUMA_SPACE\n"));
+    const auto recipe = Parse(CBufferRecipe("upgrade_to_sm51: auto\n", "        register_index: 13\n        space: LUMA_SPACE\n"));
     dxp::PatchOptions options;
     options.SetEnv("LUMA_SPACE", uint32_t{100});
     const auto report = recipe.Execute(game, options);
@@ -208,16 +211,17 @@ int main(int argc, char** argv) {
     Check(!wrong.has_value() && Contains(wrong.error(), "register space"), "a non-number space variable is refused");
     const auto declared = recipe.GetDeclaredResources();
     Check(declared.size() == 1 && !declared[0].space.has_value(), "an env space isn't known before execution");
-    const auto literal = Parse(CBufferRecipe("", "        space: 100\n")).GetDeclaredResources();
+    const auto literal = Parse(CBufferRecipe("upgrade_to_sm51: auto\n", "        space: 100\n")).GetDeclaredResources();
     Check(literal.size() == 1 && literal[0].space == 100u, "a literal space is declared");
   }
 
   // 6. Recipes chained on the 5.1 output
   {
-    const auto first = Parse(CBufferRecipe("", "        register_index: 13\n        space: 100\n")).Execute(game);
+    const auto first = Parse(CBufferRecipe("upgrade_to_sm51: auto\n", "        register_index: 13\n        space: 100\n")).Execute(game);
     Check(first.has_value(), "chain: first recipe");
     if (first) {
       const auto second = Parse(R"YAML(version: 1
+upgrade_to_sm51: auto
 steps:
   - kind: add_resource
     name: add_more
@@ -240,9 +244,9 @@ steps:
         Check(Contains(text, "T1[5:5], space=100") && Contains(text, "S1[0:0], mode_default, space=100"), "chain: the second recipe's resources are declared");
         Check(Contains(text, "CB1[13][0]"), "chain: the first recipe's read survives");
       }
-      const auto clash = Parse(CBufferRecipe("", "        register_index: 13\n        space: 100\n")).Execute(first->output_bytes);
+      const auto clash = Parse(CBufferRecipe("upgrade_to_sm51: auto\n", "        register_index: 13\n        space: 100\n")).Execute(first->output_bytes);
       Check(!clash.has_value() && Contains(clash.error(), "space 100"), "chain: b13 space 100 is taken");
-      const auto other_space = Parse(CBufferRecipe("", "        register_index: 13\n        space: 101\n")).Execute(first->output_bytes);
+      const auto other_space = Parse(CBufferRecipe("upgrade_to_sm51: auto\n", "        register_index: 13\n        space: 101\n")).Execute(first->output_bytes);
       Check(other_space.has_value(), "chain: b13 in another space is free");
     }
   }
@@ -250,6 +254,7 @@ steps:
   // 7. The same register in two spaces, auto-binding inside a space
   {
     const auto recipe = Parse(R"YAML(version: 1
+upgrade_to_sm51: auto
 steps:
   - kind: add_resource
     name: add_many
@@ -284,6 +289,7 @@ steps:
   // 8. A typed UAV in another space keeps its dimension and return type
   {
     const auto recipe = Parse(R"YAML(version: 1
+upgrade_to_sm51: auto
 steps:
   - kind: add_resource
     name: add_uav

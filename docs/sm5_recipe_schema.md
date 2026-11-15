@@ -23,7 +23,7 @@ Every SM5 recipe is a YAML document with the following top-level keys:
 | `version` | optional, defaults to `1` | application-defined recipe revision, an unsigned 32-bit integer |
 | `env` | optional | variable definitions accessible via conditions |
 | `meta` | optional | opaque host metadata, any YAML value; reported by `Recipe::GetMeta()` and never interpreted by DXP (see [resource_declarations.md](resource_declarations.md#recipe-level-meta)) |
-| `upgrade_to_sm51` | optional: `auto` (default), `always`, `never` | whether the patched shader is written as SM5.1, see [sm51_upgrade.md](sm51_upgrade.md). `auto` upgrades when an `add_resource` declaration has a non-zero `space`, `always` whenever the recipe changes the shader, `never` refuses a `space` |
+| `upgrade_to_sm51` | optional: `never` (default), `auto`, `always` | whether the patched shader is written as SM5.1, see [sm51_upgrade.md](sm51_upgrade.md). `never` keeps SM5.0 and refuses a `space`, `auto` upgrades when an `add_resource` declaration has a non-zero `space`, `always` whenever the recipe changes the shader |
 | `steps` | required | non-empty array of step objects, executed in order |
 
 Each step has a unique `name` and a `kind` that determines its behaviour.
@@ -89,7 +89,7 @@ shape; only the relevant fields are honored per declaration type:
 |---|---|---|
 | `handle` | all | unique identifier; referenced by `apply_rule` emit operands via `handle` |
 | `register_index` | all | explicit bind point, or omitted for auto-assign |
-| `space` | textures, raw/structured resources, cbuffers, samplers, uavs | register space: a number, or the name of an `env` variable that holds it (so the host picks it when it runs the recipe). Default `0`. A non-zero space makes the output SM5.1 (see `upgrade_to_sm51`); the register is then chosen inside that space, so `t0` in space 100 sits beside the game's `t0` in space 0 |
+| `space` | textures, raw/structured resources, cbuffers, samplers, uavs | register space: a number, or the name of an `env` variable that holds it (so the host picks it when it runs the recipe). Default `0`. A non-zero space needs `upgrade_to_sm51: auto` and makes the output SM5.1; the register is then chosen inside that space, so `t0` in space 100 sits beside the game's `t0` in space 0 |
 | `reverse_bind` | all | auto-assign in reverse order: take the **highest** free slot (scan down from the max) instead of the lowest. Game shaders commonly occupy the low registers, so taking the lowest free slot can collide with the game's own bindings (and those overrides are never restored) — reverse order lands the patched resource far from the game's usage (e.g. t127 for textures). |
 | `elements` | cbuffers | number of 16-byte elements (derived from `fields` when omitted) |
 | `fields` | cbuffers | `{ name, type, width, offset, default, meta }` layout; recipe-side only, see [resource_declarations.md](resource_declarations.md) |

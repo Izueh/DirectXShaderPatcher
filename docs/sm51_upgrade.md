@@ -5,10 +5,11 @@ A host that owns its own space (Luma keeps its constant buffers in space 100, so
 registers) needs the patched shader to declare its resources there. SM5.1 DXBC can, and D3D12 accepts SM5.0 and SM5.1
 stages in one pipeline, so only the patched stage has to change.
 
-DXP does this for SM5 recipes: give a declaration a `space` and the output is written as SM5.1 by itself.
+DXP does this for SM5 recipes: give a declaration a `space`, and let the recipe upgrade with `upgrade_to_sm51: auto`.
 
 ```yaml
 version: 1
+upgrade_to_sm51: auto        # without it a non-zero space is an error: SM5.0 is what D3D11 can load
 env:
   LUMA_SPACE: 100            # the host can set it per run: PatchOptions::SetEnv("LUMA_SPACE", 100u)
 steps:
@@ -30,9 +31,12 @@ A top-level recipe key (`Recipe::SetSm51Upgrade` from C++):
 
 | value | output |
 |---|---|
-| `auto` (default) | SM5.1 only when a declaration has a non-zero `space`. Every other recipe keeps writing SM5.0, byte for byte as before |
+| `never` (default) | never makes a shader SM5.1: SM5.0 stays SM5.0, byte for byte as before (SM5.1 input stays 5.1), and a declaration with a non-zero `space` is an error that names this option |
+| `auto` | SM5.1 only when a declaration has a non-zero `space`. A recipe without one still writes SM5.0 |
 | `always` | SM5.1 whenever the recipe changes the shader, even with everything in space 0 |
-| `never` | never; a declaration with a non-zero `space` is an error |
+
+SM5.1 isn't loadable by D3D11, so a recipe that is shared between D3D11 and D3D12 should use `auto` and let the host
+choose the space: `space: SOME_VAR` is 0 for D3D11 (stays SM5.0) and non-zero for D3D12.
 
 A recipe that changes nothing passes the input through as it is, whatever the option says. Only SM5 input can be upgraded.
 

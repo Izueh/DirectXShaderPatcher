@@ -23,7 +23,7 @@ struct RecipeData {
   uint32_t version = 1;
   std::unordered_map<std::string, PrimitiveValue> env;
   glz::generic meta;  ///< Opaque host metadata, reported verbatim (null = absent).
-  Sm51Upgrade upgrade_to_sm51 = Sm51Upgrade::Auto;  ///< When the output becomes SM5.1.
+  Sm51Upgrade upgrade_to_sm51 = Sm51Upgrade::Never;  ///< When the output becomes SM5.1.
   std::vector<StepDataVariant> steps;
 };
 
